@@ -12,7 +12,9 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
 import java.io.InputStream
+import kotlinx.coroutines.* // नई लाइब्रेरी जो फोन को हैंग होने से बचाएगी
 
 class MainActivity : AppCompatActivity() {
 
@@ -24,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scrollView: ScrollView
     private lateinit var inputField: EditText
     private lateinit var downloadButton: Button
-    private lateinit var modeSwitch: Switch // नया स्विच (API vs Local)
+    private lateinit var modeSwitch: Switch
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,12 +37,11 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#F5F5F5"))
         }
 
-        // टॉगल स्विच सेटअप
         modeSwitch = Switch(this).apply {
             text = "Use Local AI (Offline Mode)"
             textSize = 16f
             setTextColor(Color.BLACK)
-            isChecked = false // डिफ़ॉल्ट: OFF (मतलब API इस्तेमाल होगा)
+            isChecked = false
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 20) }
@@ -68,7 +69,6 @@ class MainActivity : AppCompatActivity() {
             ).apply { setMargins(0, 0, 0, 20) }
         }
 
-        // स्मार्ट चेक: अगर फोन में फाइल पहले से है, तो बटन बंद कर दो
         val modelFile = File(filesDir, "llama_model.gguf")
         if (modelFile.exists()) {
             downloadButton.text = "MODEL ALREADY DOWNLOADED"
@@ -108,17 +108,16 @@ class MainActivity : AppCompatActivity() {
                 inputField.text.clear()
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
 
-                // यहाँ चेक होगा कि स्विच ON है या OFF
                 if (modeSwitch.isChecked) {
-                    // अगर लोकल मोड ON है
+                    // लोकल मोड (Offline)
                     if (modelFile.exists()) {
-                        chatHistory.append("System: Engine connect nahi hua hai. Next step mein engine jodenge!\n")
+                        chatHistory.append("System: Accessing Local Model File...\n")
+                        runLocalInference(modelFile, userText)
                     } else {
                         chatHistory.append("System: Model not found! Please download it first.\n")
                     }
-                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                 } else {
-                    // अगर API मोड चालू है (Switch OFF)
+                    // क्लाउड मोड (API)
                     chatHistory.append("Agent: Thinking (Cloud API)...\n")
                     callAI(userText)
                 }
@@ -128,12 +127,44 @@ class MainActivity : AppCompatActivity() {
         inputLayout.addView(inputField)
         inputLayout.addView(runButton)
         
-        mainLayout.addView(modeSwitch) // स्विच को स्क्रीन में जोड़ा
+        mainLayout.addView(modeSwitch)
         mainLayout.addView(downloadButton)
         mainLayout.addView(scrollView)
         mainLayout.addView(inputLayout)
 
         setContentView(mainLayout)
+    }
+
+    // नया लोकल इंजन फंक्शन
+    private fun runLocalInference(file: File, prompt: String) {
+        // Coroutine का इस्तेमाल ताकि फोन हैंग न हो
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // फाइल को पढ़ना और चेक करना
+                val inputStream = FileInputStream(file)
+                val header = ByteArray(4)
+                inputStream.read(header)
+                inputStream.close()
+                
+                val magicString = String(header)
+                val fileSizeMB = file.length() / (1024 * 1024)
+
+                withContext(Dispatchers.Main) {
+                    if (magicString == "GGUF" || magicString == "FUGG") {
+                        chatHistory.append("System: ✅ Valid GGUF Llama Model Verified! (Size: $fileSizeMB MB)\n")
+                        chatHistory.append("Agent (Local): Hello! Maine storage se GGUF file read kar li hai. (C++ NDK Engine processing baaki hai).\n")
+                    } else {
+                        chatHistory.append("System: ❌ Error - Not a valid GGUF file. Header is $magicString\n")
+                    }
+                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    chatHistory.append("System: File Error - ${e.localizedMessage}\n")
+                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                }
+            }
+        }
     }
 
     private fun downloadModelFile() {
