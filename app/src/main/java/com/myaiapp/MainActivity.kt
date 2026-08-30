@@ -101,28 +101,41 @@ class MainActivity : AppCompatActivity() {
                 client.newCall(request).execute().use { response ->
                     val responseData = response.body?.string()
                     if (response.isSuccessful && responseData != null) {
-                        val jsonResponse = JSONObject(responseData)
-                        val choices = jsonResponse.getJSONArray("choices")
-                        val messageObj = choices.getJSONObject(0).getJSONObject("message")
-                        val aiReply = messageObj.getString("content").trim()
+                        try {
+                            val jsonResponse = JSONObject(responseData)
+                            if (jsonResponse.has("choices")) {
+                                val choices = jsonResponse.getJSONArray("choices")
+                                if (choices.length() > 0) {
+                                    val messageObj = choices.getJSONObject(0).getJSONObject("message")
+                                    val aiReply = messageObj.getString("content").trim()
 
-                        runOnUiThread {
-                            chatHistory.append("Agent: $aiReply\n")
-                            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                                    runOnUiThread {
+                                        chatHistory.append("Agent: $aiReply\n")
+                                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                                    }
+                                } else {
+                                    showError("Agent: Empty response from AI.\n")
+                                }
+                            } else {
+                                showError("Agent: Server Error: $responseData\n")
+                            }
+                        } catch (e: Exception) {
+                            showError("Agent: Parse Error: ${e.localizedMessage}\n")
                         }
                     } else {
-                        runOnUiThread {
-                            chatHistory.append("Agent: Server Error: $responseData\n")
-                            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                        }
+                        showError("Agent: Server Error: $responseData\n")
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    chatHistory.append("Agent: Error: ${e.localizedMessage}\n")
-                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                }
+                showError("Agent: Error: ${e.localizedMessage}\n")
             }
         }.start()
+    }
+
+    private fun showError(msg: String) {
+        runOnUiThread {
+            chatHistory.append(msg)
+            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+        }
     }
 }
