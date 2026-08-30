@@ -31,7 +31,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         chatHistory = TextView(this).apply {
-            text = "System: Hello Brahamanand! Llama 3.2 AI Agent Ready.\n"
+            text = "System: Hello Brahamanand! AI Agent Ready.\n"
             textSize = 16f
             setTextColor(Color.BLACK)
         }
@@ -69,7 +69,7 @@ class MainActivity : AppCompatActivity() {
                 inputField.text.clear()
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
 
-                callLlamaAI(userText)
+                callAI(userText)
             }
         }
 
@@ -81,11 +81,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(mainLayout)
     }
 
-        private fun callLlamaAI(prompt: String) {
+    private fun callAI(prompt: String) {
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
-                    put("model", "google/gemma-2-9b-it:free") // यहाँ नया फ्री मॉडल सेट कर दिया है
+                    put("model", "google/gemma-2-9b-it:free")
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
                 }
 
@@ -125,3 +125,4 @@ class MainActivity : AppCompatActivity() {
             }
         }.start()
     }
+}
