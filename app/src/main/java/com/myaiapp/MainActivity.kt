@@ -85,7 +85,8 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
-                    put("model", "meta-llama/llama-3.1-8b-instruct:free")
+                    put("model", "nvidia/nemotron-3-ultra-550b-a55b:free")
+
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
                 }
 
