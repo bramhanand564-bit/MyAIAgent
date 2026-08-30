@@ -85,10 +85,18 @@ class MainActivity : AppCompatActivity() {
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
-                    put("model", "google/gemma-2-9b-it:free")
+                    put("model", "meta-llama/llama-3.1-8b-instruct:free")
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
                 }
 
+                val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(apiUrl)
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("HTTP-Referer", "https://github.com/bramhanand564-bit")
+                    .addHeader("X-Title", "MyAIAgent")
+                    .post(body)
+                    .build()
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 val request = Request.Builder()
                     .url(apiUrl)
