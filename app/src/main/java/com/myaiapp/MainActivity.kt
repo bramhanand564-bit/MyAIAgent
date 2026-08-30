@@ -81,11 +81,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(mainLayout)
     }
 
-    private fun callLlamaAI(prompt: String) {
+        private fun callLlamaAI(prompt: String) {
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
-                    put("model", "meta-llama/llama-3.2-3b-instruct:free")
+                    put("model", "google/gemma-2-9b-it:free") // यहाँ नया फ्री मॉडल सेट कर दिया है
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
                 }
 
@@ -125,4 +125,3 @@ class MainActivity : AppCompatActivity() {
             }
         }.start()
     }
-}
