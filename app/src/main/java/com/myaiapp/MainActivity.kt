@@ -5,35 +5,126 @@ import android.widget.*
 import android.view.ViewGroup
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import org.json.JSONArray
+import java.io.IOException
 
 class MainActivity : AppCompatActivity() {
+
+    private val client = OkHttpClient()
+    // yahan apni OpenRouter ki free API key daal sakte hain baad mein
+    private val apiKey = "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"
+    private val apiUrl = "https://openrouter.ai/api/v1/chat/completions"
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. मेन बैकग्राउंड (हल्का ग्रे)
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(40, 40, 40, 40)
             setBackgroundColor(Color.parseColor("#F5F5F5"))
         }
 
-        // 2. जहाँ हमारी बातचीत दिखेगी (Chat History)
         val chatHistory = TextView(this).apply {
-            text = "System: Hello Brahamanand! AI Agent Ready.\n"
-            textSize = 18f
+            text = "System: Hello Brahamanand! Llama 3.2 AI Agent Ready.\n"
+            textSize = 16f
             setTextColor(Color.BLACK)
         }
 
-        // 3. स्क्रॉल करने की सुविधा
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0, 1.0f // यह टेक्स्ट बॉक्स को नीचे धकेल कर पूरी खाली जगह ले लेगा
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f
             )
             addView(chatHistory)
         }
 
-        // 4. नीचे वाला हिस्सा (Input + Button)
+        val inputLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val inputField = EditText(this).apply {
+            hint = "Kuch bhi poohein..."
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f)
+        }
+
+        val runButton = Button(this).apply {
+            text = "SEND"
+            setBackgroundColor(Color.parseColor("#007BFF"))
+            setTextColor(Color.WHITE)
+        }
+
+        runButton.setOnClickListener {
+            val userText = inputField.text.toString().trim()
+            if (userText.isNotEmpty()) {
+                chatHistory.append("\nBrahamanand: $userText\n")
+                chatHistory.append("Agent: Thinking...\n")
+                inputField.text.clear()
+                scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+
+                // Background thread mein AI se baat karna
+                callLlamaAI(userText, chatHistory, scrollView)
+            }
+        }
+
+        inputLayout.addView(inputField)
+        inputLayout.addView(runButton)
+        mainLayout.addView(scrollView)
+        mainLayout.addView(inputLayout)
+
+        setContentView(mainLayout)
+    }
+
+    private fun callLlamaAI(prompt: String, chatHistory: TextView, scrollView: ScrollView) {
+        Thread {
+            try {
+                val jsonBody = JSONObject().apply {
+                    put("model", "meta-llama/llama-3.2-3b-instruct:free")
+                    put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+                }
+
+                val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(apiUrl)
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("HTTP-Referer", "https://github.com/bramhanand564-bit")
+                    .addHeader("X-Title", "MyAIAgent")
+                    .post(body)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    val responseData = response.body?.string()
+                    if (response.isSuccessful && responseData != null) {
+                        val jsonResponse = JSONObject(responseData)
+                        val choices = jsonResponse.getJSONArray("choices")
+                        val messageObj = choices.getJSONObject(0).getJSONObject("message")
+                        val aiReply = messageObj.getString("content").trim()
+
+                        runOnUiThread {
+                            chatHistory.append("Agent: $aiReply\n")
+                            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                        }
+                    } else {
+                        runOnUiThread {
+                            chatHistory.append("Agent: Error! API Key check karein.\n")
+                            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    chatHistory.append("Agent: Net connection check karein.\n")
+                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                }
+            }
+        }.start()
+    }
+}
         val inputLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
