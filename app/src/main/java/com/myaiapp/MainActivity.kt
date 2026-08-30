@@ -97,14 +97,6 @@ class MainActivity : AppCompatActivity() {
                     .addHeader("X-Title", "MyAIAgent")
                     .post(body)
                     .build()
-                val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-                val request = Request.Builder()
-                    .url(apiUrl)
-                    .addHeader("Authorization", "Bearer $apiKey")
-                    .addHeader("HTTP-Referer", "https://github.com/bramhanand564-bit")
-                    .addHeader("X-Title", "MyAIAgent")
-                    .post(body)
-                    .build()
 
                 client.newCall(request).execute().use { response ->
                     val responseData = response.body?.string()
