@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scrollView: ScrollView
     private lateinit var inputField: EditText
     private lateinit var downloadButton: Button
+    private lateinit var modeSwitch: Switch // नया स्विच (API vs Local)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,6 +33,17 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(30, 30, 30, 30)
             setBackgroundColor(Color.parseColor("#F5F5F5"))
+        }
+
+        // टॉगल स्विच सेटअप
+        modeSwitch = Switch(this).apply {
+            text = "Use Local AI (Offline Mode)"
+            textSize = 16f
+            setTextColor(Color.BLACK)
+            isChecked = false // डिफ़ॉल्ट: OFF (मतलब API इस्तेमाल होगा)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 20) }
         }
 
         chatHistory = TextView(this).apply {
@@ -47,14 +59,21 @@ class MainActivity : AppCompatActivity() {
             addView(chatHistory)
         }
 
-        // डाउनलोड बटन सेटअप
         downloadButton = Button(this).apply {
             text = "DOWNLOAD LOCAL AI MODEL"
-            setBackgroundColor(Color.parseColor("#28A745")) // हरा रंग
+            setBackgroundColor(Color.parseColor("#28A745"))
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 0, 0, 20) }
+        }
+
+        // स्मार्ट चेक: अगर फोन में फाइल पहले से है, तो बटन बंद कर दो
+        val modelFile = File(filesDir, "llama_model.gguf")
+        if (modelFile.exists()) {
+            downloadButton.text = "MODEL ALREADY DOWNLOADED"
+            downloadButton.setBackgroundColor(Color.GRAY)
+            downloadButton.isEnabled = false
         }
 
         downloadButton.setOnClickListener {
@@ -86,17 +105,30 @@ class MainActivity : AppCompatActivity() {
             val userText = inputField.text.toString().trim()
             if (userText.isNotEmpty()) {
                 chatHistory.append("\nBrahamanand: $userText\n")
-                chatHistory.append("Agent: Thinking...\n")
                 inputField.text.clear()
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
 
-                callAI(userText)
+                // यहाँ चेक होगा कि स्विच ON है या OFF
+                if (modeSwitch.isChecked) {
+                    // अगर लोकल मोड ON है
+                    if (modelFile.exists()) {
+                        chatHistory.append("System: Engine connect nahi hua hai. Next step mein engine jodenge!\n")
+                    } else {
+                        chatHistory.append("System: Model not found! Please download it first.\n")
+                    }
+                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                } else {
+                    // अगर API मोड चालू है (Switch OFF)
+                    chatHistory.append("Agent: Thinking (Cloud API)...\n")
+                    callAI(userText)
+                }
             }
         }
 
         inputLayout.addView(inputField)
         inputLayout.addView(runButton)
         
+        mainLayout.addView(modeSwitch) // स्विच को स्क्रीन में जोड़ा
         mainLayout.addView(downloadButton)
         mainLayout.addView(scrollView)
         mainLayout.addView(inputLayout)
@@ -104,11 +136,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(mainLayout)
     }
 
-    // मॉडल डाउनलोड करने का फंक्शन
     private fun downloadModelFile() {
-        // Llama 3.2 1B Instruct GGUF डायरेक्ट डाउनलोड लिंक
         val modelUrl = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-
         Thread {
             try {
                 val request = Request.Builder().url(modelUrl).build()
@@ -121,14 +150,12 @@ class MainActivity : AppCompatActivity() {
                     val inputStream: InputStream = response.body!!.byteStream()
                     val file = File(filesDir, "llama_model.gguf")
                     val outputStream = FileOutputStream(file)
-
                     val buffer = ByteArray(8192)
                     var bytesRead: Int
                     
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         outputStream.write(buffer, 0, bytesRead)
                     }
-
                     outputStream.flush()
                     outputStream.close()
                     inputStream.close()
@@ -136,7 +163,7 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread {
                         chatHistory.append("\nSystem: Model Downloaded Successfully! Saved locally.\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                        downloadButton.text = "MODEL DOWNLOADED"
+                        downloadButton.text = "MODEL ALREADY DOWNLOADED"
                         downloadButton.setBackgroundColor(Color.GRAY)
                     }
                 }
@@ -150,7 +177,6 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    // AI से बात करने का फंक्शन (अभी API के ज़रिए)
     private fun callAI(prompt: String) {
         Thread {
             try {
@@ -178,7 +204,6 @@ class MainActivity : AppCompatActivity() {
                                 if (choices.length() > 0) {
                                     val messageObj = choices.getJSONObject(0).getJSONObject("message")
                                     val aiReply = messageObj.getString("content").trim()
-
                                     runOnUiThread {
                                         chatHistory.append("Agent: $aiReply\n")
                                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
