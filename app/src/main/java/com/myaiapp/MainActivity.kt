@@ -10,6 +10,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
 
 class MainActivity : AppCompatActivity() {
 
@@ -20,19 +23,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chatHistory: TextView
     private lateinit var scrollView: ScrollView
     private lateinit var inputField: EditText
+    private lateinit var downloadButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 40, 40, 40)
+            setPadding(30, 30, 30, 30)
             setBackgroundColor(Color.parseColor("#F5F5F5"))
         }
 
         chatHistory = TextView(this).apply {
-            text = "System: Hello Brahamanand! AI Agent Ready.\n"
-            textSize = 16f
+            text = "System: Hello Brahamanand! Agent Ready.\n"
+            textSize = 15f
             setTextColor(Color.BLACK)
         }
 
@@ -41,6 +45,23 @@ class MainActivity : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f
             )
             addView(chatHistory)
+        }
+
+        // डाउनलोड बटन सेटअप
+        downloadButton = Button(this).apply {
+            text = "DOWNLOAD LOCAL AI MODEL"
+            setBackgroundColor(Color.parseColor("#28A745")) // हरा रंग
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 20) }
+        }
+
+        downloadButton.setOnClickListener {
+            downloadButton.isEnabled = false
+            chatHistory.append("\nSystem: Downloading Llama Model... Please wait.\n")
+            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            downloadModelFile()
         }
 
         val inputLayout = LinearLayout(this).apply {
@@ -75,12 +96,61 @@ class MainActivity : AppCompatActivity() {
 
         inputLayout.addView(inputField)
         inputLayout.addView(runButton)
+        
+        mainLayout.addView(downloadButton)
         mainLayout.addView(scrollView)
         mainLayout.addView(inputLayout)
 
         setContentView(mainLayout)
     }
 
+    // मॉडल डाउनलोड करने का फंक्शन
+    private fun downloadModelFile() {
+        // Llama 3.2 1B Instruct GGUF डायरेक्ट डाउनलोड लिंक
+        val modelUrl = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+
+        Thread {
+            try {
+                val request = Request.Builder().url(modelUrl).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        showError("\nSystem: Download Failed: ${response.code}\n")
+                        return@Thread
+                    }
+
+                    val inputStream: InputStream = response.body!!.byteStream()
+                    val file = File(filesDir, "llama_model.gguf")
+                    val outputStream = FileOutputStream(file)
+
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                    }
+
+                    outputStream.flush()
+                    outputStream.close()
+                    inputStream.close()
+
+                    runOnUiThread {
+                        chatHistory.append("\nSystem: Model Downloaded Successfully! Saved locally.\n")
+                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                        downloadButton.text = "MODEL DOWNLOADED"
+                        downloadButton.setBackgroundColor(Color.GRAY)
+                    }
+                }
+            } catch (e: Exception) {
+                showError("\nSystem: Download Error: ${e.localizedMessage}\n")
+                runOnUiThread { 
+                    downloadButton.isEnabled = true 
+                    downloadButton.text = "RETRY DOWNLOAD"
+                }
+            }
+        }.start()
+    }
+
+    // AI से बात करने का फंक्शन (अभी API के ज़रिए)
     private fun callAI(prompt: String) {
         Thread {
             try {
