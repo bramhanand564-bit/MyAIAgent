@@ -86,7 +86,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 val jsonBody = JSONObject().apply {
                     put("model", "nvidia/nemotron-3-ultra-550b-a55b:free")
-
                     put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
                 }
 
@@ -126,4 +125,3 @@ class MainActivity : AppCompatActivity() {
             }
         }.start()
     }
-}
