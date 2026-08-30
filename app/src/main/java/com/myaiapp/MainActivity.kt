@@ -1,3 +1,86 @@
+package com.myaiapp
+
+import android.os.Bundle
+import android.widget.*
+import android.view.ViewGroup
+import android.graphics.Color
+import androidx.appcompat.app.AppCompatActivity
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import org.json.JSONArray
+
+class MainActivity : AppCompatActivity() {
+
+    private val client = OkHttpClient()
+    private val apiKey = "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"
+    private val apiUrl = "https://openrouter.ai/api/v1/chat/completions"
+
+    private lateinit var chatHistory: TextView
+    private lateinit var scrollView: ScrollView
+    private lateinit var inputField: EditText
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val mainLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 40, 40, 40)
+            setBackgroundColor(Color.parseColor("#F5F5F5"))
+        }
+
+        chatHistory = TextView(this).apply {
+            text = "System: Hello Brahamanand! Llama 3.2 AI Agent Ready.\n"
+            textSize = 16f
+            setTextColor(Color.BLACK)
+        }
+
+        scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f
+            )
+            addView(chatHistory)
+        }
+
+        val inputLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        inputField = EditText(this).apply {
+            hint = "Kuch bhi poohein..."
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f)
+        }
+
+        val runButton = Button(this).apply {
+            text = "SEND"
+            setBackgroundColor(Color.parseColor("#007BFF"))
+            setTextColor(Color.WHITE)
+        }
+
+        runButton.setOnClickListener {
+            val userText = inputField.text.toString().trim()
+            if (userText.isNotEmpty()) {
+                chatHistory.append("\nBrahamanand: $userText\n")
+                chatHistory.append("Agent: Thinking...\n")
+                inputField.text.clear()
+                scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+
+                callLlamaAI(userText)
+            }
+        }
+
+        inputLayout.addView(inputField)
+        inputLayout.addView(runButton)
+        mainLayout.addView(scrollView)
+        mainLayout.addView(inputLayout)
+
+        setContentView(mainLayout)
+    }
+
     private fun callLlamaAI(prompt: String) {
         Thread {
             try {
@@ -28,7 +111,6 @@
                             scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                         }
                     } else {
-                        // यहाँ सर्वर का असली एरर दिखेगा
                         runOnUiThread {
                             chatHistory.append("Agent: Server Error: $responseData\n")
                             scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
@@ -36,7 +118,6 @@
                     }
                 }
             } catch (e: Exception) {
-                // यहाँ कोडिंग या एक्सेप्शन का असली रीज़न दिखेगा
                 runOnUiThread {
                     chatHistory.append("Agent: Error: ${e.localizedMessage}\n")
                     scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
@@ -44,3 +125,4 @@
             }
         }.start()
     }
+}
