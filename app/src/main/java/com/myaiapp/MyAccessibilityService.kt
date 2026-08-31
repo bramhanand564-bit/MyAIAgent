@@ -3,6 +3,7 @@ package com.myaiapp
 import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.os.Bundle
 
 class MyAccessibilityService : AccessibilityService() {
     
@@ -14,9 +15,7 @@ class MyAccessibilityService : AccessibilityService() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // आगे चलकर हम यहाँ से AI को स्क्रीन पढ़वाएंगे
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {}
 
@@ -46,5 +45,28 @@ class MyAccessibilityService : AccessibilityService() {
     // AI के लिए Home या Back जाने वाला फंक्शन
     fun performGlobal(action: Int) {
         performGlobalAction(action)
+    }
+
+    // NEW SUPERPOWER: AI के लिए टाइप करने वाला फंक्शन!
+    fun typeText(text: String): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val queue = java.util.ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            // अगर यह टेक्स्ट बॉक्स है
+            if (node.isEditable || node.className?.toString()?.contains("EditText") == true) {
+                val arguments = Bundle()
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                return true
+            }
+            // बच्चों को चेक करें
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return false
     }
 }
