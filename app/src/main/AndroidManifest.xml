@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    
+    <!-- यह है वो मास्टर चाबी जो AI को फोन के सारे ऐप्स खोजने की ताकत देगी -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
         android:allowBackup="true"
@@ -20,7 +23,7 @@
             </intent-filter>
         </activity>
 
-        <!-- यह AI की नई ऐक्सेसिबिलिटी सर्विस है -->
+        <!-- यह AI की ऐक्सेसिबिलिटी सर्विस है (AI की उंगलियां) -->
         <service android:name=".MyAccessibilityService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
