@@ -18,18 +18,16 @@ import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
-    // क्लाउड API के लिए OkHttpClient
     private val client = OkHttpClient()
     private val apiKey = "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"
     private val apiUrl = "https://openrouter.ai/api/v1/chat/completions"
 
-    // लोकल AI सर्वर के लिए खास क्लाइंट (ताकि फोन धीमा सोचे तो ऐप क्रैश न हो)
     private val localClient = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    private var llamaProcess: Process? = null // बैकग्राउंड सर्वर प्रोसेस
+    private var llamaProcess: Process? = null
 
     private lateinit var chatHistory: TextView
     private lateinit var scrollView: ScrollView
@@ -141,32 +139,24 @@ class MainActivity : AppCompatActivity() {
         setContentView(mainLayout)
     }
 
-    // --- असली लोकल AI इंजन फंक्शन ---
     private fun startLocalServerAndChat(modelFile: File, prompt: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. Assets से सर्वर फाइल बाहर निकालना
-                val serverFile = File(filesDir, "llama-server")
+                // 1. Android की 'सरकारी तिजोरी' (Native Library Dir) से .so सर्वर ढूँढना
+                val serverFile = File(applicationInfo.nativeLibraryDir, "libllama-server.so")
+                
                 if (!serverFile.exists()) {
-                    withContext(Dispatchers.Main) { chatHistory.append("System: Extracting AI Engine...\n") }
-                    try {
-                        assets.open("llama-server").use { input ->
-                            FileOutputStream(serverFile).use { output -> input.copyTo(output) }
-                        }
-                        serverFile.setExecutable(true)
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) { 
-                            chatHistory.append("System Error: C++ Engine abhi APK mein pack nahi hua hai. Kripya GitHub Actions build poora hone dein!\n") 
-                            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                        }
-                        return@launch
+                    withContext(Dispatchers.Main) { 
+                        chatHistory.append("System Error: C++ Engine APK mein nahi mila. Kripya GitHub Build poora hone dein!\n") 
+                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
+                    return@launch
                 }
 
                 // 2. पहली बार लोकल सर्वर चालू करना
                 if (llamaProcess == null) {
                     withContext(Dispatchers.Main) {
-                        chatHistory.append("System: 🚀 Starting Local AI Server... (Loading 770MB RAM, please wait 15 seconds)\n")
+                        chatHistory.append("System: 🚀 Bypassing Android Security... Starting AI Server (Loading RAM, wait 15 sec)\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
 
@@ -175,16 +165,16 @@ class MainActivity : AppCompatActivity() {
                         "-m", modelFile.absolutePath,
                         "--port", "8080",
                         "--host", "127.0.0.1",
-                        "-c", "512" // Context size
+                        "-c", "512"
                     )
                     processBuilder.directory(filesDir)
                     processBuilder.redirectErrorStream(true)
                     llamaProcess = processBuilder.start()
 
-                    delay(12000) // सर्वर को चालू होने और मॉडल लोड करने का समय देना
+                    delay(12000) // 12 सेकंड का इंतज़ार ताकि मॉडल RAM में आ जाए
                 }
 
-                // 3. लोकल सर्वर को API की तरह कॉल करना
+                // 3. सर्वर से बात करना
                 withContext(Dispatchers.Main) {
                     chatHistory.append("Agent (Local): Thinking...\n")
                     scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
@@ -200,7 +190,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // लोकल सर्वर से बात करने वाला API कॉल
     private fun callLocalAI(prompt: String) {
         try {
             val jsonBody = JSONObject().apply {
@@ -209,7 +198,7 @@ class MainActivity : AppCompatActivity() {
 
             val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
-                .url("http://127.0.0.1:8080/v1/chat/completions") // फोन का अपना लोकल एड्रेस
+                .url("http://127.0.0.1:8080/v1/chat/completions")
                 .post(body)
                 .build()
 
@@ -226,19 +215,19 @@ class MainActivity : AppCompatActivity() {
                     }
                 } else {
                     runOnUiThread {
-                        chatHistory.append("System: Engine is still warming up. Send message again in 5 seconds.\n")
+                        chatHistory.append("System: Engine warming up... Server Response: $responseData\n")
+                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
                 }
             }
         } catch (e: Exception) {
             runOnUiThread {
-                chatHistory.append("System: Engine is still warming up. Send message again in 5 seconds.\n")
+                chatHistory.append("System: Engine is still loading RAM. Please wait and type 'hello' again.\n")
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             }
         }
     }
 
-    // --- क्लाउड (OpenRouter) कॉल फंक्शन ---
     private fun callAI(prompt: String) {
         Thread {
             try {
@@ -317,6 +306,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        llamaProcess?.destroy() // ऐप बंद होने पर सर्वर भी बंद कर दो
+        llamaProcess?.destroy()
     }
 }
