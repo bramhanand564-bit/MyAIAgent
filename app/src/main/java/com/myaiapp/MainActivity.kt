@@ -36,8 +36,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chatHistory: TextView
     private lateinit var scrollView: ScrollView
     private lateinit var inputField: EditText
-    
-    // यह लाइन पिछले कोड में छूट गई थी!
     private lateinit var downloadButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,8 +49,7 @@ class MainActivity : AppCompatActivity() {
         
         val btnAccess = Button(this).apply {
             text = "1. TURN ON AI ACCESSIBILITY"
-            setBackgroundColor(Color.parseColor("#FF9800"))
-            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#FF9800")); setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 10) }
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
@@ -114,7 +111,9 @@ class MainActivity : AppCompatActivity() {
                         var launched = false
                         for (packageInfo in packages) {
                             val appName = pm.getApplicationLabel(packageInfo).toString().lowercase()
-                            if (appName.contains(target)) {
+                            val pkgName = packageInfo.packageName.lowercase()
+                            // FIX: अब यह नाम और पैकेज दोनों में ढूंढेगा (YouTube Bug Fix)
+                            if (appName.contains(target) || pkgName.contains(target)) {
                                 val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
                                 if (intent != null) { chatHistory.append("System: 🟢 Opening $appName...\n"); startActivity(intent); launched = true; break }
                             }
@@ -136,9 +135,16 @@ class MainActivity : AppCompatActivity() {
                         if (service != null) {
                             val success = service.clickButtonByText(text)
                             if (!success) chatHistory.append("System: 🔴 Couldn't find '$text' on screen.\n")
-                        } else {
-                            chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button to turn it on.\n")
-                        }
+                        } else { chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button.\n") }
+                    }
+                    "type" -> { // NEW ACTION: TYPING
+                        val text = jsonObject.optString("text", "")
+                        chatHistory.append("System: ⌨️ Typing '$text'...\n")
+                        val service = MyAccessibilityService.instance
+                        if (service != null) {
+                            val success = service.typeText(text)
+                            if (!success) chatHistory.append("System: 🔴 Couldn't find a text box on screen.\n")
+                        } else { chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button.\n") }
                     }
                     "system_action" -> {
                         val target = jsonObject.optString("target", "")
@@ -149,9 +155,7 @@ class MainActivity : AppCompatActivity() {
                                 "home" -> service.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
                                 "back" -> service.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
                             }
-                        } else {
-                            chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button to turn it on.\n")
-                        }
+                        } else { chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button.\n") }
                     }
                     "chat" -> chatHistory.append("Agent: ${jsonObject.optString("message", "")}\n")
                     else -> chatHistory.append("System: Unknown action.\n")
@@ -189,14 +193,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun callLocalAI(prompt: String) {
         try {
+            // FIX: स्मार्ट सिस्टम प्रॉम्प्ट - अब यह हाय/हेलो पर सही रिप्लाई करेगा और टाइपिंग कर सकेगा!
             val systemPrompt = """
-                You are an Android Controller AI. Respond ONLY in JSON.
-                1. Open app: {"action": "open_app", "target": "<app_name>"}
-                2. Turn flashlight: {"action": "toggle_flashlight", "state": "on" or "off"}
-                3. Click text/button: {"action": "click", "text": "<text_to_click>"}
-                4. Go Home/Back: {"action": "system_action", "target": "home" or "back"}
-                5. Chat: {"action": "chat", "message": "<reply>"}
+                You are a smart Android Assistant. Respond ONLY in valid JSON format.
+                - To open an app: {"action": "open_app", "target": "youtube"}
+                - To turn flashlight on/off: {"action": "toggle_flashlight", "state": "on"}
+                - To click text: {"action": "click", "text": "Submit"}
+                - To type text: {"action": "type", "text": "2555"}
+                - To go home/back: {"action": "system_action", "target": "home"}
+                - For greetings (hi, hello) or questions (tum kya kar sakte ho): {"action": "chat", "message": "Main aapke phone ki flashlight on/off kar sakta hu, apps open kar sakta hu, aur screen par type/click kar sakta hu!"}
             """.trimIndent()
+            
             val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
             val jsonBody = JSONObject().apply { put("messages", messagesArray); put("temperature", 0.1) }
             val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -215,7 +222,7 @@ class MainActivity : AppCompatActivity() {
     private fun callAI(prompt: String) {
         Thread {
             try {
-                val systemPrompt = "You are an Android Controller. Reply ONLY in JSON. Format: {\"action\": \"open_app\", \"target\": \"<app>\"}, {\"action\": \"click\", \"text\": \"<text>\"}, {\"action\": \"system_action\", \"target\": \"home\"}, {\"action\": \"chat\", \"message\": \"<reply>\"}"
+                val systemPrompt = "You are an Android Controller. Reply ONLY in JSON. Format: {\"action\": \"open_app\", \"target\": \"<app>\"}, {\"action\": \"type\", \"text\": \"<text>\"}, {\"action\": \"chat\", \"message\": \"<reply>\"}"
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
                 val jsonBody = JSONObject().apply { put("model", "nvidia/nemotron-3-ultra-550b-a55b:free"); put("messages", messagesArray) }
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
