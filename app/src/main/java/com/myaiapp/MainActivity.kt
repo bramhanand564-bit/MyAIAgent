@@ -1,6 +1,9 @@
 package com.myaiapp
 
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
@@ -44,38 +47,26 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val mainLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(30, 30, 30, 30)
-            setBackgroundColor(Color.parseColor("#F5F5F5"))
+            orientation = LinearLayout.VERTICAL; setPadding(30, 30, 30, 30); setBackgroundColor(Color.parseColor("#F5F5F5"))
         }
         modeSwitch = Switch(this).apply {
-            text = "Use Local AI (Offline Mode)"
-            textSize = 16f
-            setTextColor(Color.BLACK)
-            isChecked = false
+            text = "Use Local AI (Offline Mode)"; textSize = 16f; setTextColor(Color.BLACK); isChecked = false
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
         chatHistory = TextView(this).apply {
-            text = "System: AI Action Agent Ready!\n"
-            textSize = 15f
-            setTextColor(Color.BLACK)
+            text = "System: AI Super Agent Ready!\n"; textSize = 15f; setTextColor(Color.BLACK)
         }
         scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f)
-            addView(chatHistory)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f); addView(chatHistory)
         }
         downloadButton = Button(this).apply {
-            text = "DOWNLOAD LOCAL AI MODEL"
-            setBackgroundColor(Color.parseColor("#28A745"))
-            setTextColor(Color.WHITE)
+            text = "DOWNLOAD LOCAL AI MODEL"; setBackgroundColor(Color.parseColor("#28A745")); setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
 
         val modelFile = File(filesDir, "llama_model.gguf")
         if (modelFile.exists()) {
-            downloadButton.text = "MODEL ALREADY DOWNLOADED"
-            downloadButton.setBackgroundColor(Color.GRAY)
-            downloadButton.isEnabled = false
+            downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY); downloadButton.isEnabled = false
         }
 
         downloadButton.setOnClickListener {
@@ -90,13 +81,11 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         inputField = EditText(this).apply {
-            hint = "Command do (e.g. Open YouTube)..."
+            hint = "Command do (e.g. Open Calculator)..."
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f)
         }
         val runButton = Button(this).apply {
-            text = "SEND"
-            setBackgroundColor(Color.parseColor("#007BFF"))
-            setTextColor(Color.WHITE)
+            text = "SEND"; setBackgroundColor(Color.parseColor("#007BFF")); setTextColor(Color.WHITE)
         }
 
         runButton.setOnClickListener {
@@ -107,32 +96,22 @@ class MainActivity : AppCompatActivity() {
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
 
                 if (modeSwitch.isChecked) {
-                    if (modelFile.exists()) {
-                        startLocalServerAndChat(modelFile, userText)
-                    } else {
-                        chatHistory.append("System: Model not found!\n")
-                    }
+                    if (modelFile.exists()) { startLocalServerAndChat(modelFile, userText) } 
+                    else { chatHistory.append("System: Model not found!\n") }
                 } else {
-                    chatHistory.append("Agent: Thinking (Cloud API)...\n")
-                    callAI(userText)
+                    chatHistory.append("Agent: Thinking (Cloud API)...\n"); callAI(userText)
                 }
             }
         }
 
-        inputLayout.addView(inputField)
-        inputLayout.addView(runButton)
-        mainLayout.addView(modeSwitch)
-        mainLayout.addView(downloadButton)
-        mainLayout.addView(scrollView)
-        mainLayout.addView(inputLayout)
-
+        inputLayout.addView(inputField); inputLayout.addView(runButton)
+        mainLayout.addView(modeSwitch); mainLayout.addView(downloadButton); mainLayout.addView(scrollView); mainLayout.addView(inputLayout)
         setContentView(mainLayout)
     }
 
-    // === ANDROID CONTROLLER: ACTION EXECUTOR ===
+    // === ADVANCED ANDROID CONTROLLER ===
     private fun executeAndroidAction(jsonString: String) {
         try {
-            // AI के रिप्लाई में से सिर्फ JSON हिस्सा ढूँढना (अगर उसने फालतू टेक्स्ट भी लिख दिया हो)
             val jsonStart = jsonString.indexOf("{")
             val jsonEnd = jsonString.lastIndexOf("}")
             if (jsonStart != -1 && jsonEnd != -1) {
@@ -140,26 +119,45 @@ class MainActivity : AppCompatActivity() {
                 val jsonObject = JSONObject(pureJson)
                 
                 val action = jsonObject.optString("action", "")
-                val target = jsonObject.optString("target", "")
                 
                 when (action) {
                     "open_app" -> {
-                        when (target.lowercase()) {
-                            "youtube" -> {
-                                chatHistory.append("System: 🔴 Opening YouTube...\n")
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com"))
-                                startActivity(intent)
+                        val target = jsonObject.optString("target", "").lowercase()
+                        chatHistory.append("System: 🔍 Searching for app '$target'...\n")
+                        
+                        // 1. Dynamic App Searching (PackageManager)
+                        val pm = packageManager
+                        val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                        var launched = false
+                        
+                        for (packageInfo in packages) {
+                            val appName = pm.getApplicationLabel(packageInfo).toString().lowercase()
+                            // अगर AI के दिए नाम से फोन का कोई भी ऐप मैच कर जाए
+                            if (appName.contains(target)) {
+                                val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
+                                if (intent != null) {
+                                    chatHistory.append("System: 🟢 Opening $appName...\n")
+                                    startActivity(intent)
+                                    launched = true
+                                    break
+                                }
                             }
-                            "chrome", "browser" -> {
-                                chatHistory.append("System: 🔵 Opening Chrome...\n")
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com"))
-                                startActivity(intent)
-                            }
-                            "settings" -> {
-                                chatHistory.append("System: ⚙️ Opening Settings...\n")
-                                startActivity(Intent(Settings.ACTION_SETTINGS))
-                            }
-                            else -> chatHistory.append("System: App '$target' not recognized yet.\n")
+                        }
+                        if (!launched) {
+                            chatHistory.append("System: 🔴 App '$target' not found on this phone.\n")
+                        }
+                    }
+                    "toggle_flashlight" -> {
+                        // 2. Hardware Control (Flashlight)
+                        val state = jsonObject.optString("state", "on")
+                        try {
+                            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                            val cameraId = cameraManager.cameraIdList[0] // Main back camera
+                            val isTurnOn = state == "on"
+                            cameraManager.setTorchMode(cameraId, isTurnOn)
+                            chatHistory.append("System: 🔦 Flashlight turned $state.\n")
+                        } catch (e: Exception) {
+                            chatHistory.append("System: Error toggling flashlight.\n")
                         }
                     }
                     "chat" -> {
@@ -169,10 +167,10 @@ class MainActivity : AppCompatActivity() {
                     else -> chatHistory.append("System: Unknown action received.\n")
                 }
             } else {
-                chatHistory.append("Agent: $jsonString\n") // अगर JSON नहीं है तो नॉर्मल टेक्स्ट दिखाओ
+                chatHistory.append("Agent: $jsonString\n")
             }
         } catch (e: Exception) {
-            chatHistory.append("System Error parsing Action JSON: ${e.message}\n")
+            chatHistory.append("System Error parsing JSON: ${e.message}\n")
         }
         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
     }
@@ -185,7 +183,6 @@ class MainActivity : AppCompatActivity() {
 
                 if (llamaProcess == null) {
                     withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting AI Server...\n") }
-
                     val processBuilder = ProcessBuilder(
                         serverFile.absolutePath, "-m", modelFile.absolutePath, "--port", "8080", "--host", "127.0.0.1", "-c", "1024"
                     )
@@ -193,10 +190,21 @@ class MainActivity : AppCompatActivity() {
                     processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
                     processBuilder.redirectErrorStream(true)
                     llamaProcess = processBuilder.start()
+                    
+                    Thread {
+                        try {
+                            val reader = BufferedReader(InputStreamReader(llamaProcess!!.inputStream))
+                            var line: String?; while (reader.readLine().also { line = it } != null) {
+                                if (line!!.contains("listening", true)) {
+                                    runOnUiThread { chatHistory.append("[Terminal]: Server Ready!\n") }
+                                }
+                            }
+                        } catch (e: Exception) {}
+                    }.start()
                     delay(8000) 
                 }
 
-                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Action...\n") }
+                withContext(Dispatchers.Main) { chatHistory.append("Agent: Processing Command...\n") }
                 callLocalAI(prompt)
 
             } catch (e: Exception) {}
@@ -205,13 +213,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun callLocalAI(prompt: String) {
         try {
-            // === AGENT PLANNER (SYSTEM PROMPT) ===
+            // === SUPER AGENT PROMPT ===
+            // अब AI को अपनी नई ताकतों के बारे में पता है
             val systemPrompt = """
-                You are an Android Controller AI. You MUST respond ONLY in JSON format. Do not add any conversational text.
-                If the user asks to open an app (like youtube, chrome, or settings), use this format:
-                {"action": "open_app", "target": "youtube"}
-                If the user just wants to chat or ask a question, use this format:
-                {"action": "chat", "message": "your helpful reply"}
+                You are a powerful Android Controller AI. You MUST respond ONLY in JSON format. Do not add any extra text.
+                Capabilities:
+                1. Open ANY app (like calculator, whatsapp, camera): {"action": "open_app", "target": "<app_name>"}
+                2. Turn flashlight on or off: {"action": "toggle_flashlight", "state": "on"} or {"state": "off"}
+                3. Normal conversation: {"action": "chat", "message": "<reply>"}
             """.trimIndent()
 
             val messagesArray = JSONArray().apply {
@@ -221,7 +230,7 @@ class MainActivity : AppCompatActivity() {
 
             val jsonBody = JSONObject().apply {
                 put("messages", messagesArray)
-                put("temperature", 0.1) // कम टेम्परेचर ताकि JSON गलत न बने
+                put("temperature", 0.1) // Keep it low for strict JSON format
             }
 
             val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -231,11 +240,7 @@ class MainActivity : AppCompatActivity() {
                 val responseData = response.body?.string()
                 if (response.isSuccessful && responseData != null) {
                     val aiReply = JSONObject(responseData).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
-                    
-                    runOnUiThread {
-                        // यहाँ हम JSON को पार्स करेंगे और असली एक्शन (Intent) चलाएंगे!
-                        executeAndroidAction(aiReply)
-                    }
+                    runOnUiThread { executeAndroidAction(aiReply) }
                 }
             }
         } catch (e: Exception) {
@@ -244,10 +249,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun callAI(prompt: String) {
-        // क्लाउड API के लिए भी यही काम (टेस्टिंग के लिए)
         Thread {
             try {
-                val systemPrompt = "You are an Android Controller. Reply ONLY in JSON. Format: {\"action\": \"open_app\", \"target\": \"youtube\"} or {\"action\": \"chat\", \"message\": \"reply\"}"
+                val systemPrompt = "You are an Android Controller. Reply ONLY in JSON. Formats: {\"action\": \"open_app\", \"target\": \"<app>\"}, {\"action\": \"toggle_flashlight\", \"state\": \"on/off\"}, {\"action\": \"chat\", \"message\": \"reply\"}"
                 val messagesArray = JSONArray().apply {
                     put(JSONObject().put("role", "system").put("content", systemPrompt))
                     put(JSONObject().put("role", "user").put("content", prompt))
