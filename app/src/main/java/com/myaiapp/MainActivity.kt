@@ -132,8 +132,6 @@ class MainActivity : AppCompatActivity() {
 
         inputLayout.addView(inputField)
         inputLayout.addView(runButton)
-        
-        // === यह 4 लाइनें मैं भूल गया था! ===
         mainLayout.addView(modeSwitch)
         mainLayout.addView(downloadButton)
         mainLayout.addView(scrollView)
@@ -156,7 +154,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (llamaProcess == null) {
                     withContext(Dispatchers.Main) {
-                        chatHistory.append("System: 🚀 Starting AI Server (Live Terminal Active)\n")
+                        chatHistory.append("System: 🚀 Starting AI Server (Loading Helper Files...)\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
 
@@ -168,10 +166,15 @@ class MainActivity : AppCompatActivity() {
                         "-c", "512"
                     )
                     processBuilder.directory(filesDir)
+                    
+                    // === THE MAGIC LINKER FIX ===
+                    // यह Android को बताता है कि impl.so और ggml.so फाइलें कहाँ रखी हैं
+                    processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
+
                     processBuilder.redirectErrorStream(true)
                     llamaProcess = processBuilder.start()
 
-                    // === LIVE HACKER TERMINAL READER ===
+                    // Live Terminal
                     Thread {
                         try {
                             val reader = BufferedReader(InputStreamReader(llamaProcess!!.inputStream))
@@ -242,7 +245,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             runOnUiThread {
-                chatHistory.append("System: Engine is still loading RAM. Please wait 10 seconds and try again.\n")
+                chatHistory.append("System: Engine is loading RAM. Please wait 10 seconds and try again.\n")
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             }
         }
