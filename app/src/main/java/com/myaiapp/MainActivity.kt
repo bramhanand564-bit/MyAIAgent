@@ -132,6 +132,13 @@ class MainActivity : AppCompatActivity() {
 
         inputLayout.addView(inputField)
         inputLayout.addView(runButton)
+        
+        // === यह 4 लाइनें मैं भूल गया था! ===
+        mainLayout.addView(modeSwitch)
+        mainLayout.addView(downloadButton)
+        mainLayout.addView(scrollView)
+        mainLayout.addView(inputLayout)
+
         setContentView(mainLayout)
     }
 
@@ -171,7 +178,6 @@ class MainActivity : AppCompatActivity() {
                             var line: String?
                             while (reader.readLine().also { line = it } != null) {
                                 val logLine = line!!
-                                // Print important logs to screen
                                 if (logLine.contains("llama_model_loader", true) || 
                                     logLine.contains("listening", true) || 
                                     logLine.contains("error", true) ||
@@ -243,7 +249,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun callAI(prompt: String) {
-        // ... (Cloud AI Calling logic remains exactly the same) ...
         Thread {
             try {
                 val jsonBody = JSONObject().apply {
