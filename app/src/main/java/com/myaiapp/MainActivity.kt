@@ -24,9 +24,11 @@ class MainActivity : AppCompatActivity() {
     private val apiKey = "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"
     private val apiUrl = "https://openrouter.ai/api/v1/chat/completions"
 
+    // लोकल AI को सोचने के लिए 5 मिनट (300 sec) का टाइम दिया है
     private val localClient = OkHttpClient.Builder()
-        .connectTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
+        .connectTimeout(300, TimeUnit.SECONDS)
+        .readTimeout(300, TimeUnit.SECONDS)
+        .writeTimeout(300, TimeUnit.SECONDS)
         .build()
 
     private var llamaProcess: Process? = null
@@ -39,43 +41,32 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         val mainLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(30, 30, 30, 30)
             setBackgroundColor(Color.parseColor("#F5F5F5"))
         }
-
         modeSwitch = Switch(this).apply {
             text = "Use Local AI (Offline Mode)"
             textSize = 16f
             setTextColor(Color.BLACK)
             isChecked = false
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
-
         chatHistory = TextView(this).apply {
             text = "System: Hello Brahamanand! Agent Ready.\n"
             textSize = 15f
             setTextColor(Color.BLACK)
         }
-
         scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f)
             addView(chatHistory)
         }
-
         downloadButton = Button(this).apply {
             text = "DOWNLOAD LOCAL AI MODEL"
             setBackgroundColor(Color.parseColor("#28A745"))
             setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, 20) }
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
 
         val modelFile = File(filesDir, "llama_model.gguf")
@@ -94,16 +85,12 @@ class MainActivity : AppCompatActivity() {
 
         val inputLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-
         inputField = EditText(this).apply {
             hint = "Kuch bhi poohein..."
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f)
         }
-
         val runButton = Button(this).apply {
             text = "SEND"
             setBackgroundColor(Color.parseColor("#007BFF"))
@@ -144,17 +131,14 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val serverFile = File(applicationInfo.nativeLibraryDir, "libllama-server.so")
-                
                 if (!serverFile.exists()) {
-                    withContext(Dispatchers.Main) { 
-                        chatHistory.append("System Error: C++ Engine APK mein nahi mila!\n") 
-                    }
+                    withContext(Dispatchers.Main) { chatHistory.append("System Error: C++ Engine APK mein nahi mila!\n") }
                     return@launch
                 }
 
                 if (llamaProcess == null) {
                     withContext(Dispatchers.Main) {
-                        chatHistory.append("System: 🚀 Starting AI Server (Loading Helper Files...)\n")
+                        chatHistory.append("System: 🚀 Starting AI Server (Loading Model into RAM...)\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
 
@@ -166,15 +150,10 @@ class MainActivity : AppCompatActivity() {
                         "-c", "512"
                     )
                     processBuilder.directory(filesDir)
-                    
-                    // === THE MAGIC LINKER FIX ===
-                    // यह Android को बताता है कि impl.so और ggml.so फाइलें कहाँ रखी हैं
                     processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
-
                     processBuilder.redirectErrorStream(true)
                     llamaProcess = processBuilder.start()
 
-                    // Live Terminal
                     Thread {
                         try {
                             val reader = BufferedReader(InputStreamReader(llamaProcess!!.inputStream))
@@ -183,9 +162,7 @@ class MainActivity : AppCompatActivity() {
                                 val logLine = line!!
                                 if (logLine.contains("llama_model_loader", true) || 
                                     logLine.contains("listening", true) || 
-                                    logLine.contains("error", true) ||
-                                    logLine.contains("CANNOT LINK", true)) {
-                                    
+                                    logLine.contains("error", true)) {
                                     runOnUiThread {
                                         chatHistory.append("[Terminal]: $logLine\n")
                                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
@@ -195,11 +172,11 @@ class MainActivity : AppCompatActivity() {
                         } catch (e: Exception) {}
                     }.start()
 
-                    delay(12000) // 12 sec warmup
+                    delay(8000) 
                 }
 
                 withContext(Dispatchers.Main) {
-                    chatHistory.append("Agent (Local): Sending API Request...\n")
+                    chatHistory.append("Agent (Local): Thinking...\n")
                     scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                 }
                 callLocalAI(prompt)
@@ -218,7 +195,6 @@ class MainActivity : AppCompatActivity() {
             val jsonBody = JSONObject().apply {
                 put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
             }
-
             val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
             val request = Request.Builder()
                 .url("http://127.0.0.1:8080/v1/chat/completions")
@@ -231,21 +207,20 @@ class MainActivity : AppCompatActivity() {
                     val jsonResponse = JSONObject(responseData)
                     val choices = jsonResponse.getJSONArray("choices")
                     val aiReply = choices.getJSONObject(0).getJSONObject("message").getString("content").trim()
-                    
                     runOnUiThread {
                         chatHistory.append("Agent (Local AI): $aiReply\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
                 } else {
                     runOnUiThread {
-                        chatHistory.append("System: Engine warming up... Server Response: $responseData\n")
+                        chatHistory.append("System Error: Server responded with code ${response.code}\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                     }
                 }
             }
         } catch (e: Exception) {
             runOnUiThread {
-                chatHistory.append("System: Engine is loading RAM. Please wait 10 seconds and try again.\n")
+                chatHistory.append("Connection Error: ${e.localizedMessage}. (Wait 5s and try again)\n")
                 scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             }
         }
