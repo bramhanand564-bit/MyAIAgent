@@ -36,6 +36,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var chatHistory: TextView
     private lateinit var scrollView: ScrollView
     private lateinit var inputField: EditText
+    
+    // यह लाइन पिछले कोड में छूट गई थी!
+    private lateinit var downloadButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +49,6 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
         
-        // नया ऐक्सेसिबिलिटी बटन
         val btnAccess = Button(this).apply {
             text = "1. TURN ON AI ACCESSIBILITY"
             setBackgroundColor(Color.parseColor("#FF9800"))
@@ -55,7 +57,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
 
-        val downloadButton = Button(this).apply {
+        downloadButton = Button(this).apply {
             text = "2. DOWNLOAD LOCAL AI MODEL"
             setBackgroundColor(Color.parseColor("#28A745")); setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
