@@ -13,6 +13,11 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        
+        // SMART FILTER: यह ऐप का साइज़ छोटा रखेगा और सिर्फ Vivo Y75 5G जैसे 64-bit फोन के लिए इंजन पैक करेगा
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -20,10 +25,12 @@ android {
             isMinifyEnabled = false
         }
     }
+    
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -35,7 +42,10 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     
-    // Local AI Engine Support Libraries
+    // Background Processing Libraries
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.google.code.gson:gson:2.10.1")
+    
+    // C++ Engine Bridge (JNA Library) - यह Kotlin को C++ से बिना एरर के जोड़ेगी
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
 }
