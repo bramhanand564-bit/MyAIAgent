@@ -13,21 +13,23 @@ import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
-// JNA (C++ Bridge) Library Imports
-import com.sun.jna.Library
-import com.sun.jna.Native
 
 class MainActivity : AppCompatActivity() {
 
-    // 1. C++ Bridge Interface (यह आपके फोन के प्रोसेसर और C++ फाइल से सीधे बात करेगा)
-    interface LlamaEngine : Library {
-        // जब असली .so फाइल पैक हो जाएगी, तब हम यहाँ उसके टेक्स्ट जनरेट करने वाले फंक्शन्स डालेंगे
-    }
-
+    // क्लाउड API के लिए OkHttpClient
     private val client = OkHttpClient()
     private val apiKey = "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"
     private val apiUrl = "https://openrouter.ai/api/v1/chat/completions"
+
+    // लोकल AI सर्वर के लिए खास क्लाइंट (ताकि फोन धीमा सोचे तो ऐप क्रैश न हो)
+    private val localClient = OkHttpClient.Builder()
+        .connectTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .build()
+
+    private var llamaProcess: Process? = null // बैकग्राउंड सर्वर प्रोसेस
 
     private lateinit var chatHistory: TextView
     private lateinit var scrollView: ScrollView
@@ -117,9 +119,7 @@ class MainActivity : AppCompatActivity() {
 
                 if (modeSwitch.isChecked) {
                     if (modelFile.exists()) {
-                        chatHistory.append("System: C++ JNA Bridge Start kar raha hoon...\n")
-                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                        runLocalInference(modelFile, userText)
+                        startLocalServerAndChat(modelFile, userText)
                     } else {
                         chatHistory.append("System: Model not found! Please download it first.\n")
                     }
@@ -141,79 +141,104 @@ class MainActivity : AppCompatActivity() {
         setContentView(mainLayout)
     }
 
-    // 2. Offline Inference Function (JNA Integration)
-    private fun runLocalInference(file: File, prompt: String) {
+    // --- असली लोकल AI इंजन फंक्शन ---
+    private fun startLocalServerAndChat(modelFile: File, prompt: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // JNA C++ इंजन को कॉल करने का प्रयास
-                try {
-                    // val engine = Native.load("llama", LlamaEngine::class.java) // असली लाइब्रेरी कॉल
-                    delay(1500) // Processing Time Simulation
-                    
-                    val aiReply = "Hello! Main C++ JNA Engine se generate hua offline reply hoon. Maine ${file.name} model ko RAM mein load kar liya hai aur aapka message samajh liya: '$prompt'."
-                    
-                    withContext(Dispatchers.Main) {
-                        chatHistory.append("Agent (Local C++): $aiReply\n")
-                        chatHistory.append("System: 🌟 CONGRATULATIONS! Offline Engine Bridge 100% Setup ho gaya!\n")
-                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                    }
-                } catch (e: UnsatisfiedLinkError) {
-                    // यह एरर तब आएगा जब APK के अंदर libllama.so फाइल नहीं होगी
-                    withContext(Dispatchers.Main) {
-                        chatHistory.append("System Error: C++ Engine (libllama.so) APK mein nahi mili. Yeh aakhiri step hai!\n")
-                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                // 1. Assets से सर्वर फाइल बाहर निकालना
+                val serverFile = File(filesDir, "llama-server")
+                if (!serverFile.exists()) {
+                    withContext(Dispatchers.Main) { chatHistory.append("System: Extracting AI Engine...\n") }
+                    try {
+                        assets.open("llama-server").use { input ->
+                            FileOutputStream(serverFile).use { output -> input.copyTo(output) }
+                        }
+                        serverFile.setExecutable(true)
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) { 
+                            chatHistory.append("System Error: C++ Engine abhi APK mein pack nahi hua hai. Kripya GitHub Actions build poora hone dein!\n") 
+                            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                        }
+                        return@launch
                     }
                 }
+
+                // 2. पहली बार लोकल सर्वर चालू करना
+                if (llamaProcess == null) {
+                    withContext(Dispatchers.Main) {
+                        chatHistory.append("System: 🚀 Starting Local AI Server... (Loading 770MB RAM, please wait 15 seconds)\n")
+                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                    }
+
+                    val processBuilder = ProcessBuilder(
+                        serverFile.absolutePath,
+                        "-m", modelFile.absolutePath,
+                        "--port", "8080",
+                        "--host", "127.0.0.1",
+                        "-c", "512" // Context size
+                    )
+                    processBuilder.directory(filesDir)
+                    processBuilder.redirectErrorStream(true)
+                    llamaProcess = processBuilder.start()
+
+                    delay(12000) // सर्वर को चालू होने और मॉडल लोड करने का समय देना
+                }
+
+                // 3. लोकल सर्वर को API की तरह कॉल करना
+                withContext(Dispatchers.Main) {
+                    chatHistory.append("Agent (Local): Thinking...\n")
+                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                }
+                callLocalAI(prompt)
+
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    chatHistory.append("Agent (Local): Error - ${e.localizedMessage}\n")
+                    chatHistory.append("System Error: ${e.localizedMessage}\n")
                     scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                 }
             }
         }
     }
 
-    private fun downloadModelFile() {
-        val modelUrl = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
-        Thread {
-            try {
-                val request = Request.Builder().url(modelUrl).build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        showError("\nSystem: Download Failed: ${response.code}\n")
-                        return@Thread
-                    }
+    // लोकल सर्वर से बात करने वाला API कॉल
+    private fun callLocalAI(prompt: String) {
+        try {
+            val jsonBody = JSONObject().apply {
+                put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+            }
 
-                    val inputStream: InputStream = response.body!!.byteStream()
-                    val file = File(filesDir, "llama_model.gguf")
-                    val outputStream = FileOutputStream(file)
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
+            val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url("http://127.0.0.1:8080/v1/chat/completions") // फोन का अपना लोकल एड्रेस
+                .post(body)
+                .build()
+
+            localClient.newCall(request).execute().use { response ->
+                val responseData = response.body?.string()
+                if (response.isSuccessful && responseData != null) {
+                    val jsonResponse = JSONObject(responseData)
+                    val choices = jsonResponse.getJSONArray("choices")
+                    val aiReply = choices.getJSONObject(0).getJSONObject("message").getString("content").trim()
                     
-                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                        outputStream.write(buffer, 0, bytesRead)
-                    }
-                    outputStream.flush()
-                    outputStream.close()
-                    inputStream.close()
-
                     runOnUiThread {
-                        chatHistory.append("\nSystem: Model Downloaded Successfully! Saved locally.\n")
+                        chatHistory.append("Agent (Local): $aiReply\n")
                         scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                        downloadButton.text = "MODEL ALREADY DOWNLOADED"
-                        downloadButton.setBackgroundColor(Color.GRAY)
                     }
-                }
-            } catch (e: Exception) {
-                showError("\nSystem: Download Error: ${e.localizedMessage}\n")
-                runOnUiThread { 
-                    downloadButton.isEnabled = true 
-                    downloadButton.text = "RETRY DOWNLOAD"
+                } else {
+                    runOnUiThread {
+                        chatHistory.append("System: Engine is still warming up. Send message again in 5 seconds.\n")
+                    }
                 }
             }
-        }.start()
+        } catch (e: Exception) {
+            runOnUiThread {
+                chatHistory.append("System: Engine is still warming up. Send message again in 5 seconds.\n")
+                scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            }
+        }
     }
 
+    // --- क्लाउड (OpenRouter) कॉल फंक्शन ---
     private fun callAI(prompt: String) {
         Thread {
             try {
@@ -236,20 +261,11 @@ class MainActivity : AppCompatActivity() {
                     if (response.isSuccessful && responseData != null) {
                         try {
                             val jsonResponse = JSONObject(responseData)
-                            if (jsonResponse.has("choices")) {
-                                val choices = jsonResponse.getJSONArray("choices")
-                                if (choices.length() > 0) {
-                                    val messageObj = choices.getJSONObject(0).getJSONObject("message")
-                                    val aiReply = messageObj.getString("content").trim()
-                                    runOnUiThread {
-                                        chatHistory.append("Agent: $aiReply\n")
-                                        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
-                                    }
-                                } else {
-                                    showError("Agent: Empty response from AI.\n")
-                                }
-                            } else {
-                                showError("Agent: Server Error: $responseData\n")
+                            val choices = jsonResponse.getJSONArray("choices")
+                            val aiReply = choices.getJSONObject(0).getJSONObject("message").getString("content").trim()
+                            runOnUiThread {
+                                chatHistory.append("Agent: $aiReply\n")
+                                scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                             }
                         } catch (e: Exception) {
                             showError("Agent: Parse Error: ${e.localizedMessage}\n")
@@ -269,5 +285,38 @@ class MainActivity : AppCompatActivity() {
             chatHistory.append(msg)
             scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
         }
+    }
+
+    private fun downloadModelFile() {
+        val modelUrl = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        Thread {
+            try {
+                val request = Request.Builder().url(modelUrl).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) { return@Thread }
+                    val inputStream: InputStream = response.body!!.byteStream()
+                    val file = File(filesDir, "llama_model.gguf")
+                    val outputStream = FileOutputStream(file)
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                    }
+                    outputStream.flush()
+                    outputStream.close()
+                    inputStream.close()
+                    runOnUiThread {
+                        chatHistory.append("\nSystem: Model Downloaded Successfully! Saved locally.\n")
+                        downloadButton.text = "MODEL ALREADY DOWNLOADED"
+                        downloadButton.setBackgroundColor(Color.GRAY)
+                    }
+                }
+            } catch (e: Exception) {}
+        }.start()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        llamaProcess?.destroy() // ऐप बंद होने पर सर्वर भी बंद कर दो
     }
 }
