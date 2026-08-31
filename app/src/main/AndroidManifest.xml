@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet Permissions (Model डाउनलोड और AI API के लिए) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- extractNativeLibs="true" ही वह जादुई आदेश है जो इंजन को बाहर निकालेगा -->
     <application
         android:allowBackup="true"
-        android:label="My AI Agent"
+        android:extractNativeLibs="true"
+        android:label="MyAIAgent"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-        android:usesCleartextTraffic="true">
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         
         <activity
             android:name=".MainActivity"
@@ -20,7 +19,5 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
     </application>
-
 </manifest>
