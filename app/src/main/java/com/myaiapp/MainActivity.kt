@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
 
-        chatHistory = TextView(this).apply { text = "System: AI Super Agent + Accessibility Ready!\n"; textSize = 15f; setTextColor(Color.BLACK) }
+        chatHistory = TextView(this).apply { text = "System: Multi-Step AI Agent Ready!\n"; textSize = 15f; setTextColor(Color.BLACK) }
         scrollView = ScrollView(this).apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f); addView(chatHistory) }
         
         val modelFile = File(filesDir, "llama_model.gguf")
@@ -69,14 +69,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         downloadButton.setOnClickListener {
-            downloadButton.isEnabled = false
-            chatHistory.append("\nSystem: Downloading Llama Model... Please wait.\n")
-            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            downloadButton.isEnabled = false; chatHistory.append("\nSystem: Downloading Llama Model...\n"); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             downloadModelFile()
         }
 
         val inputLayout = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
-        inputField = EditText(this).apply { hint = "Command (e.g. Go Back)..."; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f) }
+        inputField = EditText(this).apply { hint = "e.g. Chrome kholo aur cats search karo"; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f) }
         val runButton = Button(this).apply { text = "SEND"; setBackgroundColor(Color.parseColor("#007BFF")); setTextColor(Color.WHITE) }
 
         runButton.setOnClickListener {
@@ -85,9 +83,7 @@ class MainActivity : AppCompatActivity() {
                 chatHistory.append("\nUser: $userText\n"); inputField.text.clear(); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                 if (modeSwitch.isChecked) {
                     if (modelFile.exists()) { startLocalServerAndChat(modelFile, userText) } else { chatHistory.append("System: Model not found!\n") }
-                } else {
-                    chatHistory.append("Agent: Thinking (Cloud API)...\n"); callAI(userText)
-                }
+                } else { chatHistory.append("Agent: Thinking (Cloud API)...\n"); callAI(userText) }
             }
         }
 
@@ -97,72 +93,90 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun executeAndroidAction(jsonString: String) {
-        try {
-            val jsonStart = jsonString.indexOf("{"); val jsonEnd = jsonString.lastIndexOf("}")
-            if (jsonStart != -1 && jsonEnd != -1) {
-                val jsonObject = JSONObject(jsonString.substring(jsonStart, jsonEnd + 1))
-                val action = jsonObject.optString("action", "")
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val arrayStart = jsonString.indexOf("[")
+                val arrayEnd = jsonString.lastIndexOf("]")
                 
-                when (action) {
-                    "open_app" -> {
-                        val target = jsonObject.optString("target", "").lowercase()
-                        val pm = packageManager
-                        val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                        var launched = false
-                        for (packageInfo in packages) {
-                            val appName = pm.getApplicationLabel(packageInfo).toString().lowercase()
-                            val pkgName = packageInfo.packageName.lowercase()
-                            // FIX: अब यह नाम और पैकेज दोनों में ढूंढेगा (YouTube Bug Fix)
-                            if (appName.contains(target) || pkgName.contains(target)) {
-                                val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
-                                if (intent != null) { chatHistory.append("System: 🟢 Opening $appName...\n"); startActivity(intent); launched = true; break }
-                            }
-                        }
-                        if (!launched) chatHistory.append("System: 🔴 App '$target' not found.\n")
+                val jsonArray = if (arrayStart != -1 && arrayEnd != -1) {
+                    JSONArray(jsonString.substring(arrayStart, arrayEnd + 1))
+                } else {
+                    val objStart = jsonString.indexOf("{")
+                    val objEnd = jsonString.lastIndexOf("}")
+                    if (objStart != -1 && objEnd != -1) {
+                        JSONArray().put(JSONObject(jsonString.substring(objStart, objEnd + 1)))
+                    } else {
+                        chatHistory.append("Agent: $jsonString\n")
+                        return@launch
                     }
-                    "toggle_flashlight" -> {
-                        val state = jsonObject.optString("state", "on")
-                        try {
-                            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                            cameraManager.setTorchMode(cameraManager.cameraIdList[0], state == "on")
-                            chatHistory.append("System: 🔦 Flashlight turned $state.\n")
-                        } catch (e: Exception) { chatHistory.append("System: Error with flashlight.\n") }
-                    }
-                    "click" -> {
-                        val text = jsonObject.optString("text", "")
-                        chatHistory.append("System: 👆 Clicking on '$text'...\n")
-                        val service = MyAccessibilityService.instance
-                        if (service != null) {
-                            val success = service.clickButtonByText(text)
-                            if (!success) chatHistory.append("System: 🔴 Couldn't find '$text' on screen.\n")
-                        } else { chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button.\n") }
-                    }
-                    "type" -> { // NEW ACTION: TYPING
-                        val text = jsonObject.optString("text", "")
-                        chatHistory.append("System: ⌨️ Typing '$text'...\n")
-                        val service = MyAccessibilityService.instance
-                        if (service != null) {
-                            val success = service.typeText(text)
-                            if (!success) chatHistory.append("System: 🔴 Couldn't find a text box on screen.\n")
-                        } else { chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button.\n") }
-                    }
-                    "system_action" -> {
-                        val target = jsonObject.optString("target", "")
-                        chatHistory.append("System: 📱 Performing '$target'...\n")
-                        val service = MyAccessibilityService.instance
-                        if (service != null) {
-                            when (target.lowercase()) {
-                                "home" -> service.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
-                                "back" -> service.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
-                            }
-                        } else { chatHistory.append("System: ⚠️ Accessibility OFF! Tap the Orange button.\n") }
-                    }
-                    "chat" -> chatHistory.append("Agent: ${jsonObject.optString("message", "")}\n")
-                    else -> chatHistory.append("System: Unknown action.\n")
                 }
-            } else { chatHistory.append("Agent: $jsonString\n") }
-        } catch (e: Exception) { chatHistory.append("System Error: ${e.message}\n") }
-        scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+
+                for (i in 0 until jsonArray.length()) {
+                    val jsonObject = jsonArray.getJSONObject(i)
+                    val action = jsonObject.optString("action", "")
+                    
+                    when (action) {
+                        "open_app" -> {
+                            val target = jsonObject.optString("target", "").lowercase()
+                            val pm = packageManager
+                            val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                            var launched = false
+                            for (packageInfo in packages) {
+                                val appName = pm.getApplicationLabel(packageInfo).toString().lowercase()
+                                val pkgName = packageInfo.packageName.lowercase()
+                                if (appName.contains(target) || pkgName.contains(target)) {
+                                    val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
+                                    if (intent != null) { chatHistory.append("System: 🟢 Step ${i+1}: Opening $appName...\n"); startActivity(intent); launched = true; break }
+                                }
+                            }
+                            if (!launched) chatHistory.append("System: 🔴 App '$target' not found.\n")
+                            delay(3000) 
+                        }
+                        "wait" -> {
+                            val duration = jsonObject.optLong("duration", 2000)
+                            chatHistory.append("System: ⏳ Step ${i+1}: Waiting for ${duration}ms...\n")
+                            delay(duration)
+                        }
+                        "click" -> {
+                            val text = jsonObject.optString("text", "")
+                            chatHistory.append("System: 👆 Step ${i+1}: Clicking '$text'...\n")
+                            MyAccessibilityService.instance?.clickButtonByText(text)
+                            delay(1000)
+                        }
+                        "type" -> {
+                            val text = jsonObject.optString("text", "")
+                            chatHistory.append("System: ⌨️ Step ${i+1}: Typing '$text'...\n")
+                            MyAccessibilityService.instance?.typeText(text)
+                            delay(1000)
+                        }
+                        "press_enter" -> {
+                            chatHistory.append("System: 🎯 Step ${i+1}: Pressing Enter/Search...\n")
+                            MyAccessibilityService.instance?.pressEnter()
+                            delay(1000)
+                        }
+                        "toggle_flashlight" -> {
+                            val state = jsonObject.optString("state", "on")
+                            try {
+                                val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                                cameraManager.setTorchMode(cameraManager.cameraIdList[0], state == "on")
+                                chatHistory.append("System: 🔦 Flashlight $state.\n")
+                            } catch (e: Exception) {}
+                        }
+                        "system_action" -> {
+                            val target = jsonObject.optString("target", "")
+                            chatHistory.append("System: 📱 Step ${i+1}: $target...\n")
+                            when (target.lowercase()) {
+                                "home" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+                                "back" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                            }
+                            delay(1000)
+                        }
+                        "chat" -> chatHistory.append("Agent: ${jsonObject.optString("message", "")}\n")
+                    }
+                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                }
+            } catch (e: Exception) { chatHistory.append("System Error: ${e.message}\n") }
+        }
     }
 
     private fun startLocalServerAndChat(modelFile: File, prompt: String) {
@@ -185,7 +199,7 @@ class MainActivity : AppCompatActivity() {
                     }.start()
                     delay(8000) 
                 }
-                withContext(Dispatchers.Main) { chatHistory.append("Agent: Processing Command...\n") }
+                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Multi-Step Action...\n") }
                 callLocalAI(prompt)
             } catch (e: Exception) {}
         }
@@ -193,15 +207,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun callLocalAI(prompt: String) {
         try {
-            // FIX: स्मार्ट सिस्टम प्रॉम्प्ट - अब यह हाय/हेलो पर सही रिप्लाई करेगा और टाइपिंग कर सकेगा!
             val systemPrompt = """
-                You are a smart Android Assistant. Respond ONLY in valid JSON format.
-                - To open an app: {"action": "open_app", "target": "youtube"}
-                - To turn flashlight on/off: {"action": "toggle_flashlight", "state": "on"}
-                - To click text: {"action": "click", "text": "Submit"}
-                - To type text: {"action": "type", "text": "2555"}
-                - To go home/back: {"action": "system_action", "target": "home"}
-                - For greetings (hi, hello) or questions (tum kya kar sakte ho): {"action": "chat", "message": "Main aapke phone ki flashlight on/off kar sakta hu, apps open kar sakta hu, aur screen par type/click kar sakta hu!"}
+                You are an advanced Android Agent capable of Multi-Step Planning.
+                You MUST respond ONLY with a JSON ARRAY of actions.
+                Example if user says "Chrome kholo aur cats search karo":
+                [
+                  {"action": "open_app", "target": "chrome"},
+                  {"action": "wait", "duration": 2000},
+                  {"action": "type", "text": "cats"},
+                  {"action": "press_enter"}
+                ]
+                Example if user says "Flashlight on karo":
+                [ {"action": "toggle_flashlight", "state": "on"} ]
+                Example if user just chats:
+                [ {"action": "chat", "message": "Hello!"} ]
+                
+                Available actions: open_app, toggle_flashlight, click, type, press_enter, wait, system_action, chat.
             """.trimIndent()
             
             val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
@@ -222,7 +243,7 @@ class MainActivity : AppCompatActivity() {
     private fun callAI(prompt: String) {
         Thread {
             try {
-                val systemPrompt = "You are an Android Controller. Reply ONLY in JSON. Format: {\"action\": \"open_app\", \"target\": \"<app>\"}, {\"action\": \"type\", \"text\": \"<text>\"}, {\"action\": \"chat\", \"message\": \"<reply>\"}"
+                val systemPrompt = "You are a Multi-Step Android Agent. Reply ONLY with a JSON ARRAY of actions. Example: [{\"action\": \"open_app\", \"target\": \"chrome\"}, {\"action\": \"type\", \"text\": \"cats\"}, {\"action\": \"press_enter\"}]"
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
                 val jsonBody = JSONObject().apply { put("model", "nvidia/nemotron-3-ultra-550b-a55b:free"); put("messages", messagesArray) }
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
