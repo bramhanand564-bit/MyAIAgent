@@ -280,3 +280,4 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() { super.onDestroy(); llamaProcess?.destroy() }
 }
+sift-tightly-plunging.ngrok-free.dev
