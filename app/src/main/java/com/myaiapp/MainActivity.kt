@@ -25,7 +25,7 @@ import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
-    // 👇 1. Timeout 120 सेकंड कर दिया गया है ताकि Colab को सोचने का पूरा समय मिले
+    // 👇 आपका Colab Ngrok लिंक और 120 सेकंड का टाइमआउट
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -104,83 +104,89 @@ class MainActivity : AppCompatActivity() {
                 val arrayEnd = jsonString.lastIndexOf("]")
                 
                 val jsonArray = if (arrayStart != -1 && arrayEnd != -1) {
-                    JSONArray(jsonString.substring(arrayStart, arrayEnd + 1))
+                    try {
+                        JSONArray(jsonString.substring(arrayStart, arrayEnd + 1))
+                    } catch (e: Exception) { null }
                 } else {
-                    val objStart = jsonString.indexOf("{")
-                    val objEnd = jsonString.lastIndexOf("}")
-                    if (objStart != -1 && objEnd != -1) {
-                        JSONArray().put(JSONObject(jsonString.substring(objStart, objEnd + 1)))
-                    } else {
-                        chatHistory.append("Agent: $jsonString\n")
-                        return@launch
-                    }
+                    null
                 }
 
-                for (i in 0 until jsonArray.length()) {
-                    val jsonObject = jsonArray.getJSONObject(i)
-                    val action = jsonObject.optString("action", "")
-                    
-                    when (action) {
-                        "open_app" -> {
-                            val target = jsonObject.optString("target", "").lowercase()
-                            val pm = packageManager
-                            val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                            var launched = false
-                            for (packageInfo in packages) {
-                                val appName = pm.getApplicationLabel(packageInfo).toString().lowercase()
-                                val pkgName = packageInfo.packageName.lowercase()
-                                if (appName.contains(target) || pkgName.contains(target)) {
-                                    val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
-                                    if (intent != null) { chatHistory.append("System: 🟢 Step ${i+1}: Opening $appName...\n"); startActivity(intent); launched = true; break }
+                if (jsonArray != null && jsonArray.length() > 0) {
+                    for (i in 0 until jsonArray.length()) {
+                        val jsonObject = jsonArray.getJSONObject(i)
+                        val action = jsonObject.optString("action", "")
+                        
+                        when (action) {
+                            "open_app" -> {
+                                val target = jsonObject.optString("target", "").lowercase()
+                                val pm = packageManager
+                                val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                                var launched = false
+                                for (packageInfo in packages) {
+                                    val appName = pm.getApplicationLabel(packageInfo).toString().lowercase()
+                                    val pkgName = packageInfo.packageName.lowercase()
+                                    if (appName.contains(target) || pkgName.contains(target)) {
+                                        val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
+                                        if (intent != null) { 
+                                            chatHistory.append("System: 🟢 Step ${i+1}: Opening $appName...\n")
+                                            startActivity(intent)
+                                            launched = true
+                                            break 
+                                        }
+                                    }
                                 }
+                                if (!launched) chatHistory.append("System: 🔴 App '$target' not found.\n")
+                                delay(3000) 
                             }
-                            if (!launched) chatHistory.append("System: 🔴 App '$target' not found.\n")
-                            delay(3000) 
-                        }
-                        "wait" -> {
-                            val duration = jsonObject.optLong("duration", 2000)
-                            chatHistory.append("System: ⏳ Step ${i+1}: Waiting for ${duration}ms...\n")
-                            delay(duration)
-                        }
-                        "click" -> {
-                            val text = jsonObject.optString("text", "")
-                            chatHistory.append("System: 👆 Step ${i+1}: Clicking '$text'...\n")
-                            MyAccessibilityService.instance?.clickButtonByText(text)
-                            delay(1000)
-                        }
-                        "type" -> {
-                            val text = jsonObject.optString("text", "")
-                            chatHistory.append("System: ⌨️ Step ${i+1}: Typing '$text'...\n")
-                            MyAccessibilityService.instance?.typeText(text)
-                            delay(1000)
-                        }
-                        "press_enter" -> {
-                            chatHistory.append("System: 🎯 Step ${i+1}: Pressing Enter/Search...\n")
-                            MyAccessibilityService.instance?.pressEnter()
-                            delay(1000)
-                        }
-                        "toggle_flashlight" -> {
-                            val state = jsonObject.optString("state", "on")
-                            try {
-                                val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                                cameraManager.setTorchMode(cameraManager.cameraIdList[0], state == "on")
-                                chatHistory.append("System: 🔦 Flashlight $state.\n")
-                            } catch (e: Exception) {}
-                        }
-                        "system_action" -> {
-                            val target = jsonObject.optString("target", "")
-                            chatHistory.append("System: 📱 Step ${i+1}: $target...\n")
-                            when (target.lowercase()) {
-                                "home" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
-                                "back" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                            "wait" -> {
+                                val duration = jsonObject.optLong("duration", 2000)
+                                chatHistory.append("System: ⏳ Step ${i+1}: Waiting for ${duration}ms...\n")
+                                delay(duration)
                             }
-                            delay(1000)
+                            "click" -> {
+                                val text = jsonObject.optString("text", "")
+                                chatHistory.append("System: 👆 Step ${i+1}: Clicking '$text'...\n")
+                                MyAccessibilityService.instance?.clickButtonByText(text)
+                                delay(1000)
+                            }
+                            "type" -> {
+                                val text = jsonObject.optString("text", "")
+                                chatHistory.append("System: ⌨️ Step ${i+1}: Typing '$text'...\n")
+                                MyAccessibilityService.instance?.typeText(text)
+                                delay(1000)
+                            }
+                            "press_enter" -> {
+                                chatHistory.append("System: 🎯 Step ${i+1}: Pressing Enter/Search...\n")
+                                MyAccessibilityService.instance?.pressEnter()
+                                delay(1000)
+                            }
+                            "toggle_flashlight" -> {
+                                val state = jsonObject.optString("state", "on")
+                                try {
+                                    val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                                    cameraManager.setTorchMode(cameraManager.cameraIdList[0], state == "on")
+                                    chatHistory.append("System: 🔦 Flashlight $state.\n")
+                                } catch (e: Exception) {}
+                            }
+                            "system_action" -> {
+                                val target = jsonObject.optString("target", "")
+                                chatHistory.append("System: 📱 Step ${i+1}: $target...\n")
+                                when (target.lowercase()) {
+                                    "home" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
+                                    "back" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                                }
+                                delay(1000)
+                            }
+                            "chat" -> chatHistory.append("Agent: ${jsonObject.optString("message", "")}\n")
                         }
-                        "chat" -> chatHistory.append("Agent: ${jsonObject.optString("message", "")}\n")
                     }
-                    scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+                } else {
+                    chatHistory.append("Agent: $jsonString\n")
                 }
-            } catch (e: Exception) { chatHistory.append("System Error: ${e.message}\n") }
+            } catch (e: Exception) { 
+                chatHistory.append("Agent: $jsonString\n") 
+            }
+            scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
         }
     }
 
@@ -248,13 +254,12 @@ class MainActivity : AppCompatActivity() {
     private fun callAI(prompt: String) {
         Thread {
             try {
-                val systemPrompt = "You are a Multi-Step Android Agent. Reply ONLY with a JSON ARRAY of actions. Example: [{\"action\": \"open_app\", \"target\": \"chrome\"}, {\"action\": \"type\", \"text\": \"cats\"}, {\"action\": \"press_enter\"}]"
+                val systemPrompt = "You are a Multi-Step Android Agent. Reply ONLY with a JSON ARRAY of actions, or conversational text if just chatting. Example: [{\"action\": \"open_app\", \"target\": \"chrome\"}]"
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
                 
                 val jsonBody = JSONObject().apply { put("model", "glm-4"); put("messages", messagesArray) }
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 
-                // 👇 2. Ngrok Security Bypass Header जोड़ दिया गया है 👇
                 val request = Request.Builder()
                     .url(apiUrl)
                     .addHeader("Authorization", "Bearer $apiKey")
