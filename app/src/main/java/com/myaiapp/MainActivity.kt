@@ -27,8 +27,9 @@ import kotlinx.coroutines.*
 class MainActivity : AppCompatActivity() {
 
     private val client = OkHttpClient()
-    private val apiKey = "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"
-    private val apiUrl = "https://openrouter.ai/api/v1/chat/completions"
+    // 👇 सिर्फ यह लिंक बदला है 👇
+    private val apiKey = "jarvis-private-server"
+    private val apiUrl = "https://sift-tightly-plunging.ngrok-free.dev/v1/chat/completions"
 
     private val localClient = OkHttpClient.Builder().connectTimeout(300, TimeUnit.SECONDS).readTimeout(300, TimeUnit.SECONDS).writeTimeout(300, TimeUnit.SECONDS).build()
     private var llamaProcess: Process? = null
@@ -245,7 +246,10 @@ class MainActivity : AppCompatActivity() {
             try {
                 val systemPrompt = "You are a Multi-Step Android Agent. Reply ONLY with a JSON ARRAY of actions. Example: [{\"action\": \"open_app\", \"target\": \"chrome\"}, {\"action\": \"type\", \"text\": \"cats\"}, {\"action\": \"press_enter\"}]"
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
-                val jsonBody = JSONObject().apply { put("model", "nvidia/nemotron-3-ultra-550b-a55b:free"); put("messages", messagesArray) }
+                
+                // 👇 यहाँ मॉडल का नाम 'glm-4' कर दिया है 👇
+                val jsonBody = JSONObject().apply { put("model", "glm-4"); put("messages", messagesArray) }
+                
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 val request = Request.Builder().url(apiUrl).addHeader("Authorization", "Bearer $apiKey").post(body).build()
                 client.newCall(request).execute().use { response ->
@@ -280,4 +284,3 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() { super.onDestroy(); llamaProcess?.destroy() }
 }
-sift-tightly-plunging.ngrok-free.dev
