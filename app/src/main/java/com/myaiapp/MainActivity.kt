@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
-import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
 import android.widget.*
@@ -26,8 +25,13 @@ import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
-    private val client = OkHttpClient()
-    // 👇 सिर्फ यह लिंक बदला है 👇
+    // 👇 1. Timeout 120 सेकंड कर दिया गया है ताकि Colab को सोचने का पूरा समय मिले
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(120, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
+        .build()
+        
     private val apiKey = "jarvis-private-server"
     private val apiUrl = "https://sift-tightly-plunging.ngrok-free.dev/v1/chat/completions"
 
@@ -247,21 +251,34 @@ class MainActivity : AppCompatActivity() {
                 val systemPrompt = "You are a Multi-Step Android Agent. Reply ONLY with a JSON ARRAY of actions. Example: [{\"action\": \"open_app\", \"target\": \"chrome\"}, {\"action\": \"type\", \"text\": \"cats\"}, {\"action\": \"press_enter\"}]"
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
                 
-                // 👇 यहाँ मॉडल का नाम 'glm-4' कर दिया है 👇
                 val jsonBody = JSONObject().apply { put("model", "glm-4"); put("messages", messagesArray) }
-                
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-                val request = Request.Builder().url(apiUrl).addHeader("Authorization", "Bearer $apiKey").post(body).build()
+                
+                // 👇 2. Ngrok Security Bypass Header जोड़ दिया गया है 👇
+                val request = Request.Builder()
+                    .url(apiUrl)
+                    .addHeader("Authorization", "Bearer $apiKey")
+                    .addHeader("ngrok-skip-browser-warning", "true") 
+                    .post(body)
+                    .build()
+                    
                 client.newCall(request).execute().use { response ->
                     val responseData = response.body?.string()
                     if (response.isSuccessful && responseData != null) {
                         try {
                             val aiReply = JSONObject(responseData).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
                             runOnUiThread { executeAndroidAction(aiReply) }
-                        } catch (e: Exception) {}
+                        } catch (e: Exception) {
+                            runOnUiThread { chatHistory.append("\nSystem ❌ JSON Parse Error: ${e.message}\n") }
+                        }
+                    } else {
+                        runOnUiThread { chatHistory.append("\nSystem ❌ API Error: Code ${response.code}\n") }
                     }
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                runOnUiThread { chatHistory.append("\nSystem ❌ Connection Timeout/Error: ${e.message}\nEnsure Colab Server is running!\n") }
+            }
+            runOnUiThread { scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) } }
         }.start()
     }
 
