@@ -25,7 +25,7 @@ import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
-    // 👇 आपका Colab Ngrok लिंक (जब भी Colab रिस्टार्ट करें, इसे अपने ताज़ा लिंक से अपडेट कर लें)
+    // 👇 Aapka Colab Ngrok link (Cloud mode ke liye)
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         downloadButton.setOnClickListener {
-            downloadButton.isEnabled = false; chatHistory.append("\nSystem: Downloading Phi-3 Mini Model (2.3 GB)...\n"); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            downloadButton.isEnabled = false; chatHistory.append("\nSystem: Downloading Qwen 2.5 Model (1.1 GB)...\n"); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             downloadModelFile()
         }
 
@@ -196,7 +196,7 @@ class MainActivity : AppCompatActivity() {
                 val serverFile = File(applicationInfo.nativeLibraryDir, "libllama-server.so")
                 if (!serverFile.exists()) return@launch
                 if (llamaProcess == null) {
-                    withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting Phi-3 Mini Engine...\n") }
+                    withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting Qwen 2.5 Engine...\n") }
                     val processBuilder = ProcessBuilder(serverFile.absolutePath, "-m", modelFile.absolutePath, "--port", "8080", "--host", "127.0.0.1", "-c", "2048")
                     processBuilder.directory(filesDir); processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
                     processBuilder.redirectErrorStream(true); llamaProcess = processBuilder.start()
@@ -208,9 +208,9 @@ class MainActivity : AppCompatActivity() {
                             }
                         } catch (e: Exception) {}
                     }.start()
-                    delay(8000) 
+                    delay(5000) 
                 }
-                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Multi-Step Action (Offline)...\n") }
+                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Action (Offline Fast Mode)...\n") }
                 callLocalAI(prompt)
             } catch (e: Exception) {}
         }
@@ -243,9 +243,11 @@ class MainActivity : AppCompatActivity() {
                 if (response.isSuccessful && responseData != null) {
                     val aiReply = JSONObject(responseData).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
                     runOnUiThread { executeAndroidAction(aiReply) }
+                } else {
+                    runOnUiThread { chatHistory.append("System ❌ Local API Error: Code ${response.code}. Please retry.\n") }
                 }
             }
-        } catch (e: Exception) { runOnUiThread { chatHistory.append("Connection Error: Server loading. Wait 5s.\n") } }
+        } catch (e: Exception) { runOnUiThread { chatHistory.append("System ❌ Server Loading or Error: Wait 5s.\n") } }
     }
 
     private fun callAI(prompt: String) {
@@ -285,8 +287,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadModelFile() {
-        // 👇 Microsoft Phi-3 Mini (3.8B) GGUF Link (Logic Master)
-        val modelUrl = "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
+        // 👇 Qwen 2.5 (1.5B) - The Speed Demon (1.1 GB) ⚡
+        val modelUrl = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
         Thread {
             try {
                 val request = Request.Builder().url(modelUrl).build()
@@ -296,7 +298,7 @@ class MainActivity : AppCompatActivity() {
                     val buffer = ByteArray(8192); var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) outputStream.write(buffer, 0, bytesRead)
                     outputStream.flush(); outputStream.close(); inputStream.close()
-                    runOnUiThread { chatHistory.append("\nSystem: Phi-3 Mini Downloaded Successfully! 🧠\n"); downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY) }
+                    runOnUiThread { chatHistory.append("\nSystem: Qwen 2.5 Downloaded Successfully! ⚡\n"); downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY) }
                 }
             } catch (e: Exception) {}
         }.start()
