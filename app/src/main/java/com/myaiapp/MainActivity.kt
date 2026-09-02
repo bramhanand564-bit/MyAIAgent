@@ -25,7 +25,7 @@ import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
-    // 👇 आपका Colab Ngrok लिंक और 120 सेकंड का टाइमआउट
+    // 👇 आपका Colab Ngrok लिंक (जब भी Colab रिस्टार्ट करें, इसे अपने ताज़ा लिंक से अपडेट कर लें)
     private val client = OkHttpClient.Builder()
         .connectTimeout(120, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         downloadButton.setOnClickListener {
-            downloadButton.isEnabled = false; chatHistory.append("\nSystem: Downloading Llama Model...\n"); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
+            downloadButton.isEnabled = false; chatHistory.append("\nSystem: Downloading Phi-3 Mini Model (2.3 GB)...\n"); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
             downloadModelFile()
         }
 
@@ -196,8 +196,8 @@ class MainActivity : AppCompatActivity() {
                 val serverFile = File(applicationInfo.nativeLibraryDir, "libllama-server.so")
                 if (!serverFile.exists()) return@launch
                 if (llamaProcess == null) {
-                    withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting AI Server...\n") }
-                    val processBuilder = ProcessBuilder(serverFile.absolutePath, "-m", modelFile.absolutePath, "--port", "8080", "--host", "127.0.0.1", "-c", "1024")
+                    withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting Phi-3 Mini Engine...\n") }
+                    val processBuilder = ProcessBuilder(serverFile.absolutePath, "-m", modelFile.absolutePath, "--port", "8080", "--host", "127.0.0.1", "-c", "2048")
                     processBuilder.directory(filesDir); processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
                     processBuilder.redirectErrorStream(true); llamaProcess = processBuilder.start()
                     Thread {
@@ -210,7 +210,7 @@ class MainActivity : AppCompatActivity() {
                     }.start()
                     delay(8000) 
                 }
-                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Multi-Step Action...\n") }
+                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Multi-Step Action (Offline)...\n") }
                 callLocalAI(prompt)
             } catch (e: Exception) {}
         }
@@ -219,8 +219,7 @@ class MainActivity : AppCompatActivity() {
     private fun callLocalAI(prompt: String) {
         try {
             val systemPrompt = """
-                You are an advanced Android Agent capable of Multi-Step Planning.
-                You MUST respond ONLY with a JSON ARRAY of actions.
+                You are a smart Android Agent. You MUST respond ONLY with a JSON ARRAY of actions.
                 Example if user says "Chrome kholo aur cats search karo":
                 [
                   {"action": "open_app", "target": "chrome"},
@@ -228,10 +227,8 @@ class MainActivity : AppCompatActivity() {
                   {"action": "type", "text": "cats"},
                   {"action": "press_enter"}
                 ]
-                Example if user says "Flashlight on karo":
-                [ {"action": "toggle_flashlight", "state": "on"} ]
                 Example if user just chats:
-                [ {"action": "chat", "message": "Hello!"} ]
+                [ {"action": "chat", "message": "Hello! I am your JARVIS assistant."} ]
                 
                 Available actions: open_app, toggle_flashlight, click, type, press_enter, wait, system_action, chat.
             """.trimIndent()
@@ -248,7 +245,7 @@ class MainActivity : AppCompatActivity() {
                     runOnUiThread { executeAndroidAction(aiReply) }
                 }
             }
-        } catch (e: Exception) { runOnUiThread { chatHistory.append("Connection Error: Wait 5s.\n") } }
+        } catch (e: Exception) { runOnUiThread { chatHistory.append("Connection Error: Server loading. Wait 5s.\n") } }
     }
 
     private fun callAI(prompt: String) {
@@ -281,14 +278,15 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread { chatHistory.append("\nSystem ❌ Connection Timeout/Error: ${e.message}\nEnsure Colab Server is running!\n") }
+                runOnUiThread { chatHistory.append("\nSystem ❌ Connection Error. Is Colab Running?\n") }
             }
             runOnUiThread { scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) } }
         }.start()
     }
 
     private fun downloadModelFile() {
-        val modelUrl = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
+        // 👇 Microsoft Phi-3 Mini (3.8B) GGUF Link (Logic Master)
+        val modelUrl = "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf"
         Thread {
             try {
                 val request = Request.Builder().url(modelUrl).build()
@@ -298,7 +296,7 @@ class MainActivity : AppCompatActivity() {
                     val buffer = ByteArray(8192); var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) outputStream.write(buffer, 0, bytesRead)
                     outputStream.flush(); outputStream.close(); inputStream.close()
-                    runOnUiThread { chatHistory.append("\nSystem: Model Downloaded!\n"); downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY) }
+                    runOnUiThread { chatHistory.append("\nSystem: Phi-3 Mini Downloaded Successfully! 🧠\n"); downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY) }
                 }
             } catch (e: Exception) {}
         }.start()
