@@ -2,6 +2,7 @@ package com.myaiapp
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraManager
 import android.provider.Settings
@@ -25,16 +26,7 @@ import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
-    // 👇 आपका Colab Ngrok लिंक
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(120, TimeUnit.SECONDS)
-        .readTimeout(120, TimeUnit.SECONDS)
-        .writeTimeout(120, TimeUnit.SECONDS)
-        .build()
-        
-    private val apiKey = "jarvis-private-server"
-    private val apiUrl = "https://sift-tightly-plunging.ngrok-free.dev/v1/chat/completions"
-
+    private val client = OkHttpClient.Builder().connectTimeout(120, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).writeTimeout(120, TimeUnit.SECONDS).build()
     private val localClient = OkHttpClient.Builder().connectTimeout(300, TimeUnit.SECONDS).readTimeout(300, TimeUnit.SECONDS).writeTimeout(300, TimeUnit.SECONDS).build()
     private var llamaProcess: Process? = null
 
@@ -42,11 +34,37 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scrollView: ScrollView
     private lateinit var inputField: EditText
     private lateinit var downloadButton: Button
+    
+    // SharedPreferences to save API Keys permanently
+    private lateinit var sharedPref: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sharedPref = getSharedPreferences("JarvisPrefs", Context.MODE_PRIVATE)
+
         val mainLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(30, 30, 30, 30); setBackgroundColor(Color.parseColor("#F5F5F5")) }
         
+        // --- API CONFIGURATION UI ---
+        val apiConfigLayout = LinearLayout(this).apply { 
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+            setPadding(20, 20, 20, 20)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
+        }
+        
+        val titleApi = TextView(this).apply { text = "☁️ CLOUD API SETTINGS"; textSize = 14f; setTextColor(Color.DKGRAY); setTypeface(null, android.graphics.Typeface.BOLD) }
+        val urlInput = EditText(this).apply { hint = "API URL (e.g., Groq/OpenAI)"; setText(sharedPref.getString("API_URL", "")); textSize = 14f }
+        val keyInput = EditText(this).apply { hint = "API Key"; setText(sharedPref.getString("API_KEY", "")); textSize = 14f }
+        val saveApiBtn = Button(this).apply { 
+            text = "SAVE CLOUD SETTINGS"; setBackgroundColor(Color.parseColor("#6C757D")); setTextColor(Color.WHITE); textSize = 12f 
+            setOnClickListener {
+                sharedPref.edit().putString("API_URL", urlInput.text.toString().trim()).putString("API_KEY", keyInput.text.toString().trim()).apply()
+                Toast.makeText(this@MainActivity, "Cloud Settings Saved!", Toast.LENGTH_SHORT).show()
+            }
+        }
+        apiConfigLayout.addView(titleApi); apiConfigLayout.addView(urlInput); apiConfigLayout.addView(keyInput); apiConfigLayout.addView(saveApiBtn)
+        // ----------------------------
+
         val modeSwitch = Switch(this).apply {
             text = "Use Local AI (Offline Mode)"; textSize = 16f; setTextColor(Color.BLACK); isChecked = false
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
@@ -65,7 +83,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 20) }
         }
 
-        chatHistory = TextView(this).apply { text = "System: Multi-Step AI Agent Ready!\n"; textSize = 15f; setTextColor(Color.BLACK) }
+        chatHistory = TextView(this).apply { text = "System: Independent J.A.R.V.I.S Ready!\n"; textSize = 15f; setTextColor(Color.BLACK) }
         scrollView = ScrollView(this).apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f); addView(chatHistory) }
         
         val modelFile = File(filesDir, "llama_model.gguf")
@@ -79,7 +97,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val inputLayout = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) }
-        inputField = EditText(this).apply { hint = "e.g. Chrome kholo aur cats search karo"; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f) }
+        inputField = EditText(this).apply { hint = "e.g. Chrome kholo"; layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.0f) }
         val runButton = Button(this).apply { text = "SEND"; setBackgroundColor(Color.parseColor("#007BFF")); setTextColor(Color.WHITE) }
 
         runButton.setOnClickListener {
@@ -87,13 +105,17 @@ class MainActivity : AppCompatActivity() {
             if (userText.isNotEmpty()) {
                 chatHistory.append("\nUser: $userText\n"); inputField.text.clear(); scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
                 if (modeSwitch.isChecked) {
-                    if (modelFile.exists()) { startLocalServerAndChat(modelFile, userText) } else { chatHistory.append("System: Model not found!\n") }
-                } else { chatHistory.append("Agent: Thinking (Cloud API)...\n"); callAI(userText) }
+                    if (modelFile.exists()) { startLocalServerAndChat(modelFile, userText) } else { chatHistory.append("System: Local Model not found!\n") }
+                } else { 
+                    chatHistory.append("Agent: Thinking (Cloud API)...\n"); callAI(userText) 
+                }
             }
         }
 
         inputLayout.addView(inputField); inputLayout.addView(runButton)
-        mainLayout.addView(btnAccess); mainLayout.addView(modeSwitch); mainLayout.addView(downloadButton); mainLayout.addView(scrollView); mainLayout.addView(inputLayout)
+        
+        // Adding all views to Main Layout
+        mainLayout.addView(apiConfigLayout); mainLayout.addView(btnAccess); mainLayout.addView(modeSwitch); mainLayout.addView(downloadButton); mainLayout.addView(scrollView); mainLayout.addView(inputLayout)
         setContentView(mainLayout)
     }
 
@@ -104,12 +126,8 @@ class MainActivity : AppCompatActivity() {
                 val arrayEnd = jsonString.lastIndexOf("]")
                 
                 val jsonArray = if (arrayStart != -1 && arrayEnd != -1) {
-                    try {
-                        JSONArray(jsonString.substring(arrayStart, arrayEnd + 1))
-                    } catch (e: Exception) { null }
-                } else {
-                    null
-                }
+                    try { JSONArray(jsonString.substring(arrayStart, arrayEnd + 1)) } catch (e: Exception) { null }
+                } else null
 
                 if (jsonArray != null && jsonArray.length() > 0) {
                     for (i in 0 until jsonArray.length()) {
@@ -128,10 +146,7 @@ class MainActivity : AppCompatActivity() {
                                     if (appName.contains(target) || pkgName.contains(target)) {
                                         val intent = pm.getLaunchIntentForPackage(packageInfo.packageName)
                                         if (intent != null) { 
-                                            chatHistory.append("System: 🟢 Step ${i+1}: Opening $appName...\n")
-                                            startActivity(intent)
-                                            launched = true
-                                            break 
+                                            chatHistory.append("System: 🟢 Opening $appName...\n"); startActivity(intent); launched = true; break 
                                         }
                                     }
                                 }
@@ -140,42 +155,21 @@ class MainActivity : AppCompatActivity() {
                             }
                             "wait" -> {
                                 val duration = jsonObject.optLong("duration", 2000)
-                                chatHistory.append("System: ⏳ Step ${i+1}: Waiting for ${duration}ms...\n")
                                 delay(duration)
                             }
-                            "click" -> {
-                                val text = jsonObject.optString("text", "")
-                                chatHistory.append("System: 👆 Step ${i+1}: Clicking '$text'...\n")
-                                MyAccessibilityService.instance?.clickButtonByText(text)
-                                delay(1000)
-                            }
-                            "type" -> {
-                                val text = jsonObject.optString("text", "")
-                                chatHistory.append("System: ⌨️ Step ${i+1}: Typing '$text'...\n")
-                                MyAccessibilityService.instance?.typeText(text)
-                                delay(1000)
-                            }
-                            "press_enter" -> {
-                                chatHistory.append("System: 🎯 Step ${i+1}: Pressing Enter/Search...\n")
-                                MyAccessibilityService.instance?.pressEnter()
-                                delay(1000)
-                            }
                             "toggle_flashlight" -> {
-                                val state = jsonObject.optString("state", "on")
+                                val state = jsonObject.optString("state", "on").lowercase()
                                 try {
                                     val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-                                    cameraManager.setTorchMode(cameraManager.cameraIdList[0], state == "on")
-                                    chatHistory.append("System: 🔦 Flashlight $state.\n")
-                                } catch (e: Exception) {}
-                            }
-                            "system_action" -> {
-                                val target = jsonObject.optString("target", "")
-                                chatHistory.append("System: 📱 Step ${i+1}: $target...\n")
-                                when (target.lowercase()) {
-                                    "home" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)
-                                    "back" -> MyAccessibilityService.instance?.performGlobal(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
-                                }
-                                delay(1000)
+                                    val cameraId = cameraManager.cameraIdList[0]
+                                    if (state == "off") {
+                                        cameraManager.setTorchMode(cameraId, false)
+                                        chatHistory.append("System: 🔦 Flashlight OFF.\n")
+                                    } else {
+                                        cameraManager.setTorchMode(cameraId, true)
+                                        chatHistory.append("System: 🔦 Flashlight ON.\n")
+                                    }
+                                } catch (e: Exception) { chatHistory.append("System: 🔦 Flashlight Error.\n") }
                             }
                             "chat" -> chatHistory.append("Agent: ${jsonObject.optString("message", "")}\n")
                         }
@@ -183,9 +177,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     chatHistory.append("Agent: $jsonString\n")
                 }
-            } catch (e: Exception) { 
-                chatHistory.append("Agent: $jsonString\n") 
-            }
+            } catch (e: Exception) { chatHistory.append("Agent: $jsonString\n") }
             scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) }
         }
     }
@@ -196,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                 val serverFile = File(applicationInfo.nativeLibraryDir, "libllama-server.so")
                 if (!serverFile.exists()) return@launch
                 if (llamaProcess == null) {
-                    withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting Llama 3.2 (1B) Engine...\n") }
+                    withContext(Dispatchers.Main) { chatHistory.append("System: 🚀 Starting Llama 1B Engine...\n") }
                     val processBuilder = ProcessBuilder(serverFile.absolutePath, "-m", modelFile.absolutePath, "--port", "8080", "--host", "127.0.0.1", "-c", "2048")
                     processBuilder.directory(filesDir); processBuilder.environment()["LD_LIBRARY_PATH"] = applicationInfo.nativeLibraryDir
                     processBuilder.redirectErrorStream(true); llamaProcess = processBuilder.start()
@@ -210,7 +202,7 @@ class MainActivity : AppCompatActivity() {
                     }.start()
                     delay(5000) 
                 }
-                withContext(Dispatchers.Main) { chatHistory.append("Agent: Planning Action (Offline Mode)...\n") }
+                withContext(Dispatchers.Main) { chatHistory.append("Agent: Processing (Offline)...\n") }
                 callLocalAI(prompt)
             } catch (e: Exception) {}
         }
@@ -218,19 +210,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun callLocalAI(prompt: String) {
         try {
+            // 👇 STRICT SYSTEM PROMPT FOR LLAMA 1B
             val systemPrompt = """
-                You are a smart Android Agent. You MUST respond ONLY with a JSON ARRAY of actions.
-                Example if user says "Chrome kholo aur cats search karo":
-                [
-                  {"action": "open_app", "target": "chrome"},
-                  {"action": "wait", "duration": 2000},
-                  {"action": "type", "text": "cats"},
-                  {"action": "press_enter"}
-                ]
-                Example if user just chats:
-                [ {"action": "chat", "message": "Hello! I am your JARVIS assistant."} ]
-                
-                Available actions: open_app, toggle_flashlight, click, type, press_enter, wait, system_action, chat.
+                You are a strict JSON Android Assistant. 
+                RULES:
+                1. You must ONLY output a valid JSON array.
+                2. If asked to turn OFF flashlight/light, output {"action": "toggle_flashlight", "state": "off"}.
+                3. If asked to turn ON flashlight/light, output {"action": "toggle_flashlight", "state": "on"}.
+                4. If asked a question or normal chat (e.g. "hi", "how are you"), output {"action": "chat", "message": "YOUR REPLY"}.
+
+                EXAMPLES:
+                User: Chrome kholo
+                [{"action": "open_app", "target": "chrome"}]
+                User: turn off light
+                [{"action": "toggle_flashlight", "state": "off"}]
+                User: hi tum kaun ho
+                [{"action": "chat", "message": "Main J.A.R.V.I.S hoon, aapki madad ke liye taiyar."}]
             """.trimIndent()
             
             val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
@@ -244,25 +239,36 @@ class MainActivity : AppCompatActivity() {
                     val aiReply = JSONObject(responseData).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
                     runOnUiThread { executeAndroidAction(aiReply) }
                 } else {
-                    runOnUiThread { chatHistory.append("System ❌ Local API Error: Code ${response.code}. Please retry.\n") }
+                    runOnUiThread { chatHistory.append("System ❌ Local API Error.\n") }
                 }
             }
-        } catch (e: Exception) { runOnUiThread { chatHistory.append("System ❌ Server Loading or Error: Wait 5s.\n") } }
+        } catch (e: Exception) { runOnUiThread { chatHistory.append("System ❌ Server Loading. Wait 5s.\n") } }
     }
 
     private fun callAI(prompt: String) {
         Thread {
             try {
-                val systemPrompt = "You are a Multi-Step Android Agent. Reply ONLY with a JSON ARRAY of actions, or conversational text if just chatting. Example: [{\"action\": \"open_app\", \"target\": \"chrome\"}]"
+                // Read API credentials directly from SharedPreferences
+                val savedUrl = sharedPref.getString("API_URL", "") ?: ""
+                val savedKey = sharedPref.getString("API_KEY", "") ?: ""
+
+                if (savedUrl.isEmpty() || savedKey.isEmpty()) {
+                    runOnUiThread { chatHistory.append("\nSystem ❌ Please enter API URL and Key at the top first.\n") }
+                    return@Thread
+                }
+
+                val systemPrompt = "You are a JSON-only Android Agent. Reply ONLY with a JSON ARRAY of actions. Ex: [{\"action\": \"open_app\", \"target\": \"chrome\"}]"
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", systemPrompt)); put(JSONObject().put("role", "user").put("content", prompt)) }
                 
-                val jsonBody = JSONObject().apply { put("model", "glm-4"); put("messages", messagesArray) }
+                val jsonBody = JSONObject().apply { 
+                    put("model", "llama3-8b-8192") // Optional: specific Groq model format, API dependent
+                    put("messages", messagesArray) 
+                }
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 
                 val request = Request.Builder()
-                    .url(apiUrl)
-                    .addHeader("Authorization", "Bearer $apiKey")
-                    .addHeader("ngrok-skip-browser-warning", "true") 
+                    .url(savedUrl)
+                    .addHeader("Authorization", "Bearer $savedKey")
                     .post(body)
                     .build()
                     
@@ -276,18 +282,18 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread { chatHistory.append("\nSystem ❌ JSON Parse Error: ${e.message}\n") }
                         }
                     } else {
-                        runOnUiThread { chatHistory.append("\nSystem ❌ API Error: Code ${response.code}\n") }
+                        runOnUiThread { chatHistory.append("\nSystem ❌ Cloud API Error: Code ${response.code}\n") }
                     }
                 }
             } catch (e: Exception) {
-                runOnUiThread { chatHistory.append("\nSystem ❌ Connection Error. Is Colab Running?\n") }
+                runOnUiThread { chatHistory.append("\nSystem ❌ Connection Error. Check Network or API link.\n") }
             }
             runOnUiThread { scrollView.post { scrollView.fullScroll(ScrollView.FOCUS_DOWN) } }
         }.start()
     }
 
     private fun downloadModelFile() {
-        // 👇 आपका ऑरिजिनल बेस्ट Llama 3.2 (1B) मॉडल (1.3 GB)
+        // Llama 3.2 (1B) Model
         val modelUrl = "https://huggingface.co/unsloth/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf"
         Thread {
             try {
@@ -298,7 +304,7 @@ class MainActivity : AppCompatActivity() {
                     val buffer = ByteArray(8192); var bytesRead: Int
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) outputStream.write(buffer, 0, bytesRead)
                     outputStream.flush(); outputStream.close(); inputStream.close()
-                    runOnUiThread { chatHistory.append("\nSystem: Llama 3.2 (1B) Downloaded Successfully! 🦙\n"); downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY) }
+                    runOnUiThread { chatHistory.append("\nSystem: Llama 1B Downloaded! 🦙\n"); downloadButton.text = "MODEL ALREADY DOWNLOADED"; downloadButton.setBackgroundColor(Color.GRAY) }
                 }
             } catch (e: Exception) {}
         }.start()
