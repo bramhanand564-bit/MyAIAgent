@@ -323,7 +323,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     return@Thread
                 }
                 val messagesArray = JSONArray().apply { put(JSONObject().put("role", "system").put("content", getSystemPrompt())); put(JSONObject().put("role", "user").put("content", prompt)) }
-                val jsonBody = JSONObject().apply { put("model", "llama3-8b-8192"); put("messages", messagesArray) }
+                val jsonBody = JSONObject().apply { put("model", "auto"); put("messages", messagesArray) }
                 val body = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
                 
                 val request = Request.Builder().url(savedUrl).addHeader("Authorization", "Bearer $savedKey").post(body).build()
