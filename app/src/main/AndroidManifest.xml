@@ -1,39 +1,46 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+package com.example.jarvis // (अपने प्रोजेक्ट का सही पैकेज नाम यहाँ रखें)
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    
-    <!-- यह है वो मास्टर चाबी जो AI को फोन के सारे ऐप्स खोजने की ताकत देगी -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+import android.accessibilityservice.AccessibilityService
+import android.os.Bundle
+import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import android.widget.Toast
 
-    <application
-        android:allowBackup="true"
-        android:extractNativeLibs="true"
-        android:usesCleartextTraffic="true"
-        android:label="MyAIAgent"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
-        
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+class MyAccessibilityService : AccessibilityService() {
 
-        <!-- यह AI की ऐक्सेसिबिलिटी सर्विस है (AI की उंगलियां) -->
-        <service android:name=".MyAccessibilityService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
+    companion object {
+        var instance: MyAccessibilityService? = null
+    }
 
-    </application>
-</manifest>
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        Toast.makeText(this, "J.A.R.V.I.S Eyes Online!", Toast.LENGTH_SHORT).show()
+    }
+
+    // यह फंक्शन फोन की हर हलचल (स्क्रीन चेंज) पर नज़र रखेगा
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // स्क्रीन रीडर का एडवांस काम हम यहाँ बाद में जोड़ेंगे
+    }
+
+    override fun onInterrupt() {
+        // सर्विस क्रैश या बंद होने पर 
+    }
+
+    // ⚡ THE MASTER WEAPON: Auto-Typing & Clicking ⚡
+    fun autoTypeAndClick(textToType: String) {
+        val rootNode = rootInActiveWindow ?: return
+
+        // 1. स्क्रीन पर टाइपिंग वाला डब्बा (EditText) ढूंढना
+        val editableNodes = rootNode.findAccessibilityNodeInfosByText("")
+        for (node in editableNodes) {
+            if (node.isEditable) {
+                // 2. डब्बे में J.A.R.V.I.S खुद टेक्स्ट भर देगा
+                val arguments = Bundle()
+                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToType)
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                break
+            }
+        }
+    }
+}
