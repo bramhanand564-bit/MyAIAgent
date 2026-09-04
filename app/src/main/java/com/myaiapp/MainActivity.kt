@@ -2,6 +2,7 @@ package com.myaiapp
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.BatteryManager
@@ -11,8 +12,12 @@ import android.os.Looper
 import android.provider.AlarmClock
 import android.provider.MediaStore
 import android.provider.Settings
+import android.text.InputType
+import android.view.Gravity
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -37,17 +42,86 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // 🚀 HACKER BYPASS: बिना 'R' क्लास के डिज़ाइन और बटन्स जोड़ना (GitHub अब फेल नहीं कर पाएगा)
-        val layoutId = resources.getIdentifier("activity_main", "layout", packageName)
-        setContentView(layoutId)
+        // 🚀 THE ULTIMATE GOD-MODE: XML का झंझट खत्म, 100% Kotlin UI (यह कभी क्रैश नहीं होगा)
+        val mainLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#050505"))
+            setPadding(40, 40, 40, 40)
+        }
 
-        chatBox = findViewById(resources.getIdentifier("chatBox", "id", packageName))
-        userInput = findViewById(resources.getIdentifier("userInput", "id", packageName))
-        sendButton = findViewById(resources.getIdentifier("sendButton", "id", packageName))
-        scrollView = findViewById(resources.getIdentifier("scrollView", "id", packageName))
+        // 1. Header (J.A.R.V.I.S Name)
+        val header = TextView(this).apply {
+            text = "J.A.R.V.I.S  4.0  CORE"
+            setTextColor(Color.parseColor("#00FFAA"))
+            textSize = 24f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 20)
+        }
+        mainLayout.addView(header)
 
+        // 2. Neon Line
+        val divider = android.view.View(this).apply {
+            setBackgroundColor(Color.parseColor("#00FFAA"))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 3).apply {
+                bottomMargin = 30
+            }
+        }
+        mainLayout.addView(divider)
+
+        // 3. Chat Screen
+        scrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            isFillViewport = true
+        }
+        
+        chatBox = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            text = "System Initialized. Awaiting Global Commands...\n"
+        }
+        scrollView.addView(chatBox)
+        mainLayout.addView(scrollView)
+
+        // 4. Input Area
+        val inputLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.parseColor("#151515"))
+            setPadding(15, 15, 15, 15)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = 20
+            }
+        }
+
+        userInput = EditText(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            hint = "Terminal Input..."
+            setHintTextColor(Color.parseColor("#555555"))
+            setTextColor(Color.parseColor("#00FFAA"))
+            setBackgroundColor(Color.TRANSPARENT)
+            setPadding(20, 20, 20, 20)
+            textSize = 16f
+            inputType = InputType.TYPE_CLASS_TEXT
+        }
+        inputLayout.addView(userInput)
+
+        sendButton = Button(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            text = "EXECUTE"
+            setTextColor(Color.BLACK)
+            setBackgroundColor(Color.parseColor("#00FFAA"))
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+        }
+        inputLayout.addView(sendButton)
+        mainLayout.addView(inputLayout)
+
+        // 🎯 स्क्रीन पर यही डिज़ाइन सेट कर दो (बिना XML के)
+        setContentView(mainLayout)
+
+        // 🛡️ चेक एक्सेसिबिलिटी
         checkAccessibilityStatus()
 
+        // 🚀 सेंड बटन का एक्शन
         sendButton.setOnClickListener {
             val text = userInput.text.toString().trim()
             if (text.isNotEmpty()) {
