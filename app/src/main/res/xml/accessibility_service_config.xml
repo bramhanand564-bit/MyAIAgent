@@ -1,46 +1,8 @@
-package com.example.jarvis // (अपने प्रोजेक्ट का सही पैकेज नाम यहाँ रखें)
-
-import android.accessibilityservice.AccessibilityService
-import android.os.Bundle
-import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Toast
-
-class MyAccessibilityService : AccessibilityService() {
-
-    companion object {
-        var instance: MyAccessibilityService? = null
-    }
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        instance = this
-        Toast.makeText(this, "J.A.R.V.I.S Eyes Online!", Toast.LENGTH_SHORT).show()
-    }
-
-    // यह फंक्शन फोन की हर हलचल (स्क्रीन चेंज) पर नज़र रखेगा
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // स्क्रीन रीडर का एडवांस काम हम यहाँ बाद में जोड़ेंगे
-    }
-
-    override fun onInterrupt() {
-        // सर्विस क्रैश या बंद होने पर 
-    }
-
-    // ⚡ THE MASTER WEAPON: Auto-Typing & Clicking ⚡
-    fun autoTypeAndClick(textToType: String) {
-        val rootNode = rootInActiveWindow ?: return
-
-        // 1. स्क्रीन पर टाइपिंग वाला डब्बा (EditText) ढूंढना
-        val editableNodes = rootNode.findAccessibilityNodeInfosByText("")
-        for (node in editableNodes) {
-            if (node.isEditable) {
-                // 2. डब्बे में J.A.R.V.I.S खुद टेक्स्ट भर देगा
-                val arguments = Bundle()
-                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToType)
-                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                break
-            }
-        }
-    }
-}
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:description="@string/app_name" />
