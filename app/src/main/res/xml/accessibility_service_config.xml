@@ -5,4 +5,4 @@
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
     android:canRetrieveWindowContent="true"
     android:canPerformGestures="true"
-    android:description="@string/app_name" />
+    android:description="J.A.R.V.I.S Super-Hands" />
