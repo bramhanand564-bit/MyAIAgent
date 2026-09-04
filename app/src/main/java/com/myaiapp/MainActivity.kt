@@ -1,4 +1,4 @@
-package com.example.jarvis // ⚠️ ध्यान दें: अगर आपका पैकेज नाम अलग है, तो यहाँ अपना असली पैकेज नाम ही रहने दें
+package com.myaiapp // ⚠️ ध्यान दें: अगर आपका पैकेज नाम अलग है, तो यहाँ अपना असली पैकेज नाम ही रहने दें
 
 import android.content.Intent
 import android.os.Bundle
