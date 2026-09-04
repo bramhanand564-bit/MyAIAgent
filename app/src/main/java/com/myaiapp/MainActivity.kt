@@ -1,4 +1,4 @@
-package com.example.jarvis // ⚠️ ध्यान दें: अपनी फाइल का पुराना असली पैकेज नाम ही यहाँ रखें!
+package com.example.jarvis // ⚠️ ध्यान दें: अगर आपका पैकेज नाम अलग है, तो यहाँ अपना असली पैकेज नाम ही रहने दें
 
 import android.content.Intent
 import android.os.Bundle
@@ -109,59 +109,84 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // ⚡ THE GOD-MODE CONTROLLER (Autonomous Actions) ⚡
+    // ⚡ THE GOD-MODE CONTROLLER (Unlimited Sequences) ⚡
     private fun executeAutonomousAction(command: String) {
         runOnUiThread {
             val service = MyAccessibilityService.instance
             if (service == null) {
-                addMessageToChat("System: ❌ Accessibility Access Denied.")
+                addMessageToChat("System: ❌ Accessibility Access Denied. Turn it ON in settings.")
                 return@runOnUiThread
             }
 
             val handler = Handler(Looper.getMainLooper())
 
             when {
-                // 1. YouTube Auto-Type (ऐप खुलेगा, इंतज़ार करेगा, और खुद टाइप करेगा)
-                command.contains("youtube") || command.contains("play") -> {
-                    val query = command.replace("youtube", "").replace("play", "").replace("song", "").trim()
-                    addMessageToChat("System: 🚀 Opening YouTube and automating search...")
+                // 🔥 THE YOUTUBE AUTO-UPLOAD SEQUENCE 🔥
+                command.contains("upload") || command.contains("video") -> {
+                    addMessageToChat("System: 🎬 Initiating YouTube Auto-Upload Sequence...")
                     
                     val intent = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
                     if (intent != null) {
                         startActivity(intent)
                         
-                        // 2 सेकंड रुककर सर्च बटन (Search) पर क्लिक करेगा
-                        handler.postDelayed({ service.clickButtonByText("Search") }, 2000)
+                        // Step 1: 3 सेकंड बाद '+' (Create) बटन पर क्लिक करेगा
+                        handler.postDelayed({ 
+                            service.clickButtonByText("Create") 
+                            addMessageToChat("System: 👆 Clicked '+' button")
+                        }, 3000)
                         
-                        // 3.5 सेकंड बाद सर्च बॉक्स में गाना टाइप कर देगा
-                        handler.postDelayed({ service.autoType(query) }, 3500)
+                        // Step 2: 5 सेकंड बाद 'Upload a video' पर क्लिक करेगा
+                        handler.postDelayed({ 
+                            service.clickButtonByText("Upload a video") 
+                            addMessageToChat("System: 👆 Clicked 'Upload a video'")
+                        }, 5000)
+                        
+                        // गैलरी से वीडियो आपको खुद सेलेक्ट करनी होगी, J.A.R.V.I.S 7 सेकंड इंतज़ार करेगा 
+                        handler.postDelayed({ 
+                            addMessageToChat("J.A.R.V.I.S: Please select the video from gallery quickly. I will do the rest!") 
+                        }, 7000)
+                        
+                        // Step 3: 15 सेकंड बाद खुद Title टाइप करेगा
+                        handler.postDelayed({ 
+                            service.autoType("Uploaded by J.A.R.V.I.S 4.0 - Auto Test") 
+                            addMessageToChat("System: 📝 Auto-typed Title.")
+                        }, 15000)
+                        
+                        // Step 4: 17 सेकंड बाद 'Next' बटन दबाएगा
+                        handler.postDelayed({ 
+                            service.clickButtonByText("Next") 
+                        }, 17000)
+                        
+                        // Step 5: 20 सेकंड बाद फाइनल 'Upload video' बटन दबाएगा
+                        handler.postDelayed({ 
+                            service.clickButtonByText("Upload video") 
+                            addMessageToChat("System: ✅ Video Upload Started in Background!")
+                            
+                            // काम खत्म होने के बाद वापस होम स्क्रीन पर आ जाएगा
+                            handler.postDelayed({ service.executeSystemCommand("home") }, 2000)
+                        }, 20000)
+                        
                     } else {
                         addMessageToChat("System: ❌ YouTube App not found.")
                     }
                 }
 
-                // 2. Global Actions (पूरे फोन को हैकर्स की तरह कंट्रोल करना)
-                command.contains("home") -> {
-                    addMessageToChat("System: 🏠 Going to Home Screen")
-                    service.executeSystemCommand("home")
-                }
-                
-                command.contains("back") -> {
-                    addMessageToChat("System: 🔙 Going Back")
-                    service.executeSystemCommand("back")
-                }
-                
-                command.contains("notification") -> {
-                    addMessageToChat("System: 🔔 Opening Notifications")
-                    service.executeSystemCommand("notification")
-                }
-                
-                command.contains("recent") -> {
-                    addMessageToChat("System: 🗂️ Opening Recent Apps")
-                    service.executeSystemCommand("recent")
+                // बेसिक यूट्यूब सर्च 
+                command.contains("youtube") || command.contains("play") -> {
+                    val query = command.replace("youtube", "").replace("play", "").replace("song", "").trim()
+                    addMessageToChat("System: 🚀 Opening YouTube and automating search...")
+                    val intent = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
+                    if (intent != null) {
+                        startActivity(intent)
+                        handler.postDelayed({ service.clickButtonByText("Search") }, 2000)
+                        handler.postDelayed({ service.autoType(query) }, 3500)
+                    }
                 }
 
-                else -> addMessageToChat("System: Command executed.")
+                // ग्लोबल कमांड्स (Back, Home, Notification)
+                command.contains("home") -> service.executeSystemCommand("home")
+                command.contains("back") -> service.executeSystemCommand("back")
+                command.contains("notification") -> service.executeSystemCommand("notification")
             }
         }
     }
