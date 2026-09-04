@@ -1,6 +1,5 @@
 package com.myaiapp
 
-import com.myaiapp.R // R वाला एरर फिक्स
 import android.content.Context
 import android.content.Intent
 import android.hardware.camera2.CameraManager
