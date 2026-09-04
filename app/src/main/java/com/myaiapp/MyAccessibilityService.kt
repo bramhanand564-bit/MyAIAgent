@@ -1,75 +1,75 @@
 package com.myaiapp
 
 import android.accessibilityservice.AccessibilityService
+import android.os.Bundle
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.os.Bundle
+import android.widget.Toast
 
 class MyAccessibilityService : AccessibilityService() {
-    
+
     companion object {
         var instance: MyAccessibilityService? = null
     }
 
-    override fun onServiceConnected() { instance = this }
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this
+        Toast.makeText(this, "J.A.R.V.I.S Super-Hands Online!", Toast.LENGTH_SHORT).show()
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
-    override fun onUnbind(intent: android.content.Intent?): Boolean {
-        instance = null; return super.onUnbind(intent)
+
+    // 1. खुद टाइप करने की ताकत
+    fun autoType(textToType: String) {
+        val rootNode = rootInActiveWindow ?: return
+        val editNodes = findEditTextNodes(rootNode)
+        
+        if (editNodes.isNotEmpty()) {
+            val searchBox = editNodes[0]
+            val arguments = Bundle()
+            arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, textToType)
+            searchBox.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        }
     }
 
-    fun clickButtonByText(text: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val nodes = root.findAccessibilityNodeInfosByText(text)
-        for (node in nodes) {
-            var current: AccessibilityNodeInfo? = node
-            while (current != null) {
-                if (current.isClickable) {
-                    current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    return true
-                }
-                current = current.parent
+    // 2. खुद बटन क्लिक करने की ताकत
+    fun clickButtonByText(buttonName: String) {
+        val rootNode = rootInActiveWindow ?: return
+        val clickNodes = rootNode.findAccessibilityNodeInfosByText(buttonName)
+        
+        for (node in clickNodes) {
+            if (node.isClickable) {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                break
+            } else if (node.parent?.isClickable == true) {
+                node.parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                break
             }
         }
-        return false
     }
 
-    fun typeText(text: String): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val queue = java.util.ArrayDeque<AccessibilityNodeInfo>()
-        queue.add(root)
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            if (node.isEditable || node.className?.toString()?.contains("EditText") == true) {
-                val arguments = Bundle()
-                arguments.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-                node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                return true
-            }
-            for (i in 0 until node.childCount) node.getChild(i)?.let { queue.add(it) }
+    // 3. सिस्टम को कंट्रोल करने की ताकत (Home, Back, Notification)
+    fun executeSystemCommand(command: String) {
+        when (command.lowercase()) {
+            "back" -> performGlobalAction(GLOBAL_ACTION_BACK)
+            "home" -> performGlobalAction(GLOBAL_ACTION_HOME)
+            "recent" -> performGlobalAction(GLOBAL_ACTION_RECENTS)
+            "notification" -> performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
         }
-        return false
     }
 
-    // "Enter" या "Search" दबाने की ताकत!
-    fun pressEnter(): Boolean {
-        val root = rootInActiveWindow ?: return false
-        val searchKeywords = listOf("Search", "Go", "Enter", "Submit", "खोजें")
-        for (keyword in searchKeywords) {
-            val nodes = root.findAccessibilityNodeInfosByText(keyword)
-            if (nodes.isNotEmpty()) {
-                var current: AccessibilityNodeInfo? = nodes[0]
-                while (current != null) {
-                    if (current.isClickable) {
-                        current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        return true
-                    }
-                    current = current.parent
-                }
+    // डब्बा खोजने वाला इंटरनल फंक्शन
+    private fun findEditTextNodes(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
+        val nodes = mutableListOf<AccessibilityNodeInfo>()
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i) ?: continue
+            if (child.className?.toString()?.contains("EditText") == true) {
+                nodes.add(child)
             }
+            nodes.addAll(findEditTextNodes(child))
         }
-        return false
+        return nodes
     }
-
-    fun performGlobal(action: Int) { performGlobalAction(action) }
 }
