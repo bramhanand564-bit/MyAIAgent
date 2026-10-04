@@ -4,14 +4,17 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
 import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textview.MaterialTextView
 import com.myaiagent.folder.FolderVideoImporter
 import com.myaiagent.model.UploadItem
+import com.myaiagent.queue.UploadQueueCoordinator
 import com.myaiagent.queue.UploadQueueStore
 import com.myaiagent.scheduler.UploadAlarmScheduler
 import java.util.UUID
@@ -35,6 +38,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
         refreshQueue()
+        autoStartQueueIfPossible()
     }
 
     private val pickFolder = registerForActivityResult(
@@ -44,6 +48,7 @@ class MainActivity : AppCompatActivity() {
         persistTreePermission(uri)
         queueStore.addAllUnique(FolderVideoImporter.importVideos(this, uri))
         refreshQueue()
+        autoStartQueueIfPossible()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,6 +136,7 @@ class MainActivity : AppCompatActivity() {
 
         refreshQueue()
         rescheduleUploads()
+        autoStartQueueIfPossible()
     }
 
     override fun onResume() {
@@ -141,6 +147,30 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun autoStartQueueIfPossible() {
+        if (!isAutomationServiceEnabled()) return
+        if (com.myaiagent.automation.AutomationSessionStore(this).isActive()) return
+
+        val next = UploadQueueCoordinator.nextEligible(queueStore.load()) ?: return
+        if (next.status == "RUNNING") return
+
+        val intent = Intent(this, com.myaiagent.automation.UploadRunnerService::class.java).apply {
+            putExtra(com.myaiagent.automation.UploadRunnerService.EXTRA_ITEM_ID, next.id)
+        }
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun isAutomationServiceEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val expected = packageName + "/com.myaiagent.automation.NaxAccessibilityService"
+        return TextUtils.SimpleStringSplitter(':').let { splitter ->
+            splitter.setString(enabled)
+            splitter.any { it.equals(expected, ignoreCase = true) }
+        }
+    }
     private fun rescheduleUploads() {
         UploadAlarmScheduler.rescheduleAll(this, queueStore.load())
     }
