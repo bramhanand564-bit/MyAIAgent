@@ -103,6 +103,10 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.WAITING_FOR_PICKER -> {
                 val picker = isDocumentPicker(root.packageName?.toString().orEmpty())
+                if (picker && clickFileIfVisible(root, item.fileName)) {
+                    scheduleRetry(item)
+                    return
+                }
                 val openClicked = clickByLabels(root, listOf(
                     "Open", "Select", "Done", "Use this file", "Choose", "Select this file"
                 ))
@@ -213,6 +217,17 @@ class NaxAccessibilityService : AccessibilityService() {
         findNode(root, labels)?.let {
             it.isEditable || it.className?.toString()?.contains("EditText") == true
         } == true
+
+    private fun clickFileIfVisible(root: AccessibilityNodeInfo, fileName: String): Boolean {
+        val base = fileName.substringBeforeLast('.')
+        val node = findNode(root, listOf(fileName, base)) ?: return false
+        var current: AccessibilityNodeInfo? = node
+        while (current != null) {
+            if (current.isClickable) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            current = current.parent
+        }
+        return false
+    }
 
     private fun clickByLabels(root: AccessibilityNodeInfo, labels: List<String>): Boolean {
         val node = findNode(root, labels) ?: return false
