@@ -1,102 +1,58 @@
 package com.myaiagent
 
-import android.annotation.SuppressLint
-import android.net.Uri
+import android.content.Intent
 import android.os.Bundle
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.myaiagent.queue.UploadQueueStore
 
+/**
+ * Native Studio hand-off.
+ *
+ * We deliberately do not load studio.youtube.com here. The previous WebView
+ * rendered the desktop Studio surface inside a phone viewport, which is not a
+ * good mobile experience. The official Android YouTube Studio app is the
+ * mobile surface and is the target for accessibility automation.
+ */
 class YouTubeWorkspaceActivity : AppCompatActivity() {
-    private lateinit var webView: WebView
-    private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
-    private val pickWebUploadFile = registerForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        val callback = filePathCallback
-        filePathCallback = null
-        callback?.onReceiveValue(
-            if (uris.isNotEmpty()) uris.toTypedArray() else null
-        )
+    companion object {
+        const val YOUTUBE_STUDIO_PACKAGE = "com.google.android.apps.youtube.creator"
+        const val YOUTUBE_PACKAGE = "com.google.android.youtube"
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val itemId = intent.getStringExtra("item_id")
-        val queuedItem = itemId?.let { id ->
-            UploadQueueStore(this).load().firstOrNull { it.id == id }
-        }
-
-        webView = WebView(this)
-        webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            mediaPlaybackRequiresUserGesture = true
-            allowFileAccess = false
-            allowContentAccess = true
-            cacheMode = WebSettings.LOAD_DEFAULT
-        }
-
-        webView.webViewClient = WebViewClient()
-        webView.webChromeClient = object : WebChromeClient() {
-            override fun onShowFileChooser(
-                view: WebView?,
-                callback: ValueCallback<Array<Uri>>?,
-                params: FileChooserParams?
-            ): Boolean {
-                filePathCallback?.onReceiveValue(null)
-                filePathCallback = callback
-
-                val queuedUri = queuedItem?.uri?.let(Uri::parse)
-                val queuedType = queuedUri?.let {
-                    contentResolver.getType(it)
-                }
-
-                if (queuedUri != null &&
-                    (queuedType?.startsWith("video/") == true || params?.acceptTypes?.any { it.startsWith("video/") } == true)
-                ) {
-                    filePathCallback?.onReceiveValue(arrayOf(queuedUri))
-                    filePathCallback = null
-                    return true
-                }
-
-                val acceptTypes = params?.acceptTypes?.filter { it.isNotBlank() }
-                val mimeTypes = if (acceptTypes.isNullOrEmpty()) {
-                    arrayOf("video/*")
-                } else {
-                    acceptTypes.toTypedArray()
-                }
-                pickWebUploadFile.launch(mimeTypes)
-                return true
-            }
-        }
-
-        webView.loadUrl("https://studio.youtube.com/")
-        setContentView(webView)
+        openNativeStudio()
     }
 
-    @Deprecated("Use OnBackInvokedDispatcher on newer Android versions.")
-    override fun onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
+    private fun openNativeStudio() {
+        val studioIntent = packageManager.getLaunchIntentForPackage(YOUTUBE_STUDIO_PACKAGE)
+        if (studioIntent != null) {
+            studioIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(studioIntent)
+            finish()
+            return
         }
-    }
 
-    override fun onDestroy() {
-        filePathCallback?.onReceiveValue(null)
-        filePathCallback = null
-        webView.stopLoading()
-        webView.destroy()
-        super.onDestroy()
+        // Keep a graceful fallback for devices that have only the main YouTube app.
+        val youtubeIntent = packageManager.getLaunchIntentForPackage(YOUTUBE_PACKAGE)
+        if (youtubeIntent != null) {
+            youtubeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(youtubeIntent)
+            Toast.makeText(
+                this,
+                "YouTube Studio app not installed. Opened YouTube instead.",
+                Toast.LENGTH_LONG
+            ).show()
+            finish()
+            return
+        }
+
+        Toast.makeText(
+            this,
+            "Install the official YouTube Studio app to continue.",
+            Toast.LENGTH_LONG
+        ).show()
+        finish()
     }
 }
