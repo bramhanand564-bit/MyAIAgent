@@ -23,7 +23,7 @@ class QueueActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = UploadQueueStore(this)
-        setContentView(buildUi())
+        setContentView(NaxBottomNav.wrap(this, buildUi(), "QUEUE"))
     }
 
     override fun onResume() {
