@@ -54,6 +54,8 @@ Rules:
 - If confidence is below 0.80, use WAIT.
 """.trimIndent()
 
+        GeminiRequestGate.awaitTurn()
+
         val body = JSONObject()
             .put("contents", org.json.JSONArray().put(
                 JSONObject().put("parts", org.json.JSONArray()
