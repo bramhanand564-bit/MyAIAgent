@@ -133,7 +133,7 @@ class AiMindActivity : AppCompatActivity() {
             cardElevation = 0f
             setCardBackgroundColor(Color.argb(55,255,255,255))
             strokeWidth = dp(1)
-            strokeColor = Color.argb(90, accent)
+            strokeColor = Color.argb(90, Color.red(accent), Color.green(accent), Color.blue(accent))
         }
         val b = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
