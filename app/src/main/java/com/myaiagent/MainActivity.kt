@@ -84,6 +84,7 @@ class MainActivity : AppCompatActivity() {
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
 
         setContentView(buildDashboard())
+        com.myaiagent.workflow.WorkflowReconciler.sync(this)
         refreshQueue()
         rescheduleUploads()
         autoStartQueueIfPossible()
