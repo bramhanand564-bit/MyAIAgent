@@ -302,7 +302,9 @@ class MainActivity : AppCompatActivity() {
         row.addView(kpi("IN QUEUE", items.size.toString(), Color.rgb(176, 151, 255)),
             LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginEnd = dp(4) })
         row.addView(kpi("SCHEDULED", scheduled.toString(), Color.rgb(113, 196, 255)),
-            LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginHorizontal = dp(4) })
+            LinearLayout.LayoutParams(0, dp(72), 1f).apply {
+                setMargins(dp(4), 0, dp(4), 0)
+            })
         row.addView(kpi("ACTIVE", running.toString(), Color.rgb(111, 224, 164)),
             LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginStart = dp(4) })
         return row
