@@ -214,6 +214,23 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowTestActivity::class.java)) }
         }, lp(-1, 52, 0, 0, 0, 0))
 
+        root.addView(sectionTitle("PAGES").apply {
+            setPadding(0, dp(22), 0, dp(9))
+        })
+        val pages = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        pages.addView(actionButton("Queue", false) {
+            startActivity(Intent(this@MainActivity, QueueActivity::class.java))
+        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginEnd = dp(5) })
+        pages.addView(actionButton("History", false) {
+            startActivity(Intent(this@MainActivity, UploadHistoryActivity::class.java))
+        }, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(5) })
+        root.addView(pages)
+        root.addView(actionButton("App Settings", false) {
+            startActivity(Intent(this@MainActivity, AppSettingsActivity::class.java))
+        }, lp(-1, 50, 0, 10, 0, 0))
+
         root.addView(buildKpiRow())
         root.addView(sectionTitle("CREATE").apply {
             setPadding(0, dp(22), 0, dp(9))
