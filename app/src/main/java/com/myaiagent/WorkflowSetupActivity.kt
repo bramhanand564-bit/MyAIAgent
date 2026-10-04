@@ -36,6 +36,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
     private lateinit var folderText: MaterialTextView
     private lateinit var frequency: Spinner
     private lateinit var visibilitySpinner: Spinner
+    private lateinit var contentTypeSpinner: Spinner
     private lateinit var mode: Spinner
     private val timeButtons = mutableListOf<MaterialButton>()
     private var times = mutableListOf("07:00", "13:00", "19:00")
@@ -109,6 +110,12 @@ class WorkflowSetupActivity : AppCompatActivity() {
         visibilitySpinner = spinner(arrayOf("PRIVATE", "UNLISTED", "PUBLIC"))
         visibilitySpinner.setSelection(arrayOf("PRIVATE","UNLISTED","PUBLIC").indexOf(config.visibility).coerceAtLeast(0))
         root.addView(visibilitySpinner)
+
+        root.addView(section("CONTENT TYPE"))
+        contentTypeSpinner = spinner(arrayOf("VIDEO", "SHORT"))
+        contentTypeSpinner.setSelection(if (config.contentType == "SHORT") 1 else 0)
+        root.addView(contentTypeSpinner)
+
         mode = spinner(arrayOf("NATIVE_STUDIO"))
         mode.setSelection(0)
         root.addView(mode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -170,7 +177,8 @@ class WorkflowSetupActivity : AppCompatActivity() {
                     current.copy(
                         folderUri = folderUri,
                         visibility = currentVisibility,
-                        automationMode = currentMode
+                        automationMode = currentMode,
+                        contentType = contentTypeSpinner.selectedItem.toString()
                     )
                 )
                 startActivity(Intent(this@WorkflowSetupActivity, WorkflowTestActivity::class.java))
@@ -212,8 +220,17 @@ class WorkflowSetupActivity : AppCompatActivity() {
         queueStore.addAllUnique(imported)
         val visibilityValue = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibilitySpinner.selectedItemPosition.coerceIn(0,2)]
         val modeValue = "NATIVE_STUDIO"
+        val contentTypeValue = contentTypeSpinner.selectedItem.toString()
 
-        val config = WorkflowConfig(true, folderUri, selectedTimes, count, visibilityValue, modeValue)
+        val config = WorkflowConfig(
+            enabled = true,
+            folderUri = folderUri,
+            times = selectedTimes,
+            dailyLimit = count,
+            visibility = visibilityValue,
+            automationMode = modeValue,
+            contentType = contentTypeValue
+        )
         workflowStore.save(config)
         scheduleQueue(selectedTimes, visibilityValue, modeValue)
         Toast.makeText(this, "Workflow ON • ${count} upload(s) per day", Toast.LENGTH_SHORT).show()
