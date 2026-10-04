@@ -110,6 +110,7 @@ class MainActivity : AppCompatActivity() {
         val scroll = ScrollView(this).apply {
             setBackgroundColor(Color.rgb(8, 9, 13))
             clipToPadding = false
+            setPadding(0, 0, 0, dp(92))
         }
 
         val root = LinearLayout(this).apply {
@@ -352,7 +353,59 @@ class MainActivity : AppCompatActivity() {
         root.addView(footer)
 
         scroll.addView(root)
-        return scroll
+
+        val frame = android.widget.FrameLayout(this).apply {
+            setBackgroundColor(Color.rgb(8, 9, 13))
+            addView(scroll, android.widget.FrameLayout.LayoutParams(-1, -1))
+        }
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(8), dp(8), dp(10))
+            background = rounded(Color.rgb(17, 18, 24), dp(24))
+            elevation = dp(8).toFloat()
+        }
+
+        fun bottomTab(icon: String, title: String, selected: Boolean, onClick: () -> Unit) =
+            MaterialButton(this).apply {
+                text = "$icon\n$title"
+                isAllCaps = false
+                textSize = 11f
+                cornerRadius = dp(16)
+                minHeight = dp(56)
+                minWidth = 0
+                insetTop = 0
+                insetBottom = 0
+                setPadding(dp(2), 0, dp(2), 0)
+                backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    if (selected) Color.rgb(194, 164, 255) else Color.rgb(28, 29, 37)
+                )
+                setTextColor(
+                    if (selected) Color.rgb(25, 20, 35) else Color.rgb(198, 202, 214)
+                )
+                setOnClickListener { onClick() }
+            }
+
+        nav.addView(bottomTab("⌂", "Home", true) {},
+            LinearLayout.LayoutParams(0, dp(56), 1f).apply { marginEnd = dp(4) })
+        nav.addView(bottomTab("▣", "Queue", false) {
+            startActivity(Intent(this@MainActivity, QueueActivity::class.java))
+        }, LinearLayout.LayoutParams(0, dp(56), 1f).apply { marginEnd = dp(4) })
+        nav.addView(bottomTab("⚙", "Workflow", false) {
+            startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java))
+        }, LinearLayout.LayoutParams(0, dp(56), 1.05f).apply { marginEnd = dp(4) })
+        nav.addView(bottomTab("◌", "Settings", false) {
+            startActivity(Intent(this@MainActivity, AppSettingsActivity::class.java))
+        }, LinearLayout.LayoutParams(0, dp(56), 1f))
+
+        frame.addView(nav, android.widget.FrameLayout.LayoutParams(-1, dp(76)).apply {
+            gravity = Gravity.BOTTOM
+            leftMargin = dp(8)
+            rightMargin = dp(8)
+            bottomMargin = dp(8)
+        })
+        return frame
     }
 
     private fun refreshLiveAutomation() {
