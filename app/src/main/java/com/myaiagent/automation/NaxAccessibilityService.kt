@@ -83,16 +83,14 @@ class NaxAccessibilityService : AccessibilityService() {
                     return
                 }
 
-                if (item.automationMode == "EXTERNAL_APP" && isYouTube(root)) {
-                    sessionStore.setState(AutomationState.FILL_DETAILS)
-                } else {
-                    sessionStore.setState(AutomationState.FIND_CREATE)
-                }
+                TestRunStore(this).log("YouTube screen is active.")
+                sessionStore.setState(AutomationState.FIND_CREATE)
                 driveState(item, root)
             }
 
             AutomationState.FIND_CREATE -> {
                 if (clickByLabels(root, listOf("Create", "Create a video"))) {
+                    TestRunStore(this).log("Clicked Create.")
                     sessionStore.setState(AutomationState.FIND_UPLOAD)
                 } else {
                     scheduleRetry(item)
@@ -101,6 +99,7 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.FIND_UPLOAD -> {
                 if (clickByLabels(root, listOf("Upload a video", "Upload video"))) {
+                    TestRunStore(this).log("Clicked Upload a video.")
                     sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
                 } else {
                     scheduleRetry(item)
@@ -110,6 +109,7 @@ class NaxAccessibilityService : AccessibilityService() {
             AutomationState.WAITING_FOR_PICKER -> {
                 val picker = isDocumentPicker(root.packageName?.toString().orEmpty())
                 if (picker && clickFileIfVisible(root, item.fileName)) {
+                    TestRunStore(this).log("Selected video in the file picker: " + item.fileName)
                     scheduleRetry(item)
                     return
                 }
@@ -117,6 +117,7 @@ class NaxAccessibilityService : AccessibilityService() {
                     "Open", "Select", "Done", "Use this file", "Choose", "Select this file"
                 ))
                 if (picker && openClicked) {
+                    TestRunStore(this).log("Confirmed the selected video.")
                     sessionStore.setState(AutomationState.FILL_DETAILS)
                     driveState(item, root)
                 } else if (!picker && containsAny(root, listOf(item.fileName))) {
@@ -145,11 +146,14 @@ class NaxAccessibilityService : AccessibilityService() {
                     return
                 }
 
+                if (titleSet) TestRunStore(this).log("Title field completed: " + title)
+                if (item.description.isNotBlank()) TestRunStore(this).log("Description field completed.")
                 sessionStore.setState(AutomationState.SET_VISIBILITY)
             }
 
             AutomationState.SET_VISIBILITY -> {
                 if (clickByLabels(root, visibilityLabels(item.visibility))) {
+                    TestRunStore(this).log("Visibility selected: " + item.visibility)
                     sessionStore.setState(AutomationState.PUBLISH)
                     return
                 }
@@ -162,15 +166,18 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.PUBLISH -> {
                 if (clickByLabels(root, listOf("Publish", "Publish video"))) {
+                    TestRunStore(this).log("Clicked Publish.")
                     sessionStore.setState(AutomationState.VERIFY)
                     scheduleRetry(item)
                     return
                 }
                 if (clickByLabels(root, listOf("Next", "Continue"))) {
+                    TestRunStore(this).log("Clicked Next/Continue.")
                     scheduleRetry(item)
                     return
                 }
                 if (clickByLabels(root, listOf("Save", "Upload", "Done"))) {
+                    TestRunStore(this).log("Clicked final Save/Upload/Done action.")
                     sessionStore.setState(AutomationState.VERIFY)
                     scheduleRetry(item)
                     return
@@ -180,11 +187,15 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.VERIFY -> {
                 when {
-                    containsAny(root, listOf("Video published", "Published", "Upload complete")) ->
+                    containsAny(root, listOf("Video published", "Published", "Upload complete")) -> {
+                        TestRunStore(this).log("Verification found the published/upload-complete signal.")
                         finishSession(item, "Published signal detected")
+                    }
 
-                    containsAny(root, listOf("Processing", "Processing will continue in the background")) ->
+                    containsAny(root, listOf("Processing", "Processing will continue in the background")) -> {
+                        TestRunStore(this).log("Verification found the processing signal.")
                         finishSession(item, "Processing signal detected; final availability verification pending")
+                    }
 
                     else -> scheduleRetry(item)
                 }
@@ -208,6 +219,10 @@ class NaxAccessibilityService : AccessibilityService() {
         )
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
+
+        if (sessionStore.isTestMode()) {
+            TestRunStore(this).markWaitingForUser("Login, verification, CAPTCHA, or security screen detected.")
+        }
     }
 
     private fun isAutomationPackage(packageName: String): Boolean =
@@ -536,11 +551,16 @@ class NaxAccessibilityService : AccessibilityService() {
                 )
             )
         }
+        val testMode = sessionStore.isTestMode()
+        if (testMode) {
+            TestRunStore(this).finish(successful, message)
+        }
+
         sessionStore.clear()
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
 
-        if (successful) {
+        if (successful && !testMode) {
             val next = UploadQueueCoordinator.nextEligible(queueStore.load())
             if (next != null) {
                 val intent = android.content.Intent(
