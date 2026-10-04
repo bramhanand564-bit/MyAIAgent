@@ -3,8 +3,9 @@ package com.myaiagent.automation
 import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
-import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo
+import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
 
 class NaxAccessibilityService : AccessibilityService() {
@@ -12,14 +13,17 @@ class NaxAccessibilityService : AccessibilityService() {
     private lateinit var sessionStore: AutomationSessionStore
     private val handler = Handler(Looper.getMainLooper())
     private var retryRunnable: Runnable? = null
+    private var watchdogRunnable: Runnable? = null
 
     private val maxAttemptsPerState = 5
     private val sessionTimeoutMs = 10 * 60 * 1000L
+    private val watchdogIntervalMs = 30 * 1000L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         queueStore = UploadQueueStore(this)
         sessionStore = AutomationSessionStore(this)
+        startWatchdog()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -38,7 +42,17 @@ class NaxAccessibilityService : AccessibilityService() {
 
         val root = rootInActiveWindow ?: return
         val packageName = root.packageName?.toString().orEmpty()
-        if (packageName != "com.google.android.youtube" && packageName != "com.myaiagent") {
+        if (packageName != "com.google.android.youtube" && packageName != "com.myaiagent") return
+
+        if (containsAny(root, listOf(
+                "Sign in",
+                "Sign in to continue",
+                "Verify",
+                "verification required",
+                "CAPTCHA",
+                "Security check"
+            ))) {
+            setWaitingForUser(item)
             return
         }
 
@@ -50,7 +64,7 @@ class NaxAccessibilityService : AccessibilityService() {
         retryRunnable = null
     }
 
-    private fun driveState(item: com.myaiagent.model.UploadItem, root: AccessibilityNodeInfo) {
+    private fun driveState(item: UploadItem, root: AccessibilityNodeInfo) {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
 
@@ -103,7 +117,6 @@ class NaxAccessibilityService : AccessibilityService() {
                     scheduleRetry(item)
                     return
                 }
-
                 if (!descriptionSet) {
                     scheduleRetry(item)
                     return
@@ -121,12 +134,10 @@ class NaxAccessibilityService : AccessibilityService() {
                     sessionStore.setState(AutomationState.PUBLISH)
                     return
                 }
-
                 if (clickByLabels(root, listOf("Visibility", "Who can see this video"))) {
                     scheduleRetry(item)
                     return
                 }
-
                 scheduleRetry(item)
             }
 
@@ -139,52 +150,54 @@ class NaxAccessibilityService : AccessibilityService() {
             }
 
             AutomationState.VERIFY -> {
-                if (containsAny(root, listOf(
-                        "Video published",
-                        "Published",
-                        "Upload complete",
-                        "Processing"
-                    ))) {
-                    finishSession(item, "Upload submitted")
-                } else {
-                    scheduleRetry(item)
+                when {
+                    containsAny(root, listOf("Video published", "Published", "Upload complete")) ->
+                        finishSession(item, "Upload submitted")
+                    containsAny(root, listOf("Processing", "Processing will continue in the background")) ->
+                        finishSession(item, "Upload submitted")
+                    else -> scheduleRetry(item)
                 }
             }
 
-            else -> Unit
+            AutomationState.WAITING_USER,
+            AutomationState.COMPLETE,
+            AutomationState.ERROR,
+            AutomationState.IDLE -> Unit
         }
+    }
+
+    private fun setWaitingForUser(item: UploadItem) {
+        sessionStore.setState(AutomationState.WAITING_USER)
+        queueStore.update(item.copy(status = "NEEDS_USER_ACTION"))
+        retryRunnable?.let(handler::removeCallbacks)
+        retryRunnable = null
     }
 
     private fun isYouTube(root: AccessibilityNodeInfo): Boolean =
         root.packageName?.toString() == "com.google.android.youtube"
 
-    private fun isEmbedded(item: com.myaiagent.model.UploadItem): Boolean =
+    private fun isEmbedded(item: UploadItem): Boolean =
         item.automationMode == "EMBEDDED_WEB"
 
     private fun fieldExists(root: AccessibilityNodeInfo, labels: List<String>): Boolean =
-        findNode(root, labels)?.let { it.isEditable || it.className?.toString()?.contains("EditText") == true } == true
+        findNode(root, labels)?.let {
+            it.isEditable || it.className?.toString()?.contains("EditText") == true
+        } == true
 
     private fun clickByLabels(root: AccessibilityNodeInfo, labels: List<String>): Boolean {
         val node = findNode(root, labels) ?: return false
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable) {
-                return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }
+            if (current.isClickable) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             current = current.parent
         }
         return false
     }
 
-    private fun setTextByLabels(
-        root: AccessibilityNodeInfo,
-        labels: List<String>,
-        value: String
-    ): Boolean {
+    private fun setTextByLabels(root: AccessibilityNodeInfo, labels: List<String>, value: String): Boolean {
         if (value.isBlank()) return true
         val node = findNode(root, labels) ?: return false
         if (!node.isEditable) return false
-
         return node.performAction(
             AccessibilityNodeInfo.ACTION_SET_TEXT,
             android.os.Bundle().apply {
@@ -196,14 +209,10 @@ class NaxAccessibilityService : AccessibilityService() {
         )
     }
 
-    private fun findNode(
-        root: AccessibilityNodeInfo,
-        labels: List<String>
-    ): AccessibilityNodeInfo? {
+    private fun findNode(root: AccessibilityNodeInfo, labels: List<String>): AccessibilityNodeInfo? {
         val normalized = labels.map { it.trim().lowercase() }
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
-
         while (queue.isNotEmpty()) {
             val node = queue.removeFirst()
             val texts = listOfNotNull(
@@ -212,12 +221,8 @@ class NaxAccessibilityService : AccessibilityService() {
             ).map { it.trim().lowercase() }
 
             if (texts.any { current ->
-                    normalized.any { target ->
-                        current == target || current.contains(target)
-                    }
-                }) {
-                return node
-            }
+                    normalized.any { target -> current == target || current.contains(target) }
+                }) return node
 
             for (i in 0 until node.childCount) {
                 node.getChild(i)?.let(queue::addLast)
@@ -235,33 +240,46 @@ class NaxAccessibilityService : AccessibilityService() {
         else -> listOf("Private")
     }
 
-    private fun scheduleRetry(item: com.myaiagent.model.UploadItem) {
+    private fun scheduleRetry(item: UploadItem) {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = Runnable {
             if (!::sessionStore.isInitialized) return@Runnable
-
-            val attempts = sessionStore.incrementAttempt()
-            if (attempts > maxAttemptsPerState) {
+            if (sessionStore.incrementAttempt() > maxAttemptsPerState) {
                 finishSession(item, "UI step did not match after retries")
                 return@Runnable
             }
-
             val root = rootInActiveWindow
             val packageName = root?.packageName?.toString().orEmpty()
             if (root != null &&
                 (packageName == "com.google.android.youtube" || packageName == "com.myaiagent")
-            ) {
-                driveState(item, root)
-            }
+            ) driveState(item, root)
         }.also { handler.postDelayed(it, 1200L) }
     }
 
-    private fun finishSession(item: com.myaiagent.model.UploadItem?, message: String) {
+    private fun startWatchdog() {
+        watchdogRunnable?.let(handler::removeCallbacks)
+        watchdogRunnable = object : Runnable {
+            override fun run() {
+                if (::sessionStore.isInitialized && sessionStore.itemId() != null) {
+                    val elapsed = System.currentTimeMillis() - sessionStore.startedAt()
+                    if (elapsed > sessionTimeoutMs) {
+                        val id = sessionStore.itemId()
+                        val item = id?.let { wanted ->
+                            queueStore.load().firstOrNull { it.id == wanted }
+                        }
+                        finishSession(item, "Automation timed out")
+                    }
+                }
+                handler.postDelayed(this, watchdogIntervalMs)
+            }
+        }
+        handler.post(watchdogRunnable!!)
+    }
+
+    private fun finishSession(item: UploadItem?, message: String) {
         if (item != null) {
             queueStore.update(
-                item.copy(
-                    status = if (message == "Upload submitted") "SUBMITTED" else "ERROR"
-                )
+                item.copy(status = if (message == "Upload submitted") "SUBMITTED" else "ERROR")
             )
         }
         sessionStore.clear()
@@ -271,6 +289,7 @@ class NaxAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         retryRunnable?.let(handler::removeCallbacks)
+        watchdogRunnable?.let(handler::removeCallbacks)
         super.onDestroy()
     }
 }
