@@ -23,6 +23,7 @@ class UploadRunnerService : Service() {
     }
 
     private lateinit var queueStore: UploadQueueStore
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
@@ -83,30 +84,50 @@ class UploadRunnerService : Service() {
         sessionStore.begin(item, initialState, testMode)
         MindStore(this).log("RUNNER • foreground service started • " + item.fileName)
 
-        // All legacy modes now resolve to the native YouTube Studio app.
-        // This removes the desktop Studio WebView entirely.
-        val started = launchNativeYouTubeStudio(item)
+        // AI fills missing title/description first, then the native Studio app
+        // is opened. The runner remains foreground while the model works.
+        Thread {
+            val metadata = if (item.title.isBlank() || item.description.isBlank()) {
+                AiContentGenerator(this@UploadRunnerService).generate(item)
+            } else null
 
-        if (!started) {
-            val note = "Could not start YouTube Studio or access the selected video"
-            MindEngine.onError(
-                this,
-                note,
-                "Confirm YouTube Studio is installed, the video URI is still readable, and Accessibility is enabled."
-            )
-            queueStore.update(
+            val enriched = if (metadata != null) {
                 item.copy(
-                    status = "ERROR",
-                    lastRunAt = System.currentTimeMillis(),
-                    resultNote = note
+                    title = item.title.ifBlank { metadata.title },
+                    description = item.description.ifBlank { metadata.description }
                 )
-            )
-            AutomationLiveStore(this).finish(false, note)
-            if (testMode) TestRunStore(this).finish(false, note)
-            sessionStore.clear()
-        }
+            } else item
 
-        stopSelf(startId)
+            if (enriched != item) {
+                queueStore.update(enriched)
+                MindStore(this@UploadRunnerService).log("AI CONTENT • metadata prepared")
+            }
+
+            val started = launchNativeYouTubeStudio(enriched)
+
+            mainHandler.post {
+                if (!started) {
+                    val note = "Could not start YouTube Studio or access the selected video"
+                    MindEngine.onError(
+                        this@UploadRunnerService,
+                        note,
+                        "Confirm YouTube Studio is installed, the video URI is still readable, and Accessibility is enabled."
+                    )
+                    queueStore.update(
+                        enriched.copy(
+                            status = "ERROR",
+                            lastRunAt = System.currentTimeMillis(),
+                            resultNote = note
+                        )
+                    )
+                    AutomationLiveStore(this@UploadRunnerService).finish(false, note)
+                    if (testMode) TestRunStore(this@UploadRunnerService).finish(false, note)
+                    sessionStore.clear()
+                }
+                stopSelf(startId)
+            }
+        }.start()
+
         return START_NOT_STICKY
     }
 
