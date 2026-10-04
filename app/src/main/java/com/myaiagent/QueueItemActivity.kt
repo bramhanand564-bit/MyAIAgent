@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.Spinner
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
@@ -68,12 +69,13 @@ class QueueItemActivity : AppCompatActivity() {
         })
 
         visibility = Spinner(this)
+        val visibilityValues = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
         visibility.adapter = ArrayAdapter(
             this,
             android.R.layout.simple_spinner_dropdown_item,
-            arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
+            visibilityValues
         )
-        visibility.setSelection(arrayOf("PRIVATE", "UNLISTED", "PUBLIC").indexOf(item.visibility).coerceAtLeast(0))
+        visibility.setSelection(visibilityValues.indexOf(item.visibility).coerceAtLeast(0))
         root.addView(visibility)
 
         root.addView(MaterialTextView(this).apply {
@@ -100,8 +102,35 @@ class QueueItemActivity : AppCompatActivity() {
         })
 
         root.addView(MaterialButton(this).apply {
+            text = "Clear Schedule"
+            setOnClickListener {
+                scheduledAt = null
+                refreshScheduleLabel()
+            }
+        })
+
+        root.addView(MaterialButton(this).apply {
             text = "Save"
             setOnClickListener { saveItem() }
+        })
+
+        root.addView(MaterialButton(this).apply {
+            text = "Retry Upload"
+            setOnClickListener {
+                UploadAlarmScheduler.cancel(this@QueueItemActivity, item.id)
+                store.resetForRetry(item.id)
+                Toast.makeText(this@QueueItemActivity, "Queue item reset to QUEUED", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        })
+
+        root.addView(MaterialButton(this).apply {
+            text = "Remove from Queue"
+            setOnClickListener {
+                UploadAlarmScheduler.cancel(this@QueueItemActivity, item.id)
+                store.remove(item.id)
+                finish()
+            }
         })
 
         setContentView(root)
