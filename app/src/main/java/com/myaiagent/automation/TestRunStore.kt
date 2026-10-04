@@ -80,6 +80,19 @@ class TestRunStore(context: Context) {
     }
 
     fun snapshot(): TestRunSnapshot {
+        val storedActive = prefs.getBoolean("active", false)
+        val started = prefs.getLong("started_at", 0L)
+        val stale = storedActive && started > 0L &&
+            System.currentTimeMillis() - started >= 10 * 60 * 1000L
+        if (stale) {
+            prefs.edit()
+                .putBoolean("active", false)
+                .putString("result", "ERROR")
+                .putString("result_note", "Test session expired; no live automation is running.")
+                .putString("state", AutomationState.ERROR.name)
+                .apply()
+        }
+
         val events = JSONArray(prefs.getString("events", "[]") ?: "[]")
         val parsed = buildList {
             for (i in 0 until events.length()) {
