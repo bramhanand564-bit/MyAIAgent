@@ -337,37 +337,93 @@ class MainActivity : AppCompatActivity() {
             strokeWidth = dp(1)
             strokeColor = Color.argb(85, 194, 164, 255)
         }
+
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(13), dp(16), dp(13))
         }
+
         body.addView(label(
-            if (snapshot.active) "LIVE UPLOAD" else "LAST UPLOAD",
-            10f, Color.rgb(194, 164, 255), Typeface.BOLD
-        ))
-        body.addView(label(
-            snapshot.fileName, 14f, Color.WHITE, Typeface.BOLD
-        ).apply {
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, dp(4), 0, dp(3))
-        })
-        val state = snapshot.state.replace("_", " ")
-        body.addView(label(
-            state, 12f,
-            if (snapshot.active) Color.rgb(125,220,164) else Color.rgb(169,175,191),
+            if (snapshot.active) "●  LIVE AUTOMATION" else "LAST AUTOMATION",
+            10f,
+            if (snapshot.active) Color.rgb(125,220,164) else Color.rgb(151,157,173),
             Typeface.BOLD
         ))
         body.addView(label(
-            snapshot.note, 11f, Color.rgb(169,175,191), Typeface.NORMAL
-        ).apply { setPadding(0, dp(3), 0, dp(2)) })
+            snapshot.fileName,
+            14f,
+            Color.WHITE,
+            Typeface.BOLD
+        ).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(5), 0, dp(3))
+        })
 
-        // Keep the process understandable: show only the latest four meaningful steps.
-        snapshot.events.takeLast(4).forEach { event ->
-            body.addView(label(
-                "• $event", 10f, Color.rgb(145,150,164), Typeface.NORMAL
-            ).apply { setPadding(0, dp(2), 0, 0) })
+        val humanState = when (snapshot.state) {
+            "WAITING_FOR_APP" -> "Opening YouTube Studio"
+            "FIND_CREATE" -> "Finding Create"
+            "FIND_UPLOAD" -> "Opening Upload"
+            "WAITING_FOR_PICKER" -> "Selecting video"
+            "FILL_DETAILS" -> "Filling title & description"
+            "SET_VISIBILITY" -> "Setting visibility"
+            "PUBLISH" -> "Publishing"
+            "VERIFY" -> "Verifying"
+            "WAITING_USER" -> "Waiting for your action"
+            "COMPLETE" -> "Complete"
+            "ERROR" -> "Error"
+            else -> "Working"
         }
+
+        body.addView(label(
+            when {
+                snapshot.result == "SUCCESS" -> "✓ Upload completed"
+                snapshot.result == "ERROR" -> "✕ Upload stopped"
+                snapshot.state == "WAITING_USER" -> "⚠ $humanState"
+                else -> humanState
+            },
+            13f,
+            when {
+                snapshot.result == "SUCCESS" -> Color.rgb(125,220,164)
+                snapshot.result == "ERROR" -> Color.rgb(255,112,112)
+                snapshot.state == "WAITING_USER" -> Color.rgb(255,181,105)
+                else -> Color.WHITE
+            },
+            Typeface.BOLD
+        ).apply { setPadding(0, dp(2), 0, dp(3)) })
+
+        if (snapshot.note.isNotBlank()) {
+            body.addView(label(
+                snapshot.note,
+                11f,
+                Color.rgb(169,175,191),
+                Typeface.NORMAL
+            ).apply {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            })
+        }
+
+        snapshot.events.takeLast(3).forEach { event ->
+            body.addView(label(
+                "• $event",
+                10f,
+                Color.rgb(145,150,164),
+                Typeface.NORMAL
+            ).apply { setPadding(0, dp(3), 0, 0) })
+        }
+
+        if (snapshot.active) {
+            val hint = label(
+                "Process is running. You can keep this screen open and watch each step.",
+                10f,
+                Color.rgb(132,137,151),
+                Typeface.NORMAL
+            )
+            hint.setPadding(0, dp(7), 0, 0)
+            body.addView(hint)
+        }
+
         card.addView(body)
         liveAutomationContainer.addView(card)
     }
