@@ -75,7 +75,9 @@ class AutomationLiveStore(context: Context) {
     private fun stateLabel(state: AutomationState) = when (state) {
         AutomationState.WAITING_FOR_APP -> "Opening YouTube Studio"
         AutomationState.FIND_CREATE -> "Finding Create"
+        AutomationState.VERIFY_CREATE_MENU -> "Verifying Create menu"
         AutomationState.FIND_UPLOAD -> "Opening Upload"
+        AutomationState.VERIFY_UPLOAD_PICKER -> "Verifying file picker"
         AutomationState.WAITING_FOR_PICKER -> "Selecting video"
         AutomationState.FILL_DETAILS -> "Filling title & description"
         AutomationState.SET_VISIBILITY -> "Setting visibility"
