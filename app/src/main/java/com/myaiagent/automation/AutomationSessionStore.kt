@@ -4,9 +4,13 @@ import android.content.Context
 import com.myaiagent.model.UploadItem
 
 class AutomationSessionStore(context: Context) {
-    private val prefs = context.getSharedPreferences("automation_session", Context.MODE_PRIVATE)
+    private val prefs =
+        context.getSharedPreferences("automation_session", Context.MODE_PRIVATE)
 
-    fun begin(item: UploadItem, initialState: AutomationState = AutomationState.WAITING_FOR_APP) {
+    fun begin(
+        item: UploadItem,
+        initialState: AutomationState = AutomationState.WAITING_FOR_APP
+    ) {
         prefs.edit()
             .putString("item_id", item.id)
             .putString("state", initialState.name)
@@ -17,17 +21,25 @@ class AutomationSessionStore(context: Context) {
 
     fun itemId(): String? = prefs.getString("item_id", null)
 
-    fun isActive(exceptItemId: String? = null, timeoutMs: Long = 10 * 60 * 1000L): Boolean {
+    fun startedAt(): Long = prefs.getLong("started_at", 0L)
+
+    fun isActive(
+        exceptItemId: String? = null,
+        timeoutMs: Long = 10 * 60 * 1000L
+    ): Boolean {
         val currentId = itemId() ?: return false
         if (exceptItemId != null && currentId == exceptItemId) return false
-        val startedAt = prefs.getLong("started_at", 0L)
-        return startedAt > 0L && System.currentTimeMillis() - startedAt < timeoutMs
+        val started = startedAt()
+        return started > 0L && System.currentTimeMillis() - started < timeoutMs
     }
 
     fun state(): AutomationState =
         runCatching {
             AutomationState.valueOf(
-                prefs.getString("state", AutomationState.IDLE.name) ?: AutomationState.IDLE.name
+                prefs.getString(
+                    "state",
+                    AutomationState.IDLE.name
+                ) ?: AutomationState.IDLE.name
             )
         }.getOrDefault(AutomationState.IDLE)
 
