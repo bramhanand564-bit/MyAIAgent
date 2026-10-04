@@ -591,7 +591,13 @@ class NaxAccessibilityService : AccessibilityService() {
         retryRunnable = null
 
         if (successful && !testMode) {
-            val next = UploadQueueCoordinator.nextEligible(queueStore.load())
+            val workflow = com.myaiagent.workflow.WorkflowStore(this).load()
+            val candidates = if (workflow.enabled) {
+                queueStore.load().filter { it.scheduledAt != null }
+            } else {
+                queueStore.load()
+            }
+            val next = UploadQueueCoordinator.nextEligible(candidates)
             if (next != null) {
                 val intent = android.content.Intent(
                     this,
