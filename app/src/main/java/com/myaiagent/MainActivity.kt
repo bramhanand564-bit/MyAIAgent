@@ -454,7 +454,9 @@ class MainActivity : AppCompatActivity() {
         val humanState = when (snapshot.state) {
             "WAITING_FOR_APP" -> "Opening YouTube Studio"
             "FIND_CREATE" -> "Finding Create"
+            "VERIFY_CREATE_MENU" -> "Verifying Create menu"
             "FIND_UPLOAD" -> "Opening Upload"
+            "VERIFY_UPLOAD_PICKER" -> "Verifying file picker"
             "WAITING_FOR_PICKER" -> "Selecting video"
             "FILL_DETAILS" -> "Filling title & description"
             "SET_VISIBILITY" -> "Setting visibility"
@@ -853,7 +855,7 @@ class MainActivity : AppCompatActivity() {
         })
 
         val metadata = label(
-            (item.visibility + "  •  " + item.automationMode.replace("_", " ")),
+            (item.contentType + "  •  " + item.visibility + "  •  " + item.automationMode.replace("_", " ")),
             11f,
             Color.rgb(126, 132, 148),
             Typeface.NORMAL
