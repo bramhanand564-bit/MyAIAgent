@@ -822,39 +822,7 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
-        if (item.status != "RUNNING" && item.status != "SUBMITTED" && item.status != "UPLOADED") {
-            body.addView(MaterialButton(this).apply {
-                text = "▶  Run now"
-                textSize = 12f
-                isAllCaps = false
-                cornerRadius = dp(12)
-                minHeight = dp(40)
-                insetTop = 0
-                insetBottom = 0
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(62, 194, 164, 255))
-                strokeWidth = dp(1)
-                strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(90, 194, 164, 255))
-                setTextColor(Color.rgb(220,210,245))
-                setOnClickListener {
-                    UploadAlarmScheduler.cancel(this@MainActivity, item.id)
-                    val nowItem = item.copy(
-                        status = "RUNNING",
-                        scheduledAt = null,
-                        lastRunAt = System.currentTimeMillis(),
-                        resultNote = "Manual upload started"
-                    )
-                    queueStore.update(nowItem)
-                    ContextCompat.startForegroundService(
-                        this@MainActivity,
-                        Intent(this@MainActivity, com.myaiagent.automation.UploadRunnerService::class.java).apply {
-                            putExtra(com.myaiagent.automation.UploadRunnerService.EXTRA_ITEM_ID, nowItem.id)
-                        }
-                    )
-                    refreshQueue()
-                    refreshLiveAutomation()
-                }
-            }, lp(-1, 40, 42, 10, 0, 0))
-        }
+
 
         card.addView(body)
         return card.apply {
@@ -877,7 +845,6 @@ class MainActivity : AppCompatActivity() {
             putExtra(com.myaiagent.automation.UploadRunnerService.EXTRA_ITEM_ID, updated.id)
         }
         ContextCompat.startForegroundService(this, intent)
-        startActivity(Intent(this, AutomationLiveActivity::class.java))
     }
 
     private fun updateServiceStatus() {
@@ -914,10 +881,8 @@ class MainActivity : AppCompatActivity() {
         // A manually added video must never auto-upload just because the app opens.
         // Automatic execution is reserved for an explicitly enabled workflow.
         if (!workflow.enabled) return
-        val candidates = if (workflow.enabled) {
-            queueStore.load().filter { it.scheduledAt != null }
-        } else {
-            queueStore.load()
+        val candidates = queueStore.load().filter {
+            (it.status == "QUEUED" || it.status == "SCHEDULED") && it.scheduledAt != null
         }
         val next = UploadQueueCoordinator.nextEligible(candidates) ?: return
         if (next.status == "RUNNING") return
