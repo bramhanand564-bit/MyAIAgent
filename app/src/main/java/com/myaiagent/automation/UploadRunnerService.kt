@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.IBinder
 import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
+import com.myaiagent.YouTubeWorkspaceActivity
 
 class UploadRunnerService : Service() {
     companion object {
@@ -36,16 +37,26 @@ class UploadRunnerService : Service() {
         }
 
         queueStore.update(item.copy(status = "RUNNING"))
-        launchYouTube(item)
+        launchMode(item)
         return START_NOT_STICKY
     }
 
-    private fun launchYouTube(item: UploadItem) {
+    private fun launchMode(item: UploadItem) {
+        if (item.automationMode == "EMBEDDED_WEB") {
+            startActivity(Intent(this, YouTubeWorkspaceActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("item_id", item.id)
+            })
+            updateNotification("Embedded YouTube opened for: " + item.fileName)
+            stopSelf()
+            return
+        }
+
         val launchIntent = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(launchIntent)
-            updateNotification("YouTube opened for: " + item.fileName)
+            updateNotification("YouTube app opened for: " + item.fileName)
         } else {
             updateNotification("YouTube app is not installed")
             queueStore.update(item.copy(status = "ERROR"))
@@ -55,12 +66,13 @@ class UploadRunnerService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "MyAIAgent Automation",
-                NotificationManager.IMPORTANCE_LOW
+            getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    "MyAIAgent Automation",
+                    NotificationManager.IMPORTANCE_LOW
+                )
             )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
@@ -73,8 +85,10 @@ class UploadRunnerService : Service() {
             .build()
 
     private fun updateNotification(text: String) {
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification(text))
+        getSystemService(NotificationManager::class.java).notify(
+            NOTIFICATION_ID,
+            notification(text)
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
