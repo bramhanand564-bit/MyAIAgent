@@ -339,7 +339,8 @@ class NaxAccessibilityService : AccessibilityService() {
         }
 
         val settings = VisionAgentSettings(this)
-        if (!settings.enabled || settings.apiKey.isBlank() || visionInFlight) {
+        if (!settings.enabled || (settings.provider != VisionAgentSettings.PROVIDER_GEMINI && settings.endpoint.isBlank()) ||
+            (settings.provider == VisionAgentSettings.PROVIDER_GEMINI && settings.apiKey.isBlank()) || visionInFlight) {
             scheduleRetryWithoutVision(item)
             return
         }
@@ -361,15 +362,26 @@ class NaxAccessibilityService : AccessibilityService() {
                     }
 
                     visionExecutor.execute {
-                        val decision = GeminiVisionAgent(
-                            settings.apiKey,
-                            settings.model
-                        ).analyze(
-                            bitmap,
-                            sessionStore.state(),
-                            item.title.ifBlank { item.fileName },
-                            item.visibility
-                        )
+                        val decision = when (settings.provider) {
+                            VisionAgentSettings.PROVIDER_CUSTOM,
+                            VisionAgentSettings.PROVIDER_LOCAL -> OpenAiCompatibleVisionAgent(
+                                settings.endpoint,
+                                settings.apiKey,
+                                settings.model,
+                                settings.extraHeaders
+                            ).analyze(
+                                bitmap,
+                                sessionStore.state(),
+                                item.title.ifBlank { item.fileName },
+                                item.visibility
+                            )
+                            else -> GeminiVisionAgent(settings.apiKey, settings.model).analyze(
+                                bitmap,
+                                sessionStore.state(),
+                                item.title.ifBlank { item.fileName },
+                                item.visibility
+                            )
+                        }
                         handler.post {
                             visionInFlight = false
                             bitmap.recycle()
