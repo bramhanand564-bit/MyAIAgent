@@ -7,10 +7,13 @@ import android.provider.Settings
 import android.widget.LinearLayout
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.documentfile.provider.DocumentFile
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textview.MaterialTextView
+import com.myaiagent.folder.FolderVideoImporter
 import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
+import com.myaiagent.scheduler.UploadAlarmScheduler
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
@@ -23,7 +26,27 @@ class MainActivity : AppCompatActivity() {
     ) { uris ->
         uris.forEach { uri ->
             persistReadPermission(uri)
-            queueStore.add(UploadItem(UUID.randomUUID().toString(), uri.toString(), resolveName(uri)))
+            queueStore.add(
+                UploadItem(
+                    id = UUID.randomUUID().toString(),
+                    uri = uri.toString(),
+                    fileName = resolveName(uri)
+                )
+            )
+        }
+        refreshQueue()
+    }
+
+    private val pickFolder = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        persistTreePermission(uri)
+        val imported = FolderVideoImporter.importVideos(this, uri)
+        if (imported.isNotEmpty()) {
+            val current = queueStore.load().toMutableList()
+            current.addAll(imported)
+            queueStore.save(current)
         }
         refreshQueue()
     }
@@ -36,60 +59,106 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 48, 32, 32)
         }
-        val title = MaterialTextView(this).apply {
+        root.addView(MaterialTextView(this).apply {
             text = "MyAIAgent"
             textSize = 28f
-        }
-        val status = MaterialTextView(this).apply {
+        })
+        root.addView(MaterialTextView(this).apply {
             text = "Automation workspace\nEmbedded YouTube + External YouTube fallback"
             textSize = 16f
             setPadding(0, 20, 0, 20)
-        }
-        val addVideos = MaterialButton(this).apply {
+        })
+        root.addView(MaterialButton(this).apply {
             text = "Add Videos"
             setOnClickListener { pickVideos.launch(arrayOf("video/*")) }
-        }
-        val accessibility = MaterialButton(this).apply {
+        })
+        root.addView(MaterialButton(this).apply {
+            text = "Add Folder"
+            setOnClickListener { pickFolder.launch(null) }
+        })
+        root.addView(MaterialButton(this).apply {
             text = "Enable Automation Service"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+        })
+        queueText = MaterialTextView(this).apply {
+            textSize = 18f
+            setPadding(0, 24, 0, 8)
         }
-        queueContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }\n        queueText = MaterialTextView(this).apply {
-            textSize = 15f
-            setPadding(0, 20, 0, 0)
+        queueContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
-        root.addView(title)
-        root.addView(status)
-        root.addView(addVideos)
-        root.addView(accessibility)
-        root.addView(queueText)\n        root.addView(queueContainer)
+        root.addView(queueText)
+        root.addView(queueContainer)
         setContentView(root)
         refreshQueue()
+        UploadAlarmScheduler.rescheduleAll(this, queueStore.load())
     }
 
     override fun onResume() {
         super.onResume()
-        if (::queueStore.isInitialized) refreshQueue()
+        if (::queueStore.isInitialized) {
+            refreshQueue()
+            UploadAlarmScheduler.rescheduleAll(this, queueStore.load())
+        }
     }
 
     private fun refreshQueue() {
         val items = queueStore.load()
         queueText.text = "Upload Queue (" + items.size + ")"
         queueContainer.removeAllViews()
+
         items.forEachIndexed { index, item ->
             val time = item.scheduledAt?.let {
-                java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(it)
+                java.text.SimpleDateFormat(
+                    "dd MMM, hh:mm a",
+                    java.util.Locale.getDefault()
+                ).format(it)
             } ?: "Not scheduled"
-            val row = MaterialButton(this).apply {
+
+            queueContainer.addView(MaterialButton(this).apply {
                 text = (index + 1).toString() + ". " + item.fileName +
-                    "\\n" + item.title.ifBlank { "Title not set" } +
-                    " • " + item.visibility + " • " + time
+                    "\n" + item.title.ifBlank { "Title not set" } +
+                    " • " + item.visibility +
+                    " • " + time
                 setOnClickListener {
                     startActivity(Intent(this@MainActivity, QueueItemActivity::class.java).apply {
                         putExtra("item_id", item.id)
                     })
                 }
-            }
-            queueContainer.addView(row)
+            })
         }
     }
 
+    private fun persistReadPermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+        }
+    }
+
+    private fun persistTreePermission(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+        }
+    }
+
+    private fun resolveName(uri: Uri): String {
+        contentResolver.query(
+            uri,
+            arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) return cursor.getString(0)
+        }
+        return DocumentFile.fromSingleUri(this, uri)?.name ?: uri.lastPathSegment ?: "video"
+    }
+}
