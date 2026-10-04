@@ -71,12 +71,12 @@ class NaxAccessibilityService : AccessibilityService() {
 
         when (sessionStore.state()) {
             AutomationState.WAITING_FOR_APP -> {
-                if (!isYouTube(root) && !isEmbedded(item)) {
+                if (!isYouTube(root)) {
                     scheduleRetry(item)
                     return
                 }
 
-                testLog("YouTube screen is active.")
+                testLog("Native YouTube Studio screen is active.")
                 sessionStore.setState(AutomationState.FIND_CREATE)
                 driveState(item, root)
             }
@@ -159,42 +159,117 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.PUBLISH -> {
                 if (clickByLabels(root, listOf("Publish", "Publish video"))) {
-                    testLog("Clicked Publish.")
-                    sessionStore.setState(AutomationState.VERIFY)
-                    scheduleRetry(item)
+                    testLog("Clicked Publish. Starting upload monitoring.")
+                    sessionStore.setState(AutomationState.MONITOR_UPLOAD)
+                    scheduleMonitorCheck(item)
                     return
                 }
                 if (clickByLabels(root, listOf("Next", "Continue"))) {
-                    testLog("Clicked Next/Continue.")
+                    testLog("Clicked Next/Continue. Still waiting for final publish action.")
                     scheduleRetry(item)
                     return
                 }
                 if (clickByLabels(root, listOf("Save", "Upload", "Done"))) {
-                    testLog("Clicked final Save/Upload/Done action.")
-                    sessionStore.setState(AutomationState.VERIFY)
-                    scheduleRetry(item)
+                    testLog("Clicked final Save/Upload/Done action. Starting upload monitoring.")
+                    sessionStore.setState(AutomationState.MONITOR_UPLOAD)
+                    scheduleMonitorCheck(item)
                     return
                 }
                 scheduleRetry(item)
             }
 
-            AutomationState.VERIFY -> {
+            AutomationState.MONITOR_UPLOAD -> {
+                val observation = findUploadObservation(root)
+                if (observation != null && observation != sessionStore.lastObservation()) {
+                    sessionStore.recordObservation(observation)
+                    testLog("Upload check • " + observation)
+                }
+
                 when {
-                    containsAny(root, listOf("Video published", "Published", "Upload complete")) -> {
-                        testLog("Verification found the published/upload-complete signal.")
-                        finishSession(item, "Published signal detected")
+                    containsAny(root, listOf(
+                        "Upload failed",
+                        "Couldn't upload",
+                        "Couldn’t upload",
+                        "Something went wrong",
+                        "Try again"
+                    )) -> {
+                        finishSession(item, "Upload failed according to YouTube Studio")
                     }
 
-                    containsAny(root, listOf("Processing", "Processing will continue in the background")) -> {
-                        testLog("Verification found the processing signal.")
-                        finishSession(item, "Processing signal detected; final availability verification pending")
+                    isPublishedSignal(root) -> {
+                        sessionStore.markTransferComplete()
+                        testLog("Upload check • Published signal detected.")
+                        sessionStore.setState(AutomationState.VERIFY)
+                        driveState(item, root)
                     }
 
-                    else -> scheduleRetry(item)
+                    isSendingComplete(root) -> {
+                        sessionStore.markTransferComplete()
+                        testLog("Upload check • File transfer reached 100%. Moving to final verification.")
+                        sessionStore.setState(AutomationState.VERIFY)
+                        driveState(item, root)
+                    }
+
+                    containsAny(root, listOf(
+                        "Sending file",
+                        "Uploading",
+                        "Preparing",
+                        "% remaining",
+                        "seconds remaining",
+                        "minutes remaining"
+                    )) -> {
+                        scheduleMonitorCheck(item)
+                    }
+
+                    else -> {
+                        scheduleMonitorCheck(item)
+                    }
                 }
             }
 
-            AutomationState.WAITING_USER,
+            AutomationState.VERIFY -> {
+                when {
+                    isPublishedSignal(root) -> {
+                        testLog("Final verification passed: published/upload-complete signal found.")
+                        finishSession(item, "Verified upload • Published signal detected")
+                    }
+
+                    sessionStore.isTransferComplete() &&
+                        containsAny(root, listOf(item.fileName, item.fileName.substringBeforeLast('.'))) &&
+                        containsAny(root, listOf("Shorts", "Content", "Videos")) -> {
+                        testLog("Final verification passed: uploaded video is visible in YouTube.")
+                        finishSession(item, "Verified upload • Video visible in YouTube")
+                    }
+
+                    containsAny(root, listOf("Processing", "Processing will continue in the background")) -> {
+                        testLog(
+                            if (sessionStore.isTransferComplete())
+                                "Final check • YouTube is processing the transferred video; waiting for publish/content confirmation."
+                            else
+                                "Final check • Processing appeared before transfer completion; continuing to monitor."
+                        )
+                        scheduleMonitorCheck(item)
+                    }
+
+                    else -> scheduleMonitorCheck(item)
+                }
+            }
+
+            AutomationState.WAITING_USER -> {
+                val resume = sessionStore.waitingResumeState()
+                if (resume != null && isAutomationPackage(root.packageName?.toString().orEmpty())) {
+                    queueStore.update(
+                        item.copy(
+                            status = "RUNNING",
+                            resultNote = "Security screen cleared; automation resumed"
+                        )
+                    )
+                    testLog("User action cleared. Resuming " + resume.name + ".")
+                    sessionStore.setState(resume)
+                    driveState(item, root)
+                }
+            }
+
             AutomationState.COMPLETE,
             AutomationState.ERROR,
             AutomationState.IDLE -> Unit
@@ -202,7 +277,8 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun setWaitingForUser(item: UploadItem) {
-        sessionStore.setState(AutomationState.WAITING_USER)
+        val resumeState = sessionStore.state()
+        sessionStore.enterWaitingForUser(resumeState)
         queueStore.update(
             item.copy(
                 status = "NEEDS_USER_ACTION",
@@ -354,6 +430,67 @@ class NaxAccessibilityService : AccessibilityService() {
         "PUBLIC" -> listOf("Public")
         "UNLISTED" -> listOf("Unlisted")
         else -> listOf("Private")
+    }
+
+    private fun isPublishedSignal(root: AccessibilityNodeInfo): Boolean =
+        containsAny(root, listOf("Video published", "Published", "Upload complete", "Uploaded"))
+
+    private fun isSendingComplete(root: AccessibilityNodeInfo): Boolean {
+        val texts = collectNodeText(root)
+        return texts.any { value ->
+            val normalized = value.lowercase()
+            normalized.contains("sending file") && Regex("""100\s*%""").containsMatchIn(normalized)
+        }
+    }
+
+    private fun findUploadObservation(root: AccessibilityNodeInfo): String? {
+        val texts = collectNodeText(root)
+        val priority = texts.filter { value ->
+            val normalized = value.lowercase()
+            normalized.contains("sending file") ||
+                normalized.contains("uploading") ||
+                normalized.contains("preparing") ||
+                normalized.contains("remaining") ||
+                Regex("""\d{1,3}\s*%""").containsMatchIn(normalized)
+        }
+        return priority.firstOrNull()
+    }
+
+    private fun collectNodeText(root: AccessibilityNodeInfo): List<String> {
+        val result = mutableListOf<String>()
+        val pending = ArrayDeque<AccessibilityNodeInfo>()
+        pending.add(root)
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            node.text?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(result::add)
+            node.contentDescription?.toString()?.trim()?.takeIf { it.isNotBlank() }?.let(result::add)
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let(pending::addLast)
+            }
+        }
+        return result.distinct()
+    }
+
+    private fun scheduleMonitorCheck(item: UploadItem) {
+        retryRunnable?.let(handler::removeCallbacks)
+        retryRunnable = Runnable {
+            if (!::sessionStore.isInitialized || sessionStore.itemId() != item.id) return@Runnable
+            if (System.currentTimeMillis() - sessionStore.startedAt() > sessionTimeoutMs) {
+                finishSession(item, "Automation timed out while monitoring upload")
+                return@Runnable
+            }
+            val root = rootInActiveWindow
+            val packageName = root?.packageName?.toString().orEmpty()
+            if (root != null && isAutomationPackage(packageName)) {
+                driveState(item, root)
+            } else {
+                handler.postDelayed({
+                    if (::sessionStore.isInitialized && sessionStore.itemId() == item.id) {
+                        scheduleMonitorCheck(item)
+                    }
+                }, 2000L)
+            }
+        }.also { handler.postDelayed(it, 2000L) }
     }
 
     private fun scheduleRetry(item: UploadItem) {
@@ -518,8 +655,11 @@ class NaxAccessibilityService : AccessibilityService() {
             AutomationState.FILL_DETAILS -> sessionStore.setState(AutomationState.SET_VISIBILITY)
             AutomationState.SET_VISIBILITY -> sessionStore.setState(AutomationState.PUBLISH)
             AutomationState.PUBLISH -> {
-                if (action.targetText?.lowercase()?.contains("publish") == true) {
-                    sessionStore.setState(AutomationState.VERIFY)
+                val target = action.targetText?.lowercase().orEmpty()
+                if (target.contains("publish") || target.contains("upload") ||
+                    target.contains("save") || target.contains("done")
+                ) {
+                    sessionStore.setState(AutomationState.MONITOR_UPLOAD)
                 }
             }
             else -> Unit
@@ -571,12 +711,12 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun finishSession(item: UploadItem?, message: String) {
-        val successful = message.contains("signal detected", ignoreCase = true) ||
-            message.startsWith("Published", ignoreCase = true)
+        val successful = message.startsWith("Verified upload", ignoreCase = true)
         if (item != null) {
             queueStore.update(
                 item.copy(
-                    status = if (successful) "SUBMITTED" else "ERROR",
+                    status = if (successful) "UPLOADED" else "ERROR",
+                    scheduledAt = if (successful) null else item.scheduledAt,
                     lastRunAt = System.currentTimeMillis(),
                     resultNote = message
                 )
@@ -595,7 +735,7 @@ class NaxAccessibilityService : AccessibilityService() {
         if (successful && !testMode) {
             val workflow = com.myaiagent.workflow.WorkflowStore(this).load()
             val candidates = if (workflow.enabled) {
-                queueStore.load().filter { it.scheduledAt != null }
+                queueStore.load().filter { it.status == "QUEUED" || it.status == "SCHEDULED" }
             } else {
                 queueStore.load()
             }
