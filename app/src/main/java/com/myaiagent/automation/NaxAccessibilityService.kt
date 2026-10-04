@@ -437,23 +437,22 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun isSendingComplete(root: AccessibilityNodeInfo): Boolean {
         val texts = collectNodeText(root)
-        return texts.any { value ->
-            val normalized = value.lowercase()
-            normalized.contains("sending file") && Regex("""100\s*%""").containsMatchIn(normalized)
-        }
+        val hasSendingLabel = texts.any { it.lowercase().contains("sending file") }
+        val has100 = texts.any { Regex("""100\s*%""").containsMatchIn(it.lowercase()) }
+        return hasSendingLabel && has100
     }
 
     private fun findUploadObservation(root: AccessibilityNodeInfo): String? {
         val texts = collectNodeText(root)
-        val priority = texts.filter { value ->
-            val normalized = value.lowercase()
-            normalized.contains("sending file") ||
-                normalized.contains("uploading") ||
-                normalized.contains("preparing") ||
-                normalized.contains("remaining") ||
-                Regex("""\d{1,3}\s*%""").containsMatchIn(normalized)
-        }
-        return priority.firstOrNull()
+
+        fun matches(value: String, keyword: String): Boolean =
+            value.lowercase().contains(keyword)
+
+        return texts.firstOrNull { matches(it, "sending file") }
+            ?: texts.firstOrNull { matches(it, "uploading") }
+            ?: texts.firstOrNull { matches(it, "preparing") }
+            ?: texts.firstOrNull { matches(it, "remaining") }
+            ?: texts.firstOrNull { Regex("""\d{1,3}\s*%""").containsMatchIn(it.lowercase()) }
     }
 
     private fun collectNodeText(root: AccessibilityNodeInfo): List<String> {
