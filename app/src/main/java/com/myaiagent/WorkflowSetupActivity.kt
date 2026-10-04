@@ -107,7 +107,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
 
         root.addView(section("YOUTUBE SETTINGS"))
         visibilitySpinner = spinner(arrayOf("PRIVATE", "UNLISTED", "PUBLIC"))
-        visibility.setSelection(arrayOf("PRIVATE","UNLISTED","PUBLIC").indexOf(config.visibility).coerceAtLeast(0))
+        visibilitySpinner.setSelection(arrayOf("PRIVATE","UNLISTED","PUBLIC").indexOf(config.visibility).coerceAtLeast(0))
         root.addView(visibilitySpinner)
         mode = spinner(arrayOf("EMBEDDED_WEB", "EXTERNAL_APP"))
         mode.setSelection(arrayOf("EMBEDDED_WEB","EXTERNAL_APP").indexOf(config.automationMode).coerceAtLeast(0))
