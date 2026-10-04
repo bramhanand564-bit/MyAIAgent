@@ -219,8 +219,11 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun testLog(message: String) {
-        if (::sessionStore.isInitialized && sessionStore.isTestMode()) {
-            TestRunStore(this).log(message)
+        if (::sessionStore.isInitialized && sessionStore.isActive()) {
+            AutomationLiveStore(this).log(message)
+            if (sessionStore.isTestMode()) {
+                TestRunStore(this).log(message)
+            }
         }
     }
 
@@ -578,6 +581,7 @@ class NaxAccessibilityService : AccessibilityService() {
             )
         }
         val testMode = sessionStore.isTestMode()
+        AutomationLiveStore(this).finish(successful, message)
         if (testMode) {
             TestRunStore(this).finish(successful, message)
         }
