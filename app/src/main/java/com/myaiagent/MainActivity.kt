@@ -64,9 +64,14 @@ class MainActivity : AppCompatActivity() {
             textSize = 28f
         })
         root.addView(MaterialTextView(this).apply {
-            text = "Automation workspace\nEmbedded YouTube + External YouTube fallback"
+            text = "Automation workspace
+Embedded YouTube + External YouTube fallback"
             textSize = 16f
             setPadding(0, 20, 0, 20)
+        })
+        root.addView(MaterialButton(this).apply {
+            text = "Open Embedded YouTube"
+            setOnClickListener { startActivity(Intent(this@MainActivity, YouTubeWorkspaceActivity::class.java)) }
         })
         root.addView(MaterialButton(this).apply {
             text = "Add Videos"
@@ -97,9 +102,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 18f
             setPadding(0, 24, 0, 8)
         }
-        queueContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        queueContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         root.addView(queueText)
         root.addView(queueContainer)
         setContentView(root)
@@ -119,20 +122,18 @@ class MainActivity : AppCompatActivity() {
         val items = queueStore.load()
         queueText.text = "Upload Queue (" + items.size + ")"
         queueContainer.removeAllViews()
-
         items.forEachIndexed { index, item ->
             val time = item.scheduledAt?.let {
-                java.text.SimpleDateFormat(
-                    "dd MMM, hh:mm a",
-                    java.util.Locale.getDefault()
-                ).format(it)
+                java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(it)
             } ?: "Not scheduled"
-
             queueContainer.addView(MaterialButton(this).apply {
                 text = (index + 1).toString() + ". " + item.fileName +
-                    "\n" + item.title.ifBlank { "Title not set" } +
+                    "
+" + item.title.ifBlank { "Title not set" } +
                     " • " + item.visibility +
-                    " • " + time
+                    " • " + time +
+                    "
+Mode: " + item.automationMode
                 setOnClickListener {
                     startActivity(Intent(this@MainActivity, QueueItemActivity::class.java).apply {
                         putExtra("item_id", item.id)
@@ -144,12 +145,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun persistReadPermission(uri: Uri) {
         try {
-            contentResolver.takePersistableUriPermission(
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        } catch (_: SecurityException) {
-        }
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) {}
     }
 
     private fun persistTreePermission(uri: Uri) {
@@ -158,17 +155,14 @@ class MainActivity : AppCompatActivity() {
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-        } catch (_: SecurityException) {
-        }
+        } catch (_: SecurityException) {}
     }
 
     private fun resolveName(uri: Uri): String {
         contentResolver.query(
             uri,
             arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-            null,
-            null,
-            null
+            null, null, null
         )?.use { cursor ->
             if (cursor.moveToFirst()) return cursor.getString(0)
         }
