@@ -19,6 +19,9 @@ class AutomationSessionStore(context: Context) {
             .putLong("started_at", System.currentTimeMillis())
             .putInt("attempt", 0)
             .putBoolean("test_mode", testMode)
+            .putString("waiting_resume_state", null)
+            .putString("last_observation", "")
+            .putBoolean("transfer_complete", false)
             .apply()
 
         AutomationLiveStore(appContext).start(item.id, item.fileName)
@@ -65,6 +68,35 @@ class AutomationSessionStore(context: Context) {
     }
 
     fun isTestMode(): Boolean = prefs.getBoolean("test_mode", false)
+
+    fun enterWaitingForUser(resumeState: AutomationState) {
+        prefs.edit()
+            .putString("waiting_resume_state", resumeState.name)
+            .putString("state", AutomationState.WAITING_USER.name)
+            .putInt("attempt", 0)
+            .apply()
+        AutomationLiveStore(appContext).state(AutomationState.WAITING_USER)
+        if (isTestMode()) {
+            TestRunStore(appContext).setState(AutomationState.WAITING_USER)
+        }
+    }
+
+    fun waitingResumeState(): AutomationState? =
+        prefs.getString("waiting_resume_state", null)?.let {
+            runCatching { AutomationState.valueOf(it) }.getOrNull()
+        }
+
+    fun markTransferComplete() {
+        prefs.edit().putBoolean("transfer_complete", true).apply()
+    }
+
+    fun isTransferComplete(): Boolean = prefs.getBoolean("transfer_complete", false)
+
+    fun lastObservation(): String = prefs.getString("last_observation", "").orEmpty()
+
+    fun recordObservation(value: String) {
+        prefs.edit().putString("last_observation", value).apply()
+    }
 
     fun incrementAttempt(): Int {
         val next = prefs.getInt("attempt", 0) + 1
