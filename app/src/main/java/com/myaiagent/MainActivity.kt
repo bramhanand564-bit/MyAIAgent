@@ -170,6 +170,10 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(22), 0, dp(8))
         })
 
+        serviceStatusText = label("Checking…", 11f, Color.rgb(151, 157, 173), Typeface.NORMAL)
+        scheduleStatusText = label("Checking…", 11f, Color.rgb(151, 157, 173), Typeface.NORMAL)
+        updateServiceStatus()
+
         val automationRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
