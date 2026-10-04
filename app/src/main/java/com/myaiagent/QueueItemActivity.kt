@@ -4,6 +4,9 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.os.Bundle
 import android.widget.AdapterView
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -42,25 +45,30 @@ class QueueItemActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 40, 32, 32)
+            setPadding(dp(18), dp(12), dp(18), dp(32))
+            setBackgroundColor(Color.rgb(8, 9, 13))
         }
 
         root.addView(MaterialTextView(this).apply {
-            text = "Edit Upload"
-            textSize = 26f
+            text = "Upload"
+            textSize = 30f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
         })
         root.addView(MaterialTextView(this).apply {
             text = item.fileName
-            textSize = 15f
-            setPadding(0, 16, 0, 8)
+            textSize = 14f
+            setTextColor(Color.rgb(145,150,164))
+            setPadding(0, dp(6), 0, dp(10))
         })
         root.addView(MaterialTextView(this).apply {
             val run = item.lastRunAt?.let {
                 java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(it)
             } ?: "Never"
             text = "Status: " + item.status + "\nLast run: " + run + "\nResult: " + item.resultNote.ifBlank { "—" }
-            textSize = 14f
-            setPadding(0, 0, 0, 20)
+            textSize = 12f
+            setTextColor(Color.rgb(132,137,151))
+            setPadding(0, 0, 0, dp(18))
         })
 
         titleInput = TextInputEditText(this).apply { setText(item.title) }
@@ -188,6 +196,8 @@ class QueueItemActivity : AppCompatActivity() {
 
         setContentView(root)
     }
+
+    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private fun chooseDateTime() {
         val now = Calendar.getInstance()
