@@ -16,6 +16,7 @@ import java.util.UUID
 class MainActivity : AppCompatActivity() {
     private lateinit var queueStore: UploadQueueStore
     private lateinit var queueText: MaterialTextView
+    private lateinit var queueContainer: LinearLayout
 
     private val pickVideos = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -52,7 +53,7 @@ class MainActivity : AppCompatActivity() {
             text = "Enable Automation Service"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
-        queueText = MaterialTextView(this).apply {
+        queueContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }\n        queueText = MaterialTextView(this).apply {
             textSize = 15f
             setPadding(0, 20, 0, 0)
         }
@@ -60,7 +61,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(status)
         root.addView(addVideos)
         root.addView(accessibility)
-        root.addView(queueText)
+        root.addView(queueText)\n        root.addView(queueContainer)
         setContentView(root)
         refreshQueue()
     }
@@ -72,31 +73,23 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshQueue() {
         val items = queueStore.load()
-        queueText.text = if (items.isEmpty()) {
-            "Queue is empty."
-        } else {
-            items.mapIndexed { index, item ->
-                val time = item.scheduledAt?.let { java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(it) }
-                    ?: "Not scheduled"
-                (index + 1).toString() + ". " + item.fileName +
-                    "\n   " + (item.title.ifBlank { "Title not set" }) +
-                    "\n   " + item.visibility + " • " + time +
-                    "\n   Status: " + item.status
-            }.joinToString("\n\n")
+        queueText.text = "Upload Queue (" + items.size + ")"
+        queueContainer.removeAllViews()
+        items.forEachIndexed { index, item ->
+            val time = item.scheduledAt?.let {
+                java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(it)
+            } ?: "Not scheduled"
+            val row = MaterialButton(this).apply {
+                text = (index + 1).toString() + ". " + item.fileName +
+                    "\\n" + item.title.ifBlank { "Title not set" } +
+                    " • " + item.visibility + " • " + time
+                setOnClickListener {
+                    startActivity(Intent(this@MainActivity, QueueItemActivity::class.java).apply {
+                        putExtra("item_id", item.id)
+                    })
+                }
+            }
+            queueContainer.addView(row)
         }
     }
 
-    private fun persistReadPermission(uri: Uri) {
-        try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {}
-    }
-
-    private fun resolveName(uri: Uri): String {
-        val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
-        contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) return cursor.getString(0)
-        }
-        return uri.lastPathSegment ?: "video"
-    }
-}
