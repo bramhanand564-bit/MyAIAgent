@@ -22,7 +22,7 @@ class AiApiSettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildUi())
+        setContentView(NaxBottomNav.wrap(this, buildUi(), "SETTINGS"))
         load()
     }
 
@@ -46,7 +46,7 @@ class AiApiSettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@AiApiSettingsActivity, AiMindActivity::class.java))
         })
         root.addView(header)
-        root.addView(label("Gemini • OpenAI-compatible • Local API", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
+        root.addView(label("Gemini • OpenAI-compatible • Local API • 15s pacing", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
             setPadding(0, dp(5), 0, dp(18))
         })
 
