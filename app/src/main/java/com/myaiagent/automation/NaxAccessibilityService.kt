@@ -230,7 +230,9 @@ class NaxAccessibilityService : AccessibilityService() {
         // MyAIAgent contains instructional words such as "verify" and "security"
         // on its own test/dashboard screens. Only YouTube or the system picker
         // may raise a security/login stop.
-        if (packageName != "com.google.android.youtube" && !isDocumentPicker(packageName)) {
+        if (packageName != "com.google.android.youtube" &&
+            packageName != "com.google.android.apps.youtube.creator" &&
+            !isDocumentPicker(packageName)) {
             return false
         }
 
