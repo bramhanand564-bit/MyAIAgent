@@ -13,6 +13,7 @@ import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
 import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
+import com.myaiagent.scheduler.UploadAlarmScheduler
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -112,14 +113,19 @@ class QueueItemActivity : AppCompatActivity() {
 
     private fun saveItem() {
         val selectedVisibility = visibility.selectedItem?.toString() ?: "PRIVATE"
-        store.update(
-            item.copy(
-                title = titleInput.text?.toString()?.trim().orEmpty(),
-                description = descriptionInput.text?.toString().orEmpty(),
-                visibility = selectedVisibility,
-                scheduledAt = scheduledAt
-            )
+        val updated = item.copy(
+            title = titleInput.text?.toString()?.trim().orEmpty(),
+            description = descriptionInput.text?.toString().orEmpty(),
+            visibility = selectedVisibility,
+            scheduledAt = scheduledAt,
+            status = if (scheduledAt != null) "SCHEDULED" else item.status
         )
+        store.update(updated)
+        if (scheduledAt != null) {
+            UploadAlarmScheduler.schedule(this, updated)
+        } else {
+            UploadAlarmScheduler.cancel(this, updated.id)
+        }
         finish()
     }
 }
