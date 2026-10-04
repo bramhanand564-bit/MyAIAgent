@@ -80,6 +80,19 @@ class MainActivity : AppCompatActivity() {
             text = "Enable Automation Service"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         })
+        root.addView(MaterialButton(this).apply {
+            text = "Enable Exact Scheduling"
+            setOnClickListener {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val alarmManager = getSystemService(android.app.AlarmManager::class.java)
+                    if (!alarmManager.canScheduleExactAlarms()) {
+                        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                            data = Uri.parse("package:" + packageName)
+                        })
+                    }
+                }
+            }
+        })
         queueText = MaterialTextView(this).apply {
             textSize = 18f
             setPadding(0, 24, 0, 8)
