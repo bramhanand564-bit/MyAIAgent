@@ -216,11 +216,27 @@ class WorkflowSetupActivity : AppCompatActivity() {
         val selectedTimes = times.take(count)
         if (selectedTimes.size < count) { Toast.makeText(this, "Set all selected daily times", Toast.LENGTH_SHORT).show(); return }
 
-        val imported = FolderVideoImporter.importVideos(this, Uri.parse(folderUri))
-        queueStore.addAllUnique(imported)
         val visibilityValue = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibilitySpinner.selectedItemPosition.coerceIn(0,2)]
         val modeValue = "NATIVE_STUDIO"
         val contentTypeValue = contentTypeSpinner.selectedItem.toString()
+
+        val imported = FolderVideoImporter.importVideos(this, Uri.parse(folderUri))
+            .map { it.copy(visibility = visibilityValue, automationMode = modeValue, contentType = contentTypeValue) }
+        queueStore.addAllUnique(imported)
+
+        // Apply the active workflow profile to every pending item so the Auto-Tapper
+        // knows whether this run is for a normal video or a Short.
+        queueStore.load()
+            .filter { it.status == "QUEUED" || it.status == "SCHEDULED" }
+            .forEach { item ->
+                queueStore.update(
+                    item.copy(
+                        visibility = visibilityValue,
+                        automationMode = modeValue,
+                        contentType = contentTypeValue
+                    )
+                )
+            }
 
         val config = WorkflowConfig(
             enabled = true,
