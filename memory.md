@@ -17,7 +17,7 @@ Phone files/folders → MyAIAgent queue → metadata → scheduler → YouTube U
 
 ## Implemented
 - Android project/build configuration.
-- GitHub Actions debug APK workflow.
+- GitHub Actions debug APK workflow with latest-main concurrency.
 - MainActivity shell.
 - AccessibilityService foundation.
 - Multi-video picker.
@@ -30,6 +30,12 @@ Phone files/folders → MyAIAgent queue → metadata → scheduler → YouTube U
 - Embedded YouTube Studio workspace.
 - External YouTube app launch fallback.
 - Per-item automation mode selection.
+- Accessibility upload state machine with bounded retries and session timeout.
+
+## Automation State Machine
+WAITING_FOR_APP → FIND_CREATE → FIND_UPLOAD → WAITING_FOR_PICKER → FILL_DETAILS → SET_VISIBILITY → PUBLISH → VERIFY
+
+The service uses accessibility node text/content descriptions and clickable ancestors instead of fixed screen coordinates. Unsupported/security-gated screens are not bypassed.
 
 ## Queue Item
 Data model includes:
@@ -46,11 +52,11 @@ Data model includes:
 ## Reliability
 - User-authorized files/accounts only.
 - No CAPTCHA/security/quota/rate-limit bypass.
-- Prefer UI state detection over fixed coordinates.
-- Use timeouts, retries, recovery and duplicate-upload protection.
+- UI matching is label-based and may need maintenance when YouTube changes.
+- Each state has bounded retries; sessions have a timeout.
 - Android background/battery restrictions must be handled.
 - Background activity-launch restrictions can affect scheduled UI automation.
-- YouTube UI changes may require maintenance.
+- Upload completion currently means an explicit success/processing UI signal was detected; final public availability verification is still pending.
 
 ## Scheduler
 - Scheduled uploads use Android AlarmManager.
@@ -59,9 +65,8 @@ Data model includes:
 - Scheduling after reboot/package replacement is restored from the local queue.
 
 ## Planned Next
-1. Real YouTube upload state machine in AccessibilityService.
-2. UI-state detection for YouTube/Studio screens.
-3. Video selection and metadata entry automation.
-4. Upload completion verification and retry.
-5. Better queue controls: remove, reorder, duplicate protection.
-6. AI video-generator workflow within each service's allowed limits.
+1. Device-tested YouTube selectors/state transitions and upload flow refinement.
+2. Upload completion verification and duplicate protection.
+3. Queue controls: remove, reorder and retry.
+4. Embedded workspace upload handoff.
+5. AI video-generator workflow within each service's allowed limits.
