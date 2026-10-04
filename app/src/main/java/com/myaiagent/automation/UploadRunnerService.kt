@@ -43,6 +43,18 @@ class UploadRunnerService : Service() {
             return START_NOT_STICKY
         }
 
+        if (!testMode && item.status == "UPLOADED") {
+            updateNotification("Upload already verified: " + item.fileName)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        if (!testMode && item.scheduledAt != null && item.scheduledAt > System.currentTimeMillis()) {
+            UploadAlarmScheduler.schedule(this, item)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
         val sessionStore = AutomationSessionStore(this)
         val testMode = intent?.getBooleanExtra(EXTRA_TEST_MODE, false) == true
         if (sessionStore.isActive(item.id)) {
@@ -61,6 +73,7 @@ class UploadRunnerService : Service() {
             item.copy(
                 status = "RUNNING",
                 scheduledAt = if (testMode) null else item.scheduledAt,
+                automationMode = "NATIVE_STUDIO",
                 lastRunAt = System.currentTimeMillis(),
                 resultNote = if (testMode) "TEST • Automation session started" else "Automation session started"
             )
