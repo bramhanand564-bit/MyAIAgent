@@ -14,7 +14,8 @@ import org.json.JSONObject
  * Every remembered target is still revalidated against the live hierarchy.
  */
 class WorkflowMemoryStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences(
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences(
         "workflow_ui_memory",
         Context.MODE_PRIVATE
     )
@@ -42,8 +43,8 @@ class WorkflowMemoryStore(context: Context) {
         existing.put("top", bounds.top)
         existing.put("right", bounds.right)
         existing.put("bottom", bounds.bottom)
-        existing.put("xPct", if (context.resources.displayMetrics.widthPixels > 0) ((bounds.left + bounds.right) / 2f) / context.resources.displayMetrics.widthPixels else 0f)
-        existing.put("yPct", if (context.resources.displayMetrics.heightPixels > 0) ((bounds.top + bounds.bottom) / 2f) / context.resources.displayMetrics.heightPixels else 0f)
+        existing.put("xPct", if (appContext.resources.displayMetrics.widthPixels > 0) ((bounds.left + bounds.right) / 2f) / context.resources.displayMetrics.widthPixels else 0f)
+        existing.put("yPct", if (appContext.resources.displayMetrics.heightPixels > 0) ((bounds.top + bounds.bottom) / 2f) / context.resources.displayMetrics.heightPixels else 0f)
         existing.put("enabled", node.isEnabled)
         existing.put("clickable", node.isClickable)
         existing.put("selected", node.isSelected)
@@ -64,8 +65,6 @@ class WorkflowMemoryStore(context: Context) {
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         val remembered = load()
 
-        val memories = (0 until remembered.length()).map { "" }
-        // JSONObject keys are not index-addressable, so iterate directly.
         val iterator = remembered.keys()
         while (iterator.hasNext()) {
             val key = iterator.next()
