@@ -74,13 +74,16 @@ class UploadRunnerService : Service() {
         val started = launchNativeYouTubeStudio(item)
 
         if (!started) {
+            val note = "Could not start YouTube Studio or access the selected video"
             queueStore.update(
                 item.copy(
                     status = "ERROR",
                     lastRunAt = System.currentTimeMillis(),
-                    resultNote = "Could not start selected YouTube mode"
+                    resultNote = note
                 )
             )
+            AutomationLiveStore(this).finish(false, note)
+            if (testMode) TestRunStore(this).finish(false, note)
             sessionStore.clear()
         }
 
