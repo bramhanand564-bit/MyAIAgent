@@ -10,7 +10,7 @@ object UploadQueueCoordinator {
         now: Long = System.currentTimeMillis()
     ): UploadItem? =
         items.asSequence()
-            .filter { it.status == "QUEUED" || it.status == "SCHEDULED" || it.status == "ERROR" }
+            .filter { it.status == "QUEUED" || it.status == "SCHEDULED" }
             .filter { it.scheduledAt == null || it.scheduledAt <= now }
             .filter { it.uri.isNotBlank() }
             .minByOrNull { it.scheduledAt ?: Long.MIN_VALUE }
