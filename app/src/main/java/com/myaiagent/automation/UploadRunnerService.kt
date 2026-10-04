@@ -63,11 +63,7 @@ class UploadRunnerService : Service() {
             )
         )
 
-        val initialState = if (item.automationMode == "EXTERNAL_APP") {
-            AutomationState.FILL_DETAILS
-        } else {
-            AutomationState.WAITING_FOR_APP
-        }
+        val initialState = AutomationState.WAITING_FOR_APP
         sessionStore.begin(item, initialState)
 
         val started = if (item.automationMode == "EXTERNAL_APP") {
