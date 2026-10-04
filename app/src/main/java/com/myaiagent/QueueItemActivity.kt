@@ -115,6 +115,31 @@ class QueueItemActivity : AppCompatActivity() {
         })
 
         root.addView(MaterialButton(this).apply {
+            text = "Run Now"
+            setOnClickListener {
+                val updated = item.copy(
+                    title = titleInput.text?.toString()?.trim().orEmpty(),
+                    description = descriptionInput.text?.toString().orEmpty(),
+                    visibility = visibility.selectedItem?.toString() ?: "PRIVATE",
+                    automationMode = modeSpinner.selectedItem?.toString() ?: "EMBEDDED_WEB",
+                    status = "RUNNING"
+                )
+                store.update(updated)
+                val serviceIntent = android.content.Intent(
+                    this@QueueItemActivity,
+                    com.myaiagent.automation.UploadRunnerService::class.java
+                ).apply {
+                    putExtra(com.myaiagent.automation.UploadRunnerService.EXTRA_ITEM_ID, updated.id)
+                }
+                androidx.core.content.ContextCompat.startForegroundService(
+                    this@QueueItemActivity,
+                    serviceIntent
+                )
+                finish()
+            }
+        })
+
+        root.addView(MaterialButton(this).apply {
             text = "Retry Upload"
             setOnClickListener {
                 UploadAlarmScheduler.cancel(this@QueueItemActivity, item.id)
