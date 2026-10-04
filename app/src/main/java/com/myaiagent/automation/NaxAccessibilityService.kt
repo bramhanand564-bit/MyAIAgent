@@ -52,14 +52,7 @@ class NaxAccessibilityService : AccessibilityService() {
         val packageName = root.packageName?.toString().orEmpty()
         if (!isAutomationPackage(packageName)) return
 
-        if (containsAny(root, listOf(
-                "Sign in",
-                "Sign in to continue",
-                "Verify",
-                "verification required",
-                "CAPTCHA",
-                "Security check"
-            ))) {
+        if (containsSecurityChallenge(root)) {
             setWaitingForUser(item)
             return
         }
@@ -229,6 +222,41 @@ class NaxAccessibilityService : AccessibilityService() {
         if (::sessionStore.isInitialized && sessionStore.isTestMode()) {
             TestRunStore(this).log(message)
         }
+    }
+
+    private fun containsSecurityChallenge(root: AccessibilityNodeInfo): Boolean {
+        val packageName = root.packageName?.toString().orEmpty()
+        if (packageName == "com.myaiagent") {
+            // The app's own test/dashboard text can contain words like "verify".
+            // Never treat those generic words as a YouTube security challenge.
+            return containsAny(
+                root,
+                listOf(
+                    "Sign in to continue",
+                    "Google sign in",
+                    "verification required",
+                    "CAPTCHA",
+                    "I'm not a robot",
+                    "Security check",
+                    "Confirm your identity",
+                    "Account verification required"
+                )
+            )
+        }
+
+        return containsAny(
+            root,
+            listOf(
+                "Sign in to continue",
+                "Google sign in",
+                "verification required",
+                "CAPTCHA",
+                "I'm not a robot",
+                "Security check",
+                "Confirm your identity",
+                "Account verification required"
+            )
+        )
     }
 
     private fun isAutomationPackage(packageName: String): Boolean =
