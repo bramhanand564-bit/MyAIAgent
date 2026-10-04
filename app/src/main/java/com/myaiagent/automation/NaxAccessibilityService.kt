@@ -70,12 +70,17 @@ class NaxAccessibilityService : AccessibilityService() {
 
         when (sessionStore.state()) {
             AutomationState.WAITING_FOR_APP -> {
-                if (isEmbedded(item) || isYouTube(root)) {
-                    sessionStore.setState(AutomationState.FIND_CREATE)
-                    driveState(item, root)
-                } else {
+                if (!isYouTube(root) && !isEmbedded(item)) {
                     scheduleRetry(item)
+                    return
                 }
+
+                if (item.automationMode == "EXTERNAL_APP" && isYouTube(root)) {
+                    sessionStore.setState(AutomationState.FILL_DETAILS)
+                } else {
+                    sessionStore.setState(AutomationState.FIND_CREATE)
+                }
+                driveState(item, root)
             }
 
             AutomationState.FIND_CREATE -> {
