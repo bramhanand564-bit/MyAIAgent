@@ -147,7 +147,7 @@ class MainActivity : AppCompatActivity() {
             insetBottom = 0
             backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(29,30,38))
             strokeWidth = dp(1)
-            strokeColor = Color.rgb(65,67,80)
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.rgb(65,67,80))
             setTextColor(Color.rgb(224,226,234))
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java)) }
         }, lp(-1, 52, 0, 10, 0, 0))
@@ -336,7 +336,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(29, 30, 38))
                 strokeWidth = dp(1)
-                strokeColor = Color.rgb(65, 67, 80)
+                strokeColor = android.content.res.ColorStateList.valueOf(Color.rgb(65, 67, 80))
                 setTextColor(Color.rgb(224, 226, 234))
             }
         }
