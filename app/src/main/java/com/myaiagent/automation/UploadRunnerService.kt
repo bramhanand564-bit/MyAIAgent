@@ -115,9 +115,11 @@ class UploadRunnerService : Service() {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = contentResolver.getType(uri) ?: "video/*"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = android.content.ClipData.newRawUri(item.fileName, uri)
                 setPackage(youtubePackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             }
             startActivity(shareIntent)
             updateNotification("Video handed to YouTube: " + item.fileName)
