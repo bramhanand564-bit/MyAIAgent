@@ -35,7 +35,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
     private lateinit var queueStore: UploadQueueStore
     private lateinit var folderText: MaterialTextView
     private lateinit var frequency: Spinner
-    private lateinit var visibility: Spinner
+    private lateinit var visibilitySpinner: Spinner
     private lateinit var mode: Spinner
     private val timeButtons = mutableListOf<MaterialButton>()
     private var times = mutableListOf("07:00", "13:00", "19:00")
@@ -106,9 +106,9 @@ class WorkflowSetupActivity : AppCompatActivity() {
         }
 
         root.addView(section("YOUTUBE SETTINGS"))
-        visibility = spinner(arrayOf("PRIVATE", "UNLISTED", "PUBLIC"))
+        visibilitySpinner = spinner(arrayOf("PRIVATE", "UNLISTED", "PUBLIC"))
         visibility.setSelection(arrayOf("PRIVATE","UNLISTED","PUBLIC").indexOf(config.visibility).coerceAtLeast(0))
-        root.addView(visibility)
+        root.addView(visibilitySpinner)
         mode = spinner(arrayOf("EMBEDDED_WEB", "EXTERNAL_APP"))
         mode.setSelection(arrayOf("EMBEDDED_WEB","EXTERNAL_APP").indexOf(config.automationMode).coerceAtLeast(0))
         root.addView(mode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
@@ -129,7 +129,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
             setTextColor(Color.WHITE)
             setOnClickListener {
                 val current = workflowStore.load()
-                val currentVisibility = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibility.selectedItemPosition.coerceIn(0,2)]
+                val currentVisibility = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibilitySpinner.selectedItemPosition.coerceIn(0,2)]
                 val currentMode = arrayOf("EMBEDDED_WEB","EXTERNAL_APP")[mode.selectedItemPosition.coerceIn(0,1)]
                 workflowStore.save(
                     current.copy(
@@ -175,7 +175,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
 
         val imported = FolderVideoImporter.importVideos(this, Uri.parse(folderUri))
         queueStore.addAllUnique(imported)
-        val visibilityValue = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibility.selectedItemPosition.coerceIn(0,2)]
+        val visibilityValue = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibilitySpinner.selectedItemPosition.coerceIn(0,2)]
         val modeValue = arrayOf("EMBEDDED_WEB","EXTERNAL_APP")[mode.selectedItemPosition.coerceIn(0,1)]
 
         val config = WorkflowConfig(true, folderUri, selectedTimes, count, visibilityValue, modeValue)
