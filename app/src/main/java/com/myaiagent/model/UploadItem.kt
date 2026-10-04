@@ -11,6 +11,7 @@ data class UploadItem(
     val scheduledAt: Long? = null,
     val status: String = "QUEUED",
     val automationMode: String = "NATIVE_STUDIO",
+    val contentType: String = "VIDEO",
     val lastRunAt: Long? = null,
     val resultNote: String = ""
 )
