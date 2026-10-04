@@ -11,6 +11,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" ->
+                com.myaiagent.workflow.WorkflowReconciler.sync(context)
                 UploadAlarmScheduler.rescheduleAll(context, UploadQueueStore(context).load())
         }
     }
