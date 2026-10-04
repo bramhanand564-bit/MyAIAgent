@@ -139,6 +139,20 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(buildStatusCard())
         root.addView(MaterialButton(this).apply {
+            text = "✦  AI API & Model Settings"
+            textSize = 14f
+            isAllCaps = false
+            cornerRadius = dp(16)
+            minHeight = dp(50)
+            insetTop = 0
+            insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(40, 194, 164, 255))
+            strokeWidth = dp(1)
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(80, 194, 164, 255))
+            setTextColor(Color.rgb(220, 210, 245))
+            setOnClickListener { startActivity(Intent(this@MainActivity, AiApiSettingsActivity::class.java)) }
+        }, lp(-1, 50, 0, 10, 0, 0))
+        root.addView(MaterialButton(this).apply {
             text = "⚙  Setup daily workflow"
             textSize = 15f
             isAllCaps = false
