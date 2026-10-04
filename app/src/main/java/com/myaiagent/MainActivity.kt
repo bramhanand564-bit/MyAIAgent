@@ -530,7 +530,13 @@ class MainActivity : AppCompatActivity() {
         if (!isAutomationServiceEnabled()) return
         if (AutomationSessionStore(this).isActive()) return
 
-        val next = UploadQueueCoordinator.nextEligible(queueStore.load()) ?: return
+        val workflow = WorkflowStore(this).load()
+        val candidates = if (workflow.enabled) {
+            queueStore.load().filter { it.scheduledAt != null }
+        } else {
+            queueStore.load()
+        }
+        val next = UploadQueueCoordinator.nextEligible(candidates) ?: return
         if (next.status == "RUNNING") return
 
         val intent = Intent(
