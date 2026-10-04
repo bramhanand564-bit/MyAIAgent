@@ -679,17 +679,17 @@ class NaxAccessibilityService : AccessibilityService() {
                                 bitmap,
                                 sessionStore.state(),
                                 item.title.ifBlank { item.fileName },
-                                item.visibility,
-                                WorkflowMemoryStore(this@NaxAccessibilityService).promptContext(
-                                    rootInActiveWindow?.packageName?.toString().orEmpty(),
-                                    sessionStore.state().name
-                                )
+                                item.visibility
                             )
                             else -> GeminiVisionAgent(settings.apiKey, settings.model).analyze(
                                 bitmap,
                                 sessionStore.state(),
                                 item.title.ifBlank { item.fileName },
-                                item.visibility
+                                item.visibility,
+                                WorkflowMemoryStore(this@NaxAccessibilityService).promptContext(
+                                    rootInActiveWindow?.packageName?.toString().orEmpty(),
+                                    sessionStore.state().name
+                                )
                             )
                         }
                         handler.post {
