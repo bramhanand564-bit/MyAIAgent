@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scheduleStatusText: MaterialTextView
     private lateinit var lastTestContainer: LinearLayout
     private lateinit var liveAutomationContainer: LinearLayout
+    private lateinit var kpiContainer: LinearLayout
     private val liveHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val liveTicker = object : Runnable {
         override fun run() {
@@ -231,7 +232,12 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this@MainActivity, AppSettingsActivity::class.java))
         }, lp(-1, 50, 0, 10, 0, 0))
 
-        root.addView(buildKpiRow())
+        kpiContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        root.addView(kpiContainer)
+        refreshKpiRow()
         root.addView(sectionTitle("CREATE").apply {
             setPadding(0, dp(22), 0, dp(9))
         })
@@ -519,11 +525,9 @@ class MainActivity : AppCompatActivity() {
         lastTestContainer.addView(card)
     }
 
-    private fun buildKpiRow(): View {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
+    private fun refreshKpiRow() {
+        if (!::kpiContainer.isInitialized) return
+        kpiContainer.removeAllViews()
 
         fun kpi(title: String, value: String, accent: Int): View {
             val card = MaterialCardView(this).apply {
@@ -546,17 +550,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         val items = queueStore.load()
-        val scheduled = items.count { it.scheduledAt != null }
-        val running = items.count { it.status == "RUNNING" }
-        row.addView(kpi("IN QUEUE", items.size.toString(), Color.rgb(176, 151, 255)),
+        val queued = items.count { it.status == "QUEUED" }
+        val scheduled = items.count { it.status == "SCHEDULED" && (it.scheduledAt ?: Long.MAX_VALUE) > System.currentTimeMillis() }
+        val running = items.count { it.status == "RUNNING" || it.status == "NEEDS_USER_ACTION" }
+        kpiContainer.addView(kpi("IN QUEUE", queued.toString(), Color.rgb(176,151,255)),
             LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginEnd = dp(4) })
-        row.addView(kpi("SCHEDULED", scheduled.toString(), Color.rgb(113, 196, 255)),
-            LinearLayout.LayoutParams(0, dp(72), 1f).apply {
-                setMargins(dp(4), 0, dp(4), 0)
-            })
-        row.addView(kpi("ACTIVE", running.toString(), Color.rgb(111, 224, 164)),
+        kpiContainer.addView(kpi("SCHEDULED", scheduled.toString(), Color.rgb(113,196,255)),
+            LinearLayout.LayoutParams(0, dp(72), 1f).apply { setMargins(dp(4),0,dp(4),0) })
+        kpiContainer.addView(kpi("ACTIVE", running.toString(), Color.rgb(111,224,164)),
             LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginStart = dp(4) })
-        return row
     }
 
     private fun buildStatusCard(): View {
@@ -655,6 +657,8 @@ class MainActivity : AppCompatActivity() {
     private fun refreshQueue() {
         val items = queueStore.load()
         if (!::queueContainer.isInitialized) return
+
+        refreshKpiRow()
 
         queueCountText.text = when (items.size) {
             0 -> "No items"
@@ -906,6 +910,9 @@ class MainActivity : AppCompatActivity() {
         if (AutomationSessionStore(this).isActive()) return
 
         val workflow = WorkflowStore(this).load()
+        // A manually added video must never auto-upload just because the app opens.
+        // Automatic execution is reserved for an explicitly enabled workflow.
+        if (!workflow.enabled) return
         val candidates = if (workflow.enabled) {
             queueStore.load().filter { it.scheduledAt != null }
         } else {
