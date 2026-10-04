@@ -67,8 +67,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         queueStore = UploadQueueStore(this)
-        window.statusBarColor = Color.rgb(15, 16, 20)
-        window.navigationBarColor = Color.rgb(15, 16, 20)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.rgb(8, 9, 13)
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
 
         setContentView(buildDashboard())
         refreshQueue()
@@ -87,13 +89,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildDashboard(): View {
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(Color.rgb(15, 16, 20))
+            setBackgroundColor(Color.rgb(8, 9, 13))
             clipToPadding = false
         }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(32))
+            setPadding(dp(18), dp(12), dp(18), dp(34))
         }
 
         val header = LinearLayout(this).apply {
@@ -106,8 +108,8 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f)
         }
 
-        brand.addView(label("MyAIAgent", 28f, Color.WHITE, Typeface.BOLD))
-        brand.addView(label("AUTOMATION WORKSPACE", 11f, Color.rgb(155, 161, 177), Typeface.BOLD).apply {
+        brand.addView(label("MyAIAgent", 30f, Color.WHITE, Typeface.BOLD))
+        brand.addView(label("Automation", 12f, Color.rgb(142, 147, 160), Typeface.NORMAL).apply {
             setPadding(0, dp(4), 0, 0)
         })
         header.addView(brand)
@@ -127,12 +129,12 @@ class MainActivity : AppCompatActivity() {
         root.addView(header)
 
         root.addView(label(
-            "Automate your YouTube queue from one place.",
-            15f,
-            Color.rgb(169, 175, 191),
+            "Your uploads, scheduled and automated.",
+            14f,
+            Color.rgb(145, 150, 164),
             Typeface.NORMAL
         ).apply {
-            setPadding(0, dp(8), 0, dp(18))
+            setPadding(0, dp(5), 0, dp(16))
         })
 
         root.addView(buildStatusCard())
@@ -145,13 +147,16 @@ class MainActivity : AppCompatActivity() {
             minHeight = dp(52)
             insetTop = 0
             insetBottom = 0
-            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(29,30,38))
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(48, 255,255,255))
             strokeWidth = dp(1)
-            strokeColor = android.content.res.ColorStateList.valueOf(Color.rgb(65,67,80))
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(90,255,255,255))
             setTextColor(Color.rgb(224,226,234))
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java)) }
         }, lp(-1, 52, 0, 10, 0, 0))
-        root.addView(sectionTitle("UPLOADS"))
+        root.addView(buildKpiRow())
+        root.addView(sectionTitle("CREATE").apply {
+            setPadding(0, dp(22), 0, dp(9))
+        })
 
         val primary = MaterialButton(this).apply {
             text = "＋  Add videos"
@@ -183,7 +188,7 @@ class MainActivity : AppCompatActivity() {
 
         root.addView(secondaryRow)
 
-        root.addView(sectionTitle("AUTOMATION").apply {
+        root.addView(sectionTitle("SYSTEM").apply {
             setPadding(0, dp(22), 0, dp(8))
         })
 
@@ -251,14 +256,52 @@ class MainActivity : AppCompatActivity() {
         return scroll
     }
 
+    private fun buildKpiRow(): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+
+        fun kpi(title: String, value: String, accent: Int): View {
+            val card = MaterialCardView(this).apply {
+                radius = dp(18).toFloat()
+                cardElevation = 0f
+                setCardBackgroundColor(Color.argb(44, 255, 255, 255))
+                strokeWidth = dp(1)
+                strokeColor = Color.argb(68, 255, 255, 255)
+            }
+            val body = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(13), dp(12), dp(13), dp(12))
+            }
+            body.addView(label(value, 20f, Color.WHITE, Typeface.BOLD))
+            body.addView(label(title, 10f, accent, Typeface.BOLD).apply {
+                setPadding(0, dp(3), 0, 0)
+            })
+            card.addView(body)
+            return card
+        }
+
+        val items = queueStore.load()
+        val scheduled = items.count { it.scheduledAt != null }
+        val running = items.count { it.status == "RUNNING" }
+        row.addView(kpi("IN QUEUE", items.size.toString(), Color.rgb(176, 151, 255)),
+            LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginEnd = dp(4) })
+        row.addView(kpi("SCHEDULED", scheduled.toString(), Color.rgb(113, 196, 255)),
+            LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginHorizontal = dp(4) })
+        row.addView(kpi("ACTIVE", running.toString(), Color.rgb(111, 224, 164)),
+            LinearLayout.LayoutParams(0, dp(72), 1f).apply { marginStart = dp(4) })
+        return row
+    }
+
     private fun buildStatusCard(): View {
         val config = WorkflowStore(this).load()
         val card = MaterialCardView(this).apply {
             radius = dp(20).toFloat()
             cardElevation = 0f
-            setCardBackgroundColor(if (config.enabled) Color.rgb(24,35,29) else Color.rgb(24,25,32))
+            setCardBackgroundColor(if (config.enabled) Color.argb(72, 74, 190, 126) else Color.argb(55, 255, 255, 255))
             strokeWidth = dp(1)
-            strokeColor = if (config.enabled) Color.rgb(47,92,65) else Color.rgb(48,50,61)
+            strokeColor = if (config.enabled) Color.argb(110, 108, 220, 157) else Color.argb(70, 255,255,255)
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java)) }
         }
         val body = LinearLayout(this).apply {
@@ -298,9 +341,9 @@ class MainActivity : AppCompatActivity() {
         val card = MaterialCardView(this).apply {
             radius = dp(18).toFloat()
             cardElevation = 0f
-            setCardBackgroundColor(Color.rgb(24, 25, 32))
+            setCardBackgroundColor(Color.argb(48, 255, 255, 255))
             strokeWidth = dp(1)
-            strokeColor = Color.rgb(48, 50, 61)
+            strokeColor = Color.argb(72, 255, 255, 255)
             setOnClickListener { onClick() }
             isClickable = true
         }
@@ -334,15 +377,15 @@ class MainActivity : AppCompatActivity() {
                 backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(194, 164, 255))
                 setTextColor(Color.rgb(25, 20, 35))
             } else {
-                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(29, 30, 38))
+                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(48, 255,255,255))
                 strokeWidth = dp(1)
-                strokeColor = android.content.res.ColorStateList.valueOf(Color.rgb(65, 67, 80))
+                strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(90,255,255,255))
                 setTextColor(Color.rgb(224, 226, 234))
             }
         }
 
     private fun sectionTitle(textValue: String): MaterialTextView =
-        label(textValue, 11f, Color.rgb(151, 157, 173), Typeface.BOLD)
+        label(textValue, 10f, Color.rgb(132, 137, 151), Typeface.BOLD)
 
     private fun refreshQueue() {
         val items = queueStore.load()
@@ -360,9 +403,9 @@ class MainActivity : AppCompatActivity() {
             val empty = MaterialCardView(this).apply {
                 radius = dp(18).toFloat()
                 cardElevation = 0f
-                setCardBackgroundColor(Color.rgb(20, 21, 27))
+                setCardBackgroundColor(Color.argb(42, 255, 255, 255))
                 strokeWidth = dp(1)
-                strokeColor = Color.rgb(45, 47, 57)
+                strokeColor = Color.argb(65, 255, 255, 255)
             }
             val text = label(
                 "Your upload queue is empty.\nAdd a video to get started.",
