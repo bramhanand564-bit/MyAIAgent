@@ -37,6 +37,7 @@ class WorkflowTestActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var selectedItem: UploadItem? = null
     private var completionHomePosted = false
+    private var testStarted = false
 
     private val pickVideo = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
@@ -49,6 +50,8 @@ class WorkflowTestActivity : AppCompatActivity() {
             uri = uri.toString(),
             fileName = resolveName(uri)
         )
+        testStarted = false
+        completionHomePosted = false
         selectedText.text = selectedItem!!.fileName
         statusText.text = "Ready to test • No schedule will run."
         runButton.isEnabled = true
@@ -65,7 +68,11 @@ class WorkflowTestActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         queueStore = com.myaiagent.queue.UploadQueueStore(this)
         setContentView(buildUi())
-        renderSnapshot(testStore.snapshot())
+        val existing = testStore.snapshot()
+        testStarted = existing.active
+        if (existing.active) {
+            renderSnapshot(existing)
+        }
     }
 
     override fun onResume() {
@@ -202,6 +209,8 @@ class WorkflowTestActivity : AppCompatActivity() {
             return
         }
 
+        testStarted = true
+
         if (AutomationSessionStore(this).isActive()) {
             Toast.makeText(this, "Another automation run is active. Finish it first.", Toast.LENGTH_LONG).show()
             return
@@ -215,7 +224,12 @@ class WorkflowTestActivity : AppCompatActivity() {
             automationMode = config.automationMode,
             title = item.fileName.substringBeforeLast('.')
         )
-        queueStore.add(testItem)
+        val added = queueStore.add(testItem, allowDuplicateUri = true)
+        if (!added) {
+            Toast.makeText(this, "Could not add the test video to the queue", Toast.LENGTH_LONG).show()
+            testStarted = false
+            return
+        }
         selectedItem = testItem
 
         testStore.start(testItem)
@@ -231,6 +245,7 @@ class WorkflowTestActivity : AppCompatActivity() {
 
     private fun renderSnapshot(snapshot: TestRunSnapshot) {
         if (!::eventContainer.isInitialized) return
+        if (!testStarted && !snapshot.active) return
 
         if (snapshot.fileName.isNotBlank()) {
             selectedText.text = snapshot.fileName
