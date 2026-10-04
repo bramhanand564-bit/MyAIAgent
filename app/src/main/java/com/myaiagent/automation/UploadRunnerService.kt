@@ -12,6 +12,7 @@ import android.os.IBinder
 import com.myaiagent.YouTubeWorkspaceActivity
 import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
+import com.myaiagent.scheduler.UploadAlarmScheduler
 
 class UploadRunnerService : Service() {
     companion object {
@@ -30,22 +31,44 @@ class UploadRunnerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val itemId = intent?.getStringExtra(EXTRA_ITEM_ID)
-        val item = itemId?.let { id -> queueStore.load().firstOrNull { it.id == id } }
+        val item = itemId?.let { id ->
+            queueStore.load().firstOrNull { it.id == id }
+        }
 
         startForeground(NOTIFICATION_ID, notification("Automation started"))
+
         if (item == null) {
             stopSelf(startId)
             return START_NOT_STICKY
         }
 
-        queueStore.update(item.copy(status = "RUNNING"))
+        val sessionStore = AutomationSessionStore(this)
+        if (sessionStore.isActive(item.id)) {
+            queueStore.update(
+                item.copy(
+                    status = "SCHEDULED",
+                    resultNote = "Another upload is active; deferred by 60 seconds"
+                )
+            )
+            UploadAlarmScheduler.scheduleSoon(this, item)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
+
+        queueStore.update(
+            item.copy(
+                status = "RUNNING",
+                lastRunAt = System.currentTimeMillis(),
+                resultNote = "Automation session started"
+            )
+        )
 
         val initialState = if (item.automationMode == "EXTERNAL_APP") {
             AutomationState.FILL_DETAILS
         } else {
             AutomationState.WAITING_FOR_APP
         }
-        AutomationSessionStore(this).begin(item, initialState)
+        sessionStore.begin(item, initialState)
 
         val started = if (item.automationMode == "EXTERNAL_APP") {
             launchExternalYouTube(item)
@@ -54,9 +77,16 @@ class UploadRunnerService : Service() {
         }
 
         if (!started) {
-            queueStore.update(item.copy(status = "ERROR"))
-            AutomationSessionStore(this).clear()
+            queueStore.update(
+                item.copy(
+                    status = "ERROR",
+                    lastRunAt = System.currentTimeMillis(),
+                    resultNote = "Could not start selected YouTube mode"
+                )
+            )
+            sessionStore.clear()
         }
+
         stopSelf(startId)
         return START_NOT_STICKY
     }
@@ -80,9 +110,15 @@ class UploadRunnerService : Service() {
         }
 
         return runCatching {
+            val uri = Uri.parse(item.uri)
+            if (contentResolver.openAssetFileDescriptor(uri, "r") == null) {
+                updateNotification("Video file is no longer accessible")
+                return false
+            }
+
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = contentResolver.getType(Uri.parse(item.uri)) ?: "video/*"
-                putExtra(Intent.EXTRA_STREAM, Uri.parse(item.uri))
+                type = contentResolver.getType(uri) ?: "video/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
                 setPackage(youtubePackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
