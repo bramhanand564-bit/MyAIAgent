@@ -391,7 +391,8 @@ class MainActivity : AppCompatActivity() {
             "FILL_DETAILS" -> "Filling title & description"
             "SET_VISIBILITY" -> "Setting visibility"
             "PUBLISH" -> "Publishing"
-            "VERIFY" -> "Verifying"
+            "MONITOR_UPLOAD" -> "Monitoring upload progress"
+            "VERIFY" -> "Final verification"
             "WAITING_USER" -> "Waiting for your action"
             "COMPLETE" -> "Complete"
             "ERROR" -> "Error"
@@ -493,7 +494,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(0, dp(5), 0, dp(4))
         })
         val resultText = when (snapshot.result) {
-            "SUCCESS" -> "✓ Upload submitted successfully"
+            "SUCCESS" -> "✓ Upload verified successfully"
             "ERROR" -> "✕ Test failed / stopped"
             "WAITING_USER" -> "⚠ User action required"
             else -> snapshot.result
