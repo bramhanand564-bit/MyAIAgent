@@ -21,6 +21,8 @@ class AutomationSessionStore(context: Context) {
             .putBoolean("test_mode", testMode)
             .apply()
 
+        AutomationLiveStore(appContext).start(item.id, item.fileName)
+        AutomationLiveStore(appContext).state(initialState)
         if (testMode) {
             TestRunStore(appContext).setState(initialState)
         }
@@ -56,6 +58,7 @@ class AutomationSessionStore(context: Context) {
             .putInt("attempt", 0)
             .apply()
 
+        AutomationLiveStore(appContext).state(state)
         if (isTestMode()) {
             TestRunStore(appContext).setState(state)
         }
