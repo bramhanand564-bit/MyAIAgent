@@ -42,6 +42,8 @@ class WorkflowMemoryStore(context: Context) {
         existing.put("top", bounds.top)
         existing.put("right", bounds.right)
         existing.put("bottom", bounds.bottom)
+        existing.put("xPct", if (context.resources.displayMetrics.widthPixels > 0) ((bounds.left + bounds.right) / 2f) / context.resources.displayMetrics.widthPixels else 0f)
+        existing.put("yPct", if (context.resources.displayMetrics.heightPixels > 0) ((bounds.top + bounds.bottom) / 2f) / context.resources.displayMetrics.heightPixels else 0f)
         existing.put("enabled", node.isEnabled)
         existing.put("clickable", node.isClickable)
         existing.put("selected", node.isSelected)
@@ -158,6 +160,23 @@ class WorkflowMemoryStore(context: Context) {
 
     private fun save(value: JSONObject) {
         prefs.edit().putString("entries", value.toString()).apply()
+    }
+
+    fun promptContext(packageName: String, state: String): String {
+        val data = load()
+        val lines = mutableListOf<String>()
+        val iterator = data.keys()
+        while (iterator.hasNext()) {
+            val key = iterator.next()
+            val item = data.optJSONObject(key) ?: continue
+            if (item.optString("package") != packageName || item.optString("state") != state) continue
+            val label = item.optString("label").ifBlank { item.optString("text") }
+            if (label.isBlank()) continue
+            val x = String.format("%.3f", item.optDouble("xPct", 0.0))
+            val y = String.format("%.3f", item.optDouble("yPct", 0.0))
+            lines += "- " + label + " at x=" + x + ", y=" + y
+        }
+        return lines.distinct().take(20).joinToString("\n")
     }
 
     private fun key(packageName: String, state: String, label: String): String =
