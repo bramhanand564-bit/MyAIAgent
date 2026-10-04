@@ -139,11 +139,7 @@ class NaxAccessibilityService : AccessibilityService() {
                     return
                 }
 
-                if (item.visibility == "PRIVATE") {
-                    sessionStore.setState(AutomationState.PUBLISH)
-                } else {
-                    sessionStore.setState(AutomationState.SET_VISIBILITY)
-                }
+                sessionStore.setState(AutomationState.SET_VISIBILITY)
             }
 
             AutomationState.SET_VISIBILITY -> {
@@ -159,11 +155,21 @@ class NaxAccessibilityService : AccessibilityService() {
             }
 
             AutomationState.PUBLISH -> {
-                if (clickByLabels(root, listOf("Publish", "Publish video", "Save", "Upload", "Done", "Next", "Continue"))) {
+                if (clickByLabels(root, listOf("Publish", "Publish video"))) {
                     sessionStore.setState(AutomationState.VERIFY)
-                } else {
                     scheduleRetry(item)
+                    return
                 }
+                if (clickByLabels(root, listOf("Next", "Continue"))) {
+                    scheduleRetry(item)
+                    return
+                }
+                if (clickByLabels(root, listOf("Save", "Upload", "Done"))) {
+                    sessionStore.setState(AutomationState.VERIFY)
+                    scheduleRetry(item)
+                    return
+                }
+                scheduleRetry(item)
             }
 
             AutomationState.VERIFY -> {
