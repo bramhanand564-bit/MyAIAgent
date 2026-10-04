@@ -26,6 +26,7 @@ class AutomationSessionStore(context: Context) {
 
         AutomationLiveStore(appContext).start(item.id, item.fileName)
         AutomationLiveStore(appContext).state(initialState)
+        MindEngine.onStart(appContext, item.id, item.fileName, initialState)
         if (testMode) {
             TestRunStore(appContext).setState(initialState)
         }
@@ -62,6 +63,7 @@ class AutomationSessionStore(context: Context) {
             .apply()
 
         AutomationLiveStore(appContext).state(state)
+        MindEngine.onState(appContext, state)
         if (isTestMode()) {
             TestRunStore(appContext).setState(state)
         }
@@ -76,6 +78,7 @@ class AutomationSessionStore(context: Context) {
             .putInt("attempt", 0)
             .apply()
         AutomationLiveStore(appContext).state(AutomationState.WAITING_USER)
+        MindEngine.onState(appContext, AutomationState.WAITING_USER)
         if (isTestMode()) {
             TestRunStore(appContext).setState(AutomationState.WAITING_USER)
         }
@@ -101,10 +104,12 @@ class AutomationSessionStore(context: Context) {
     fun incrementAttempt(): Int {
         val next = prefs.getInt("attempt", 0) + 1
         prefs.edit().putInt("attempt", next).apply()
+        MindEngine.onRetry(appContext, next)
         return next
     }
 
     fun clear() {
         prefs.edit().clear().apply()
+        MindStore(appContext).clear()
     }
 }
