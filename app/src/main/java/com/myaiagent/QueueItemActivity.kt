@@ -49,7 +49,15 @@ class QueueItemActivity : AppCompatActivity() {
         root.addView(MaterialTextView(this).apply {
             text = item.fileName
             textSize = 15f
-            setPadding(0, 16, 0, 20)
+            setPadding(0, 16, 0, 8)
+        })
+        root.addView(MaterialTextView(this).apply {
+            val run = item.lastRunAt?.let {
+                java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(it)
+            } ?: "Never"
+            text = "Status: " + item.status + "\nLast run: " + run + "\nResult: " + item.resultNote.ifBlank { "—" }
+            textSize = 14f
+            setPadding(0, 0, 0, 20)
         })
 
         titleInput = TextInputEditText(this).apply { setText(item.title) }
