@@ -9,8 +9,7 @@ class UploadQueueStore(context: Context) {
     private val prefs = context.getSharedPreferences("upload_queue", Context.MODE_PRIVATE)
 
     fun load(): MutableList<UploadItem> {
-        val raw = prefs.getString("items", "[]") ?: "[]"
-        val array = JSONArray(raw)
+        val array = JSONArray(prefs.getString("items", "[]") ?: "[]")
         return MutableList(array.length()) { i ->
             val o = array.getJSONObject(i)
             UploadItem(
@@ -49,5 +48,14 @@ class UploadQueueStore(context: Context) {
         val items = load()
         items.add(item)
         save(items)
+    }
+
+    fun update(item: UploadItem) {
+        val items = load()
+        val index = items.indexOfFirst { it.id == item.id }
+        if (index >= 0) {
+            items[index] = item
+            save(items)
+        }
     }
 }
