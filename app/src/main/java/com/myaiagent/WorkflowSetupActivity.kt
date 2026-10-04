@@ -1,0 +1,227 @@
+package com.myaiagent
+
+import android.app.TimePickerDialog
+import android.content.Intent
+import android.graphics.Color
+import android.graphics.Typeface
+import android.net.Uri
+import android.os.Bundle
+import android.view.Gravity
+import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.Spinner
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textview.MaterialTextView
+import com.myaiagent.folder.FolderVideoImporter
+import com.myaiagent.model.UploadItem
+import com.myaiagent.queue.UploadQueueStore
+import com.myaiagent.scheduler.UploadAlarmScheduler
+import com.myaiagent.workflow.WorkflowConfig
+import com.myaiagent.workflow.WorkflowStore
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+import java.util.UUID
+
+class WorkflowSetupActivity : AppCompatActivity() {
+    private lateinit var workflowStore: WorkflowStore
+    private lateinit var queueStore: UploadQueueStore
+    private lateinit var folderText: MaterialTextView
+    private lateinit var frequency: Spinner
+    private lateinit var visibility: Spinner
+    private lateinit var mode: Spinner
+    private val timeButtons = mutableListOf<MaterialButton>()
+    private var times = mutableListOf("07:00", "13:00", "19:00")
+    private var folderUri = ""
+
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri ?: return@registerForActivityResult
+        folderUri = uri.toString()
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {}
+        folderText.text = "Folder selected\n" + (uri.lastPathSegment ?: "Selected folder")
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        workflowStore = WorkflowStore(this)
+        queueStore = UploadQueueStore(this)
+        val config = workflowStore.load()
+        folderUri = config.folderUri
+        times = config.times.toMutableList().ifEmpty { mutableListOf("07:00") }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(22), dp(20), dp(30))
+            setBackgroundColor(Color.rgb(15, 16, 20))
+        }
+
+        root.addView(label("Workflow setup", 28f, Color.WHITE, Typeface.BOLD))
+        root.addView(label("Set it once. MyAIAgent keeps the schedule running automatically.", 14f, Color.rgb(158, 164, 179), Typeface.NORMAL).apply {
+            setPadding(0, dp(6), 0, dp(18))
+        })
+
+        val folderCard = MaterialCardView(this).apply {
+            radius = dp(18).toFloat(); cardElevation = 0f
+            setCardBackgroundColor(Color.rgb(24, 25, 32))
+            strokeWidth = dp(1); strokeColor = Color.rgb(48, 50, 61)
+        }
+        val folderBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14)) }
+        folderBody.addView(label("VIDEO SOURCE", 10f, Color.rgb(151,157,173), Typeface.BOLD))
+        folderText = label(if (folderUri.isBlank()) "No folder selected" else "Folder configured", 15f, Color.WHITE, Typeface.BOLD)
+        folderText.setPadding(0, dp(6), 0, dp(10))
+        folderBody.addView(folderText)
+        folderBody.addView(MaterialButton(this).apply {
+            text = "Choose video folder"; isAllCaps = false; cornerRadius = dp(14); insetTop = 0; insetBottom = 0
+            setOnClickListener { pickFolder.launch(null) }
+        })
+        folderCard.addView(folderBody); root.addView(folderCard)
+
+        root.addView(section("UPLOAD FREQUENCY"))
+        frequency = spinner(arrayOf("1 upload / day", "2 uploads / day", "3 uploads / day"))
+        frequency.setSelection((config.dailyLimit - 1).coerceIn(0, 2))
+        root.addView(frequency)
+
+        root.addView(section("DAILY TIMES"))
+        val timeHint = label("Choose one, two or three times. Each time gets the next video in the folder queue.", 12f, Color.rgb(126,132,148), Typeface.NORMAL)
+        timeHint.setPadding(0, dp(5), 0, dp(8)); root.addView(timeHint)
+        repeat(3) { index ->
+            val button = MaterialButton(this).apply {
+                isAllCaps = false; cornerRadius = dp(14); insetTop = 0; insetBottom = 0
+                text = if (index < times.size) "Upload ${index + 1}: ${times[index]}" else "Upload ${index + 1}: Not used"
+                setOnClickListener { chooseTime(index) }
+            }
+            timeButtons.add(button); root.addView(button, LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(7) })
+        }
+
+        root.addView(section("YOUTUBE SETTINGS"))
+        visibility = spinner(arrayOf("PRIVATE", "UNLISTED", "PUBLIC"))
+        visibility.setSelection(arrayOf("PRIVATE","UNLISTED","PUBLIC").indexOf(config.visibility).coerceAtLeast(0))
+        root.addView(visibility)
+        mode = spinner(arrayOf("EMBEDDED_WEB", "EXTERNAL_APP"))
+        mode.setSelection(arrayOf("EMBEDDED_WEB","EXTERNAL_APP").indexOf(config.automationMode).coerceAtLeast(0))
+        root.addView(mode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+
+        root.addView(section("WORKFLOW"))
+        val start = MaterialButton(this).apply {
+            text = if (config.enabled) "✓  Workflow is ON" else "Start workflow"
+            textSize = 16f; isAllCaps = false; cornerRadius = dp(18); minHeight = dp(58); insetTop = 0; insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(194,164,255))
+            setTextColor(Color.rgb(25,20,35))
+            setOnClickListener { startWorkflow() }
+        }
+        root.addView(start, LinearLayout.LayoutParams(-1, dp(58)).apply { topMargin = dp(8) })
+
+        root.addView(MaterialButton(this).apply {
+            text = "Stop workflow"; textSize = 14f; isAllCaps = false; cornerRadius = dp(16); insetTop = 0; insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(37,39,48))
+            setTextColor(Color.rgb(255,112,112))
+            setOnClickListener { stopWorkflow() }
+        }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
+
+        setContentView(root)
+        refreshTimeButtons()
+    }
+
+    private fun startWorkflow() {
+        if (folderUri.isBlank()) { Toast.makeText(this, "Choose a video folder first", Toast.LENGTH_SHORT).show(); return }
+        val count = frequency.selectedItemPosition + 1
+        val selectedTimes = times.take(count)
+        if (selectedTimes.size < count) { Toast.makeText(this, "Set all selected daily times", Toast.LENGTH_SHORT).show(); return }
+
+        val imported = FolderVideoImporter.importVideos(this, Uri.parse(folderUri))
+        queueStore.addAllUnique(imported)
+        val visibilityValue = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibility.selectedItemPosition.coerceIn(0,2)]
+        val modeValue = arrayOf("EMBEDDED_WEB","EXTERNAL_APP")[mode.selectedItemPosition.coerceIn(0,1)]
+
+        val config = WorkflowConfig(true, folderUri, selectedTimes, count, visibilityValue, modeValue)
+        workflowStore.save(config)
+        scheduleQueue(selectedTimes, visibilityValue, modeValue)
+        Toast.makeText(this, "Workflow ON • ${count} upload(s) per day", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
+    private fun scheduleQueue(selectedTimes: List<String>, visibilityValue: String, modeValue: String) {
+        val now = Calendar.getInstance()
+        val items = queueStore.load().filter { it.status == "QUEUED" || it.status == "SCHEDULED" }.toMutableList()
+        var slot = 0
+        var dayOffset = 0
+        while (slot < items.size && dayOffset < 366) {
+            for (time in selectedTimes) {
+                if (slot >= items.size) break
+                val parts = time.split(":")
+                if (parts.size != 2) continue
+                val cal = Calendar.getInstance().apply {
+                    timeInMillis = now.timeInMillis
+                    add(Calendar.DAY_OF_YEAR, dayOffset)
+                    set(Calendar.HOUR_OF_DAY, parts[0].toIntOrNull() ?: 0)
+                    set(Calendar.MINUTE, parts[1].toIntOrNull() ?: 0)
+                    set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                if (cal.timeInMillis <= now.timeInMillis) continue
+                val old = items[slot]
+                val updated = old.copy(
+                    scheduledAt = cal.timeInMillis,
+                    status = "SCHEDULED",
+                    visibility = visibilityValue,
+                    automationMode = modeValue
+                )
+                queueStore.update(updated)
+                UploadAlarmScheduler.schedule(this, updated)
+                slot++
+            }
+            dayOffset++
+        }
+    }
+
+    private fun stopWorkflow() {
+        workflowStore.setEnabled(false)
+        queueStore.load().filter { it.status == "SCHEDULED" }.forEach { item ->
+            UploadAlarmScheduler.cancel(this, item.id)
+            queueStore.update(item.copy(status = "QUEUED", scheduledAt = null, resultNote = "Workflow stopped"))
+        }
+        Toast.makeText(this, "Workflow stopped", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+
+    private fun chooseTime(index: Int) {
+        val current = times.getOrNull(index)?.split(":")
+        val hour = current?.getOrNull(0)?.toIntOrNull() ?: 7
+        val minute = current?.getOrNull(1)?.toIntOrNull() ?: 0
+        TimePickerDialog(this, { _, h, m ->
+            val value = String.format(Locale.getDefault(), "%02d:%02d", h, m)
+            while (times.size <= index) times.add("07:00")
+            times[index] = value
+            refreshTimeButtons()
+        }, hour, minute, true).show()
+    }
+
+    private fun refreshTimeButtons() {
+        timeButtons.forEachIndexed { index, button ->
+            button.text = if (index < times.size) "Upload ${index + 1}: ${times[index]}" else "Upload ${index + 1}: Not used"
+        }
+    }
+
+    private fun spinner(values: Array<String>): Spinner = Spinner(this).apply {
+        adapter = ArrayAdapter(this@WorkflowSetupActivity, android.R.layout.simple_spinner_dropdown_item, values)
+        setPadding(dp(8), 0, dp(8), 0)
+    }
+
+    private fun section(value: String): MaterialTextView = label(value, 10f, Color.rgb(151,157,173), Typeface.BOLD).apply {
+        setPadding(0, dp(20), 0, dp(7))
+    }
+
+    private fun label(value: String, size: Float, color: Int, style: Int) = MaterialTextView(this).apply {
+        text = value; textSize = size; setTextColor(color); typeface = Typeface.create(Typeface.DEFAULT, style)
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+}
