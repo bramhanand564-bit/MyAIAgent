@@ -17,6 +17,13 @@ class AutomationSessionStore(context: Context) {
 
     fun itemId(): String? = prefs.getString("item_id", null)
 
+    fun isActive(exceptItemId: String? = null, timeoutMs: Long = 10 * 60 * 1000L): Boolean {
+        val currentId = itemId() ?: return false
+        if (exceptItemId != null && currentId == exceptItemId) return false
+        val startedAt = prefs.getLong("started_at", 0L)
+        return startedAt > 0L && System.currentTimeMillis() - startedAt < timeoutMs
+    }
+
     fun state(): AutomationState =
         runCatching {
             AutomationState.valueOf(
