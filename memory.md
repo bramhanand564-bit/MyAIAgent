@@ -75,3 +75,12 @@ Data model includes:
 3. Queue ordering and batch scheduling.
 4. Embedded workspace upload/file chooser integration.
 5. AI video-generator workflow within each service's allowed limits.
+6. Final device validation with a real user-authorized test video.
+
+
+## Latest Reliability Upgrades
+- External YouTube mode uses a direct video share handoff to the installed YouTube package, avoiding the system file picker for that mode.
+- Concurrent scheduled jobs are serialized by the automation session store; collisions are deferred instead of overwriting an active session.
+- Queue items persist last-run time and a human-readable result note.
+- Embedded WebView file chooser is connected to Android's document picker.
+- Exact alarm scheduling falls back to an inexact while-idle alarm when exact-alarm access is unavailable, and exact-permission changes trigger rescheduling. This follows Android's documented alarm behavior. 
