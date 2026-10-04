@@ -9,14 +9,20 @@ class AutomationSessionStore(context: Context) {
 
     fun begin(
         item: UploadItem,
-        initialState: AutomationState = AutomationState.WAITING_FOR_APP
+        initialState: AutomationState = AutomationState.WAITING_FOR_APP,
+        testMode: Boolean = false
     ) {
         prefs.edit()
             .putString("item_id", item.id)
             .putString("state", initialState.name)
             .putLong("started_at", System.currentTimeMillis())
             .putInt("attempt", 0)
+            .putBoolean("test_mode", testMode)
             .apply()
+
+        if (testMode) {
+            TestRunStore(this).setState(initialState)
+        }
     }
 
     fun itemId(): String? = prefs.getString("item_id", null)
@@ -48,7 +54,13 @@ class AutomationSessionStore(context: Context) {
             .putString("state", state.name)
             .putInt("attempt", 0)
             .apply()
+
+        if (isTestMode()) {
+            TestRunStore(this).setState(state)
+        }
     }
+
+    fun isTestMode(): Boolean = prefs.getBoolean("test_mode", false)
 
     fun incrementAttempt(): Int {
         val next = prefs.getInt("attempt", 0) + 1
