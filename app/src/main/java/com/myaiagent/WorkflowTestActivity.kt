@@ -224,6 +224,7 @@ class WorkflowTestActivity : AppCompatActivity() {
             scheduledAt = null,
             visibility = config.visibility,
             automationMode = config.automationMode,
+            contentType = config.contentType,
             title = item.fileName.substringBeforeLast('.')
         )
         val added = queueStore.add(testItem, allowDuplicateUri = true)
