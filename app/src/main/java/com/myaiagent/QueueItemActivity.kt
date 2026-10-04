@@ -130,9 +130,9 @@ class QueueItemActivity : AppCompatActivity() {
                     title = titleInput.text?.toString()?.trim().orEmpty(),
                     description = descriptionInput.text?.toString().orEmpty(),
                     visibility = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
-                        .getOrElse(visibility.selectedItemPosition) { "PRIVATE" },
+                        .getOrElse(visibility.getSelectedItemPosition()) { "PRIVATE" },
                     automationMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
-                        .getOrElse(modeSpinner.selectedItemPosition) { "EMBEDDED_WEB" },
+                        .getOrElse(modeSpinner.getSelectedItemPosition()) { "EMBEDDED_WEB" },
                     status = "RUNNING"
                 )
                 store.update(updated)
