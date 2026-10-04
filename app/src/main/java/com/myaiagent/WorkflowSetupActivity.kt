@@ -133,7 +133,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
         }
-        demoBody.addView(label("DEMO WORKFLOW • ACTION → CHECK", 10f, Color.rgb(204, 180, 255), Typeface.BOLD))
+        demoBody.addView(label("AUTO-TAPPER • ACTION → VERIFY", 10f, Color.rgb(204, 180, 255), Typeface.BOLD))
         demoBody.addView(label(
             "1  Open YouTube Studio  →  verify Studio is active\n" +
                 "2  Create → Upload      →  verify upload screen\n" +
@@ -201,7 +201,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
             setOnClickListener { stopWorkflow() }
         }, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(8) })
 
-        setContentView(root)
+        setContentView(NaxBottomNav.wrap(this, root, "WORKFLOW"))
         refreshTimeButtons()
     }
 
