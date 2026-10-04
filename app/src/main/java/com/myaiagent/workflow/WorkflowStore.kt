@@ -8,7 +8,7 @@ data class WorkflowConfig(
     val times: List<String> = listOf("07:00"),
     val dailyLimit: Int = 1,
     val visibility: String = "PRIVATE",
-    val automationMode: String = "EMBEDDED_WEB"
+    val automationMode: String = "NATIVE_STUDIO"
 )
 
 class WorkflowStore(context: Context) {
@@ -20,7 +20,7 @@ class WorkflowStore(context: Context) {
         times = (prefs.getString("times", "07:00") ?: "07:00").split(",").filter { it.isNotBlank() },
         dailyLimit = prefs.getInt("daily_limit", 1).coerceIn(1, 3),
         visibility = prefs.getString("visibility", "PRIVATE") ?: "PRIVATE",
-        automationMode = prefs.getString("mode", "EMBEDDED_WEB") ?: "EMBEDDED_WEB"
+        automationMode = prefs.getString("mode", "NATIVE_STUDIO") ?: "NATIVE_STUDIO"
     )
 
     fun save(config: WorkflowConfig) {
