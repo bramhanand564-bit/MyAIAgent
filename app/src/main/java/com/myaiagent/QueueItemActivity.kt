@@ -157,8 +157,7 @@ class QueueItemActivity : AppCompatActivity() {
                     description = descriptionInput.text?.toString().orEmpty(),
                     visibility = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
                         .getOrElse(selectedVisibilityIndex) { "PRIVATE" },
-                    automationMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
-                        .getOrElse(selectedModeIndex) { "EMBEDDED_WEB" },
+                    automationMode = "NATIVE_STUDIO",
                     status = "QUEUED",
                     scheduledAt = null
                 )
@@ -177,7 +176,6 @@ class QueueItemActivity : AppCompatActivity() {
                     this@QueueItemActivity,
                     AutomationLiveActivity::class.java
                 ))
-            }
             }
         })
 
@@ -227,8 +225,7 @@ class QueueItemActivity : AppCompatActivity() {
     private fun saveItem() {
         val selectedVisibility = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
             .getOrElse(visibility.selectedItemPosition) { "PRIVATE" }
-        val selectedMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
-            .getOrElse(modeSpinner.selectedItemPosition) { "EMBEDDED_WEB" }
+        val selectedMode = "NATIVE_STUDIO"
         val updated = item.copy(
             title = titleInput.text?.toString()?.trim().orEmpty(),
             description = descriptionInput.text?.toString().orEmpty(),
