@@ -110,7 +110,7 @@ class QueueItemActivity : AppCompatActivity() {
             setPadding(0, 18, 0, 6)
         })
         modeSpinner = Spinner(this)
-        val modes = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
+        val modes = listOf("NATIVE_STUDIO")
         selectedModeIndex = modes.indexOf(item.automationMode).coerceAtLeast(0)
         modeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
         modeSpinner.setSelection(selectedModeIndex)
@@ -148,9 +148,10 @@ class QueueItemActivity : AppCompatActivity() {
         })
 
         root.addView(MaterialButton(this).apply {
-            text = "Run Now"
-            isEnabled = item.status != "SUBMITTED" && item.status != "UPLOADED"
+            text = "▶  Post now"
+            isEnabled = item.status != "SUBMITTED" && item.status != "UPLOADED" && item.status != "RUNNING"
             setOnClickListener {
+                UploadAlarmScheduler.cancel(this@QueueItemActivity, item.id)
                 val updated = item.copy(
                     title = titleInput.text?.toString()?.trim().orEmpty(),
                     description = descriptionInput.text?.toString().orEmpty(),
@@ -158,7 +159,8 @@ class QueueItemActivity : AppCompatActivity() {
                         .getOrElse(selectedVisibilityIndex) { "PRIVATE" },
                     automationMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
                         .getOrElse(selectedModeIndex) { "EMBEDDED_WEB" },
-                    status = "RUNNING"
+                    status = "QUEUED",
+                    scheduledAt = null
                 )
                 store.update(updated)
                 val serviceIntent = android.content.Intent(
@@ -171,7 +173,11 @@ class QueueItemActivity : AppCompatActivity() {
                     this@QueueItemActivity,
                     serviceIntent
                 )
-                finish()
+                startActivity(android.content.Intent(
+                    this@QueueItemActivity,
+                    AutomationLiveActivity::class.java
+                ))
+            }
             }
         })
 
