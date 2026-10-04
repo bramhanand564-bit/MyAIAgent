@@ -14,10 +14,33 @@ Never bypass Google login, CAPTCHA, security verification, rate limits, device p
 Never claim an upload succeeded unless final verification says so. Prefer evidence from the supplied flow context.
 """.trimIndent()
 
+        if (settings.provider == VisionAgentSettings.PROVIDER_GEMINI && settings.apiKey.isBlank()) {
+            return localFallback(context, message)
+        }
+        if ((settings.provider == VisionAgentSettings.PROVIDER_CUSTOM ||
+            settings.provider == VisionAgentSettings.PROVIDER_LOCAL) && settings.endpoint.isBlank()) {
+            return localFallback(context, message)
+        }
+
         return when (settings.provider) {
             VisionAgentSettings.PROVIDER_CUSTOM,
             VisionAgentSettings.PROVIDER_LOCAL -> askOpenAi(system, message, context)
             else -> askGemini(system, message, context)
+        }
+    }
+
+    private fun localFallback(context: String, user: String): String {
+        val lower = user.lowercase()
+        val snapshot = context
+        return when {
+            lower.contains("where") || lower.contains("stuck") || lower.contains("kaha") || lower.contains("रुका") ->
+                "Current flow diagnosis:\n" + snapshot
+            lower.contains("fix") || lower.contains("repair") || lower.contains("thik") ->
+                "Recommended safe repair:\n" + snapshot
+            lower.contains("status") || lower.contains("state") ->
+                "Current automation status:\n" + snapshot
+            else ->
+                "NAX Mind is online locally. I can already read the live state, retries, visible package, last observation, diagnosis and recommended fix. Configure an AI provider in AI Settings for deeper natural-language analysis."
         }
     }
 
