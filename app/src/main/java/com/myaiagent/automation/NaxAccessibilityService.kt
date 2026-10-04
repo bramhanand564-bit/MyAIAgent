@@ -119,11 +119,11 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.FILL_DETAILS -> {
                 val title = item.title.ifBlank { item.fileName.substringBeforeLast('.') }
-                val titleSet = setTextByLabels(root, listOf("Title", "Add a title"), title)
+                val titleSet = setTextByLabels(root, listOf("Title", "Add a title", "Video title", "Enter a title", "Add title"), title)
                 val descriptionSet = if (item.description.isBlank()) {
                     true
                 } else {
-                    setTextByLabels(root, listOf("Description", "Add a description"), item.description)
+                    setTextByLabels(root, listOf("Description", "Add a description", "Video description", "Add description"), item.description)
                 }
 
                 if (!titleSet && !fieldExists(root, listOf("Title", "Add a title"))) {
@@ -147,7 +147,7 @@ class NaxAccessibilityService : AccessibilityService() {
                     sessionStore.setState(AutomationState.PUBLISH)
                     return
                 }
-                if (clickByLabels(root, listOf("Visibility", "Who can see this video"))) {
+                if (clickByLabels(root, listOf("Visibility", "Who can see this video", "Privacy", "Privacy setting"))) {
                     scheduleRetry(item)
                     return
                 }
@@ -155,7 +155,7 @@ class NaxAccessibilityService : AccessibilityService() {
             }
 
             AutomationState.PUBLISH -> {
-                if (clickByLabels(root, listOf("Publish", "Save", "Upload"))) {
+                if (clickByLabels(root, listOf("Publish", "Publish video", "Save", "Upload", "Done", "Next", "Continue"))) {
                     sessionStore.setState(AutomationState.VERIFY)
                 } else {
                     scheduleRetry(item)
