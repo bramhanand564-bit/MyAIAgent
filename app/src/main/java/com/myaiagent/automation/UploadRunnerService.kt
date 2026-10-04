@@ -4,13 +4,14 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import com.myaiagent.YouTubeWorkspaceActivity
 import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
-import com.myaiagent.YouTubeWorkspaceActivity
 
 class UploadRunnerService : Service() {
     companion object {
@@ -38,34 +39,64 @@ class UploadRunnerService : Service() {
         }
 
         queueStore.update(item.copy(status = "RUNNING"))
-        AutomationSessionStore(this).begin(item)
-        launchMode(item)
+
+        val initialState = if (item.automationMode == "EXTERNAL_APP") {
+            AutomationState.FILL_DETAILS
+        } else {
+            AutomationState.WAITING_FOR_APP
+        }
+        AutomationSessionStore(this).begin(item, initialState)
+
+        val started = if (item.automationMode == "EXTERNAL_APP") {
+            launchExternalYouTube(item)
+        } else {
+            launchEmbeddedYouTube(item)
+        }
+
+        if (!started) {
+            queueStore.update(item.copy(status = "ERROR"))
+            AutomationSessionStore(this).clear()
+        }
+        stopSelf(startId)
         return START_NOT_STICKY
     }
 
-    private fun launchMode(item: UploadItem) {
-        if (item.automationMode == "EMBEDDED_WEB") {
+    private fun launchEmbeddedYouTube(item: UploadItem): Boolean {
+        return runCatching {
             startActivity(Intent(this, YouTubeWorkspaceActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 putExtra("item_id", item.id)
             })
             updateNotification("Embedded YouTube opened for: " + item.fileName)
-            stopSelf()
-            return
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun launchExternalYouTube(item: UploadItem): Boolean {
+        val youtubePackage = "com.google.android.youtube"
+        if (packageManager.getLaunchIntentForPackage(youtubePackage) == null) {
+            updateNotification("YouTube app is not installed")
+            return false
         }
 
-        val launchIntent = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-        if (launchIntent != null) {
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            launchIntent.putExtra("myaiagent_automation", true)
-            startActivity(launchIntent)
-            updateNotification("YouTube app opened for: " + item.fileName)
-        } else {
-            updateNotification("YouTube app is not installed")
-            queueStore.update(item.copy(status = "ERROR"))
-            AutomationSessionStore(this).clear()
-        }
-        stopSelf()
+        return runCatching {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = contentResolver.getType(Uri.parse(item.uri)) ?: "video/*"
+                putExtra(Intent.EXTRA_STREAM, Uri.parse(item.uri))
+                setPackage(youtubePackage)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(shareIntent)
+            updateNotification("Video handed to YouTube: " + item.fileName)
+            true
+        }.onFailure {
+            if (it is ActivityNotFoundException) {
+                updateNotification("YouTube cannot accept this video")
+            } else {
+                updateNotification("Could not start YouTube automation")
+            }
+        }.getOrDefault(false)
     }
 
     private fun notification(text: String): Notification =
