@@ -85,13 +85,19 @@ class NaxAccessibilityService : AccessibilityService() {
                 if (clickByLabels(root, listOf("Create", "Create a video"))) {
                     testLog("Clicked Create.")
                     sessionStore.setState(AutomationState.FIND_UPLOAD)
+                    scheduleRetry(item)
                 } else {
                     scheduleRetry(item)
                 }
             }
 
             AutomationState.FIND_UPLOAD -> {
-                if (clickByLabels(root, listOf("Upload a video", "Upload video"))) {
+                if (clickByLabels(root, listOf(
+                    "Upload videos",
+                    "Upload a video",
+                    "Upload video",
+                    "Upload videos from device"
+                ))) {
                     testLog("Clicked Upload a video.")
                     sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
                 } else {
@@ -331,8 +337,8 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun isAutomationPackage(packageName: String): Boolean =
-        packageName == "com.google.android.youtube" || packageName == "com.google.android.apps.youtube.creator" ||
-            packageName == "com.myaiagent" ||
+        packageName == "com.google.android.youtube" ||
+            packageName == "com.google.android.apps.youtube.creator" ||
             isDocumentPicker(packageName)
 
     private fun isDocumentPicker(packageName: String): Boolean =
@@ -725,6 +731,8 @@ class NaxAccessibilityService : AccessibilityService() {
         AutomationLiveStore(this).finish(successful, message)
         if (testMode) {
             TestRunStore(this).finish(successful, message)
+            // First-run test items are temporary and must not pollute the real queue.
+            item?.id?.let { queueStore.remove(it) }
         }
 
         sessionStore.clear()
