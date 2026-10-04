@@ -1,0 +1,125 @@
+package com.myaiagent
+
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.os.Bundle
+import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.Spinner
+import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
+import com.google.android.material.textview.MaterialTextView
+import com.myaiagent.model.UploadItem
+import com.myaiagent.queue.UploadQueueStore
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
+
+class QueueItemActivity : AppCompatActivity() {
+    private lateinit var store: UploadQueueStore
+    private lateinit var item: UploadItem
+    private lateinit var titleInput: TextInputEditText
+    private lateinit var descriptionInput: TextInputEditText
+    private lateinit var visibility: Spinner
+    private lateinit var scheduleText: MaterialTextView
+    private var scheduledAt: Long? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        store = UploadQueueStore(this)
+
+        val id = intent.getStringExtra("item_id") ?: run { finish(); return }
+        item = store.load().firstOrNull { it.id == id } ?: run { finish(); return }
+        scheduledAt = item.scheduledAt
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 40, 32, 32)
+        }
+
+        root.addView(MaterialTextView(this).apply {
+            text = "Edit Upload"
+            textSize = 26f
+        })
+        root.addView(MaterialTextView(this).apply {
+            text = item.fileName
+            textSize = 15f
+            setPadding(0, 16, 0, 20)
+        })
+
+        titleInput = TextInputEditText(this).apply { setText(item.title) }
+        root.addView(TextInputLayout(this).apply {
+            hint = "YouTube Title"
+            addView(titleInput)
+        })
+
+        descriptionInput = TextInputEditText(this).apply {
+            setText(item.description)
+            minLines = 5
+            gravity = android.view.Gravity.TOP
+        }
+        root.addView(TextInputLayout(this).apply {
+            hint = "Description"
+            addView(descriptionInput)
+        })
+
+        visibility = Spinner(this)
+        visibility.adapter = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
+        )
+        visibility.setSelection(arrayOf("PRIVATE", "UNLISTED", "PUBLIC").indexOf(item.visibility).coerceAtLeast(0))
+        root.addView(visibility)
+
+        scheduleText = MaterialTextView(this).apply { textSize = 16f; setPadding(0, 24, 0, 12) }
+        root.addView(scheduleText)
+        refreshScheduleLabel()
+
+        root.addView(MaterialButton(this).apply {
+            text = "Set Schedule"
+            setOnClickListener { chooseDateTime() }
+        })
+
+        root.addView(MaterialButton(this).apply {
+            text = "Save"
+            setOnClickListener { saveItem() }
+        })
+
+        setContentView(root)
+    }
+
+    private fun chooseDateTime() {
+        val now = Calendar.getInstance()
+        DatePickerDialog(this, { _, year, month, day ->
+            TimePickerDialog(this, { _, hour, minute ->
+                scheduledAt = Calendar.getInstance().apply {
+                    set(year, month, day, hour, minute, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                refreshScheduleLabel()
+            }, now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), true).show()
+        }, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show()
+    }
+
+    private fun refreshScheduleLabel() {
+        scheduleText.text = scheduledAt?.let {
+            "Scheduled: " + SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(it)
+        } ?: "Schedule: Not set"
+    }
+
+    private fun saveItem() {
+        val selectedVisibility = visibility.selectedItem?.toString() ?: "PRIVATE"
+        store.update(
+            item.copy(
+                title = titleInput.text?.toString()?.trim().orEmpty(),
+                description = descriptionInput.text?.toString().orEmpty(),
+                visibility = selectedVisibility,
+                scheduledAt = scheduledAt
+            )
+        )
+        finish()
+    }
+}
