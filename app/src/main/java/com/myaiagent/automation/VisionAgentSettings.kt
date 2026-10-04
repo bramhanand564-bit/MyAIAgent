@@ -33,6 +33,6 @@ class VisionAgentSettings(context: Context) {
         const val PROVIDER_GEMINI = "GEMINI"
         const val PROVIDER_CUSTOM = "CUSTOM"
         const val PROVIDER_LOCAL = "LOCAL_OPENAI"
-        const val DEFAULT_MODEL = "gemini-2.5-flash"
+        const val DEFAULT_MODEL = "gemini-3.1-flash-lite"
     }
 }
