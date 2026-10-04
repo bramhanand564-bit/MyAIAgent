@@ -9,11 +9,13 @@ import android.webkit.WebViewClient
 import androidx.appcompat.app.AppCompatActivity
 
 class YouTubeWorkspaceActivity : AppCompatActivity() {
+    private lateinit var webView: WebView
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val webView = WebView(this)
+        webView = WebView(this)
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -26,12 +28,18 @@ class YouTubeWorkspaceActivity : AppCompatActivity() {
         setContentView(webView)
     }
 
+    @Deprecated("Use OnBackInvokedDispatcher on newer Android versions.")
     override fun onBackPressed() {
-        val view = findViewById<WebView>(android.R.id.content)?.rootView
-        if (view is WebView && view.canGoBack()) {
-            view.goBack()
+        if (webView.canGoBack()) {
+            webView.goBack()
         } else {
             super.onBackPressed()
         }
+    }
+
+    override fun onDestroy() {
+        webView.stopLoading()
+        webView.destroy()
+        super.onDestroy()
     }
 }
