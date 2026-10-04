@@ -55,7 +55,7 @@ object UploadAlarmScheduler {
     }
 
     fun rescheduleAll(context: Context, items: List<UploadItem>) {
-        items.filter { it.status != "UPLOADED" && it.scheduledAt != null }
+        items.filter { (it.status == "QUEUED" || it.status == "SCHEDULED") && it.scheduledAt != null }
             .forEach { schedule(context, it) }
     }
 
