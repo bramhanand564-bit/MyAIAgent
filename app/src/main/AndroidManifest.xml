@@ -51,6 +51,18 @@
             android:name=".AutomationLiveActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".QueueActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".UploadHistoryActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AppSettingsActivity"
+            android:exported="false" />
+
         <service
             android:name=".automation.NaxAccessibilityService"
             android:exported="false"
