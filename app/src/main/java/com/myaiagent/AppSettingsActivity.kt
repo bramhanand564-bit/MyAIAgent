@@ -19,7 +19,7 @@ import com.google.android.material.textview.MaterialTextView
 class AppSettingsActivity:AppCompatActivity(){
     private lateinit var access:MaterialTextView
     private lateinit var alarm:MaterialTextView
-    override fun onCreate(s:Bundle?){super.onCreate(s);setContentView(ui());refresh()}
+    override fun onCreate(s:Bundle?){super.onCreate(s);setContentView(NaxBottomNav.wrap(this,ui(),"SETTINGS"));refresh()}
     override fun onResume(){super.onResume();if(::access.isInitialized)refresh()}
     private fun ui():android.view.View{
         val sc=ScrollView(this).apply{setBackgroundColor(Color.rgb(8,9,13))}
