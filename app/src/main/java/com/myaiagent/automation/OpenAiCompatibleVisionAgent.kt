@@ -25,8 +25,8 @@ You are the visual fallback planner for an Android YouTube upload automation age
 Analyze only the visible screen. Never bypass login, CAPTCHA, verification, security checks,
 rate limits or access controls.
 Current state: \${currentState.name}
-Desired title: \$itemTitle
-Desired visibility: \$visibility
+Desired title: $itemTitle
+Desired visibility: $visibility
 Return ONLY JSON:
 {"screen":"UPLOAD|PICKER|DETAILS|VISIBILITY|PUBLISH|PROCESSING|SECURITY|UNKNOWN",
 "action":"CLICK|SET_TEXT|SELECT_FILE|WAIT|NEEDS_USER",
