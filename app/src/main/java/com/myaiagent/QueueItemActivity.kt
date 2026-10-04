@@ -124,6 +124,7 @@ class QueueItemActivity : AppCompatActivity() {
 
         root.addView(MaterialButton(this).apply {
             text = "Run Now"
+            isEnabled = item.status != "SUBMITTED" && item.status != "UPLOADED"
             setOnClickListener {
                 val updated = item.copy(
                     title = titleInput.text?.toString()?.trim().orEmpty(),
