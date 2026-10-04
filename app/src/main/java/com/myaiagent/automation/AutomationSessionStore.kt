@@ -6,10 +6,10 @@ import com.myaiagent.model.UploadItem
 class AutomationSessionStore(context: Context) {
     private val prefs = context.getSharedPreferences("automation_session", Context.MODE_PRIVATE)
 
-    fun begin(item: UploadItem) {
+    fun begin(item: UploadItem, initialState: AutomationState = AutomationState.WAITING_FOR_APP) {
         prefs.edit()
             .putString("item_id", item.id)
-            .putString("state", AutomationState.WAITING_FOR_APP.name)
+            .putString("state", initialState.name)
             .putLong("started_at", System.currentTimeMillis())
             .putInt("attempt", 0)
             .apply()
