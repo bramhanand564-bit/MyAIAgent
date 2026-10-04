@@ -36,6 +36,14 @@
             android:exported="false" />
 
         <activity
+            android:name=".AiMindActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AiChatActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".WorkflowSetupActivity"
             android:exported="false" />
 
