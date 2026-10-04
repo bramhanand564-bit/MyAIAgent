@@ -26,6 +26,10 @@
             android:name=".QueueItemActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".YouTubeWorkspaceActivity"
+            android:exported="false" />
+
         <service
             android:name=".automation.NaxAccessibilityService"
             android:exported="false"
