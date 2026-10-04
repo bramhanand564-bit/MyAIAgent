@@ -55,6 +55,7 @@ Never claim an upload succeeded unless final verification says so. Prefer eviden
                     JSONObject().put("text", prompt)
                 ))
             ))
+        GeminiRequestGate.awaitTurn()
         return post(
             "https://generativelanguage.googleapis.com/v1beta/models/" + settings.model + ":generateContent",
             body.toString(),
