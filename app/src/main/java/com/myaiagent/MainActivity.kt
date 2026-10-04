@@ -652,12 +652,44 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
+        if (item.status != "SUBMITTED" && item.status != "UPLOADED" && item.status != "RUNNING") {
+            val runNow = MaterialButton(this).apply {
+                text = "▶  Post now"
+                textSize = 12f
+                isAllCaps = false
+                cornerRadius = dp(14)
+                minHeight = dp(44)
+                insetTop = 0
+                insetBottom = 0
+                setOnClickListener { runQueueItemNow(item) }
+            }
+            body.addView(runNow, LinearLayout.LayoutParams(-1, dp(44)).apply {
+                topMargin = dp(10)
+            })
+        }
+
         card.addView(body)
         return card.apply {
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
             }
         }
+    }
+
+    private fun runQueueItemNow(item: UploadItem) {
+        UploadAlarmScheduler.cancel(this, item.id)
+        val updated = item.copy(
+            status = "QUEUED",
+            scheduledAt = null,
+            lastRunAt = System.currentTimeMillis(),
+            resultNote = "Manual post started"
+        )
+        queueStore.update(updated)
+        val intent = Intent(this, com.myaiagent.automation.UploadRunnerService::class.java).apply {
+            putExtra(com.myaiagent.automation.UploadRunnerService.EXTRA_ITEM_ID, updated.id)
+        }
+        ContextCompat.startForegroundService(this, intent)
+        startActivity(Intent(this, AutomationLiveActivity::class.java))
     }
 
     private fun updateServiceStatus() {
