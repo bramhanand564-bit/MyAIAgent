@@ -32,11 +32,12 @@ class UploadRunnerService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val itemId = intent?.getStringExtra(EXTRA_ITEM_ID)
+        val testMode = intent?.getBooleanExtra(EXTRA_TEST_MODE, false) == true
         val item = itemId?.let { id ->
             queueStore.load().firstOrNull { it.id == id }
         }
 
-        startForeground(NOTIFICATION_ID, notification("Automation started"))
+        startForeground(NOTIFICATION_ID, notification(if (testMode) "Test automation started" else "Automation started"))
 
         if (item == null) {
             stopSelf(startId)
@@ -56,7 +57,6 @@ class UploadRunnerService : Service() {
         }
 
         val sessionStore = AutomationSessionStore(this)
-        val testMode = intent?.getBooleanExtra(EXTRA_TEST_MODE, false) == true
         if (sessionStore.isActive(item.id)) {
             queueStore.update(
                 item.copy(
