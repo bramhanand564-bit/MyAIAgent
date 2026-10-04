@@ -22,7 +22,8 @@ class UploadQueueStore(context: Context) {
                 visibility = o.optString("visibility", "PRIVATE"),
                 scheduledAt = if (o.has("scheduledAt") && !o.isNull("scheduledAt")) o.getLong("scheduledAt") else null,
                 status = o.optString("status", "QUEUED"),
-                automationMode = o.optString("automationMode", "EMBEDDED_WEB"),
+                automationMode = o.optString("automationMode", "NATIVE_STUDIO"),
+                contentType = o.optString("contentType", "VIDEO"),
                 lastRunAt = if (o.has("lastRunAt") && !o.isNull("lastRunAt")) o.getLong("lastRunAt") else null,
                 resultNote = o.optString("resultNote")
             )
@@ -43,6 +44,7 @@ class UploadQueueStore(context: Context) {
                 if (item.scheduledAt == null) put("scheduledAt", JSONObject.NULL) else put("scheduledAt", item.scheduledAt)
                 put("status", item.status)
                 put("automationMode", item.automationMode)
+                put("contentType", item.contentType)
                 if (item.lastRunAt == null) put("lastRunAt", JSONObject.NULL) else put("lastRunAt", item.lastRunAt)
                 put("resultNote", item.resultNote)
             })
