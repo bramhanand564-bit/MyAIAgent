@@ -10,6 +10,7 @@ enum class AutomationState {
     SET_VISIBILITY,
     PUBLISH,
     VERIFY,
+    WAITING_USER,
     COMPLETE,
     ERROR
 }
