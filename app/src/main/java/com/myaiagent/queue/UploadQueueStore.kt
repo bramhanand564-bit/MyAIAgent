@@ -50,9 +50,9 @@ class UploadQueueStore(context: Context) {
         prefs.edit().putString("items", array.toString()).apply()
     }
 
-    fun add(item: UploadItem): Boolean {
+    fun add(item: UploadItem, allowDuplicateUri: Boolean = false): Boolean {
         val items = load()
-        if (items.any { it.uri == item.uri }) return false
+        if (!allowDuplicateUri && items.any { it.uri == item.uri }) return false
         items.add(item)
         save(items)
         return true
