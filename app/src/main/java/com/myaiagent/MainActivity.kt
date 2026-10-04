@@ -112,14 +112,15 @@ class MainActivity : AppCompatActivity() {
         })
         header.addView(brand)
 
+        val workflowOn = WorkflowStore(this).load().enabled
         val live = MaterialTextView(this).apply {
-            text = "●  READY"
-            textSize = 11f
-            setTextColor(Color.rgb(125, 220, 164))
+            text = if (workflowOn) "●  WORKFLOW ON" else "○  SETUP"
+            textSize = 10f
+            setTextColor(if (workflowOn) Color.rgb(125, 220, 164) else Color.rgb(255, 181, 105))
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(8), dp(12), dp(8))
-            background = rounded(Color.rgb(25, 43, 34), dp(20))
+            background = rounded(if (workflowOn) Color.rgb(25, 43, 34) else Color.rgb(55, 39, 25), dp(20))
         }
         header.addView(live)
 
