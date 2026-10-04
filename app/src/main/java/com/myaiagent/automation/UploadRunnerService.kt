@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import com.myaiagent.model.UploadItem
@@ -37,6 +38,7 @@ class UploadRunnerService : Service() {
         }
 
         queueStore.update(item.copy(status = "RUNNING"))
+        AutomationSessionStore(this).begin(item)
         launchMode(item)
         return START_NOT_STICKY
     }
@@ -55,14 +57,33 @@ class UploadRunnerService : Service() {
         val launchIntent = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            launchIntent.putExtra("myaiagent_automation", true)
             startActivity(launchIntent)
             updateNotification("YouTube app opened for: " + item.fileName)
         } else {
             updateNotification("YouTube app is not installed")
             queueStore.update(item.copy(status = "ERROR"))
+            AutomationSessionStore(this).clear()
         }
         stopSelf()
     }
+
+    private fun notification(text: String): Notification =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+                .setContentTitle("MyAIAgent")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setOngoing(true)
+                .build()
+        } else {
+            Notification.Builder(this)
+                .setContentTitle("MyAIAgent")
+                .setContentText(text)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setOngoing(true)
+                .build()
+        }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -75,14 +96,6 @@ class UploadRunnerService : Service() {
             )
         }
     }
-
-    private fun notification(text: String): Notification =
-        Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("MyAIAgent")
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setOngoing(true)
-            .build()
 
     private fun updateNotification(text: String) {
         getSystemService(NotificationManager::class.java).notify(
