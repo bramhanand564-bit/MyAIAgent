@@ -38,6 +38,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var serviceStatusText: MaterialTextView
     private lateinit var scheduleStatusText: MaterialTextView
     private lateinit var lastTestContainer: LinearLayout
+    private lateinit var liveAutomationContainer: LinearLayout
+    private val liveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val liveTicker = object : Runnable {
+        override fun run() {
+            if (::liveAutomationContainer.isInitialized) refreshLiveAutomation()
+            liveHandler.postDelayed(this, 700L)
+        }
+    }
 
     private val pickVideos = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -82,12 +90,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        liveHandler.removeCallbacks(liveTicker)
+        liveHandler.post(liveTicker)
         if (::queueStore.isInitialized) {
             refreshQueue()
             rescheduleUploads()
             updateServiceStatus()
             refreshLastTest()
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        liveHandler.removeCallbacks(liveTicker)
     }
 
     private fun buildDashboard(): View {
@@ -147,6 +162,12 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(lastTestContainer, lp(-1, -2, 0, 10, 0, 0))
         refreshLastTest()
+
+        liveAutomationContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(liveAutomationContainer, lp(-1, -2, 0, 8, 0, 0))
+        refreshLiveAutomation()
 
         root.addView(MaterialButton(this).apply {
             text = "✦  AI API & Model Settings"
@@ -294,6 +315,61 @@ class MainActivity : AppCompatActivity() {
 
         scroll.addView(root)
         return scroll
+    }
+
+    private fun refreshLiveAutomation() {
+        if (!::liveAutomationContainer.isInitialized) return
+        val snapshot = com.myaiagent.automation.AutomationLiveStore(this).snapshot()
+        liveAutomationContainer.removeAllViews()
+        if (snapshot.fileName.isBlank()) return
+
+        val card = MaterialCardView(this).apply {
+            radius = dp(18).toFloat()
+            cardElevation = 0f
+            setCardBackgroundColor(
+                when {
+                    snapshot.active -> Color.argb(62, 194, 164, 255)
+                    snapshot.result == "SUCCESS" -> Color.argb(52, 74, 190, 126)
+                    snapshot.result == "ERROR" -> Color.argb(52, 190, 74, 86)
+                    else -> Color.argb(42, 255, 255, 255)
+                }
+            )
+            strokeWidth = dp(1)
+            strokeColor = Color.argb(85, 194, 164, 255)
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+        }
+        body.addView(label(
+            if (snapshot.active) "LIVE UPLOAD" else "LAST UPLOAD",
+            10f, Color.rgb(194, 164, 255), Typeface.BOLD
+        ))
+        body.addView(label(
+            snapshot.fileName, 14f, Color.WHITE, Typeface.BOLD
+        ).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(4), 0, dp(3))
+        })
+        val state = snapshot.state.replace("_", " ")
+        body.addView(label(
+            state, 12f,
+            if (snapshot.active) Color.rgb(125,220,164) else Color.rgb(169,175,191),
+            Typeface.BOLD
+        ))
+        body.addView(label(
+            snapshot.note, 11f, Color.rgb(169,175,191), Typeface.NORMAL
+        ).apply { setPadding(0, dp(3), 0, dp(2)) })
+
+        // Keep the process understandable: show only the latest four meaningful steps.
+        snapshot.events.takeLast(4).forEach { event ->
+            body.addView(label(
+                "• $event", 10f, Color.rgb(145,150,164), Typeface.NORMAL
+            ).apply { setPadding(0, dp(2), 0, 0) })
+        }
+        card.addView(body)
+        liveAutomationContainer.addView(card)
     }
 
     private fun refreshLastTest() {
@@ -666,6 +742,40 @@ class MainActivity : AppCompatActivity() {
             body.addView(runNow, LinearLayout.LayoutParams(-1, dp(44)).apply {
                 topMargin = dp(10)
             })
+        }
+
+        if (item.status != "RUNNING" && item.status != "SUBMITTED" && item.status != "UPLOADED") {
+            body.addView(MaterialButton(this).apply {
+                text = "▶  Run now"
+                textSize = 12f
+                isAllCaps = false
+                cornerRadius = dp(12)
+                minHeight = dp(40)
+                insetTop = 0
+                insetBottom = 0
+                backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(62, 194, 164, 255))
+                strokeWidth = dp(1)
+                strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(90, 194, 164, 255))
+                setTextColor(Color.rgb(220,210,245))
+                setOnClickListener {
+                    UploadAlarmScheduler.cancel(this@MainActivity, item.id)
+                    val nowItem = item.copy(
+                        status = "RUNNING",
+                        scheduledAt = null,
+                        lastRunAt = System.currentTimeMillis(),
+                        resultNote = "Manual upload started"
+                    )
+                    queueStore.update(nowItem)
+                    ContextCompat.startForegroundService(
+                        this@MainActivity,
+                        Intent(this@MainActivity, com.myaiagent.automation.UploadRunnerService::class.java).apply {
+                            putExtra(com.myaiagent.automation.UploadRunnerService.EXTRA_ITEM_ID, nowItem.id)
+                        }
+                    )
+                    refreshQueue()
+                    refreshLiveAutomation()
+                }
+            }, lp(-1, 40, 42, 10, 0, 0))
         }
 
         card.addView(body)
