@@ -68,7 +68,7 @@ class WorkflowTestActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         queueStore = com.myaiagent.queue.UploadQueueStore(this)
-        setContentView(buildUi())
+        setContentView(NaxBottomNav.wrap(this, buildUi(), "WORKFLOW"))
         val existing = testStore.snapshot()
         testStarted = existing.active
         if (existing.active) {
