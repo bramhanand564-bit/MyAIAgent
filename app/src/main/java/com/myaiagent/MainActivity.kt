@@ -26,6 +26,7 @@ import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueCoordinator
 import com.myaiagent.queue.UploadQueueStore
 import com.myaiagent.scheduler.UploadAlarmScheduler
+import com.myaiagent.workflow.WorkflowStore
 import java.util.Locale
 import java.util.UUID
 
@@ -134,6 +135,21 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(buildStatusCard())
+        root.addView(MaterialButton(this).apply {
+            text = "⚙  Setup daily workflow"
+            textSize = 15f
+            isAllCaps = false
+            typeface = Typeface.DEFAULT_BOLD
+            cornerRadius = dp(16)
+            minHeight = dp(52)
+            insetTop = 0
+            insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(29,30,38))
+            strokeWidth = dp(1)
+            strokeColor = Color.rgb(65,67,80)
+            setTextColor(Color.rgb(224,226,234))
+            setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java)) }
+        }, lp(-1, 52, 0, 10, 0, 0))
         root.addView(sectionTitle("UPLOADS"))
 
         val primary = MaterialButton(this).apply {
@@ -235,41 +251,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildStatusCard(): View {
+        val config = WorkflowStore(this).load()
         val card = MaterialCardView(this).apply {
             radius = dp(20).toFloat()
             cardElevation = 0f
-            setCardBackgroundColor(Color.rgb(24, 25, 32))
+            setCardBackgroundColor(if (config.enabled) Color.rgb(24,35,29) else Color.rgb(24,25,32))
             strokeWidth = dp(1)
-            strokeColor = Color.rgb(48, 50, 61)
+            strokeColor = if (config.enabled) Color.rgb(47,92,65) else Color.rgb(48,50,61)
+            setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java)) }
         }
-
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(16), dp(18), dp(16))
         }
-
-        body.addView(label("AUTOMATION STATUS", 10f, Color.rgb(151, 157, 173), Typeface.BOLD))
-
-        val title = label(
-            "Queue is ready",
-            18f,
-            Color.WHITE,
-            Typeface.BOLD
-        )
-        title.setPadding(0, dp(5), 0, dp(2))
-        body.addView(title)
-
+        val title = if (config.enabled) "●  WORKFLOW ON" else "WORKFLOW NOT SET"
+        body.addView(label(title, 11f, if (config.enabled) Color.rgb(125,220,164) else Color.rgb(255,181,105), Typeface.BOLD))
         body.addView(label(
-            "Add videos and MyAIAgent will process eligible queue items automatically.",
-            13f,
-            Color.rgb(169, 175, 191),
-            Typeface.NORMAL
-        ))
-
+            if (config.enabled) "Daily • ${config.dailyLimit} upload(s) / day" else "Set your folder and daily schedule once.",
+            18f, Color.WHITE, Typeface.BOLD
+        ).apply { setPadding(0, dp(5), 0, dp(3)) })
+        val details = if (config.enabled) {
+            config.times.take(config.dailyLimit).joinToString("  •  ") { formatWorkflowTime(it) } +
+                "\nNext videos will be taken automatically from your configured folder."
+        } else {
+            "Folder → frequency → times → Start workflow"
+        }
+        body.addView(label(details, 12f, Color.rgb(169,175,191), Typeface.NORMAL))
         card.addView(body)
         return card
     }
 
+    private fun formatWorkflowTime(value: String): String {
+        val p = value.split(":")
+        val h = p.getOrNull(0)?.toIntOrNull() ?: return value
+        val m = p.getOrNull(1)?.toIntOrNull() ?: 0
+        val hour = when { h == 0 -> 12; h > 12 -> h - 12; else -> h }
+        return String.format(Locale.getDefault(), "%d:%02d %s", hour, m, if (h >= 12) "PM" else "AM")
+    }
     private fun settingCard(
         title: String,
         status: MaterialTextView,
