@@ -129,8 +129,10 @@ class QueueItemActivity : AppCompatActivity() {
                 val updated = item.copy(
                     title = titleInput.text?.toString()?.trim().orEmpty(),
                     description = descriptionInput.text?.toString().orEmpty(),
-                    visibility = visibility.selectedItem?.toString() ?: "PRIVATE",
-                    automationMode = modeSpinner.selectedItem?.toString() ?: "EMBEDDED_WEB",
+                    visibility = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
+                        .getOrElse(visibility.selectedItemPosition) { "PRIVATE" },
+                    automationMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
+                        .getOrElse(modeSpinner.selectedItemPosition) { "EMBEDDED_WEB" },
                     status = "RUNNING"
                 )
                 store.update(updated)
@@ -190,8 +192,10 @@ class QueueItemActivity : AppCompatActivity() {
     }
 
     private fun saveItem() {
-        val selectedVisibility = visibility.selectedItem?.toString() ?: "PRIVATE"
-        val selectedMode = modeSpinner.selectedItem?.toString() ?: "EMBEDDED_WEB"
+        val selectedVisibility = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
+            .getOrElse(visibility.selectedItemPosition) { "PRIVATE" }
+        val selectedMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
+            .getOrElse(modeSpinner.selectedItemPosition) { "EMBEDDED_WEB" }
         val updated = item.copy(
             title = titleInput.text?.toString()?.trim().orEmpty(),
             description = descriptionInput.text?.toString().orEmpty(),
