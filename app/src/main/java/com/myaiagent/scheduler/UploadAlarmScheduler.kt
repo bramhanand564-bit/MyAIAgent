@@ -11,8 +11,10 @@ object UploadAlarmScheduler {
     private const val ACTION_UPLOAD_ALARM = "com.myaiagent.action.UPLOAD_ALARM"
     private const val EXTRA_ITEM_ID = "item_id"
 
-    fun schedule(context: Context, item: UploadItem): Boolean {
-        val whenAt = item.scheduledAt ?: return false
+    fun schedule(context: Context, item: UploadItem): Boolean =
+        item.scheduledAt?.let { scheduleAt(context, item, it) } ?: false
+
+    private fun scheduleAt(context: Context, item: UploadItem, whenAt: Long): Boolean {
         if (whenAt <= System.currentTimeMillis()) return false
 
         val alarmManager = context.getSystemService(AlarmManager::class.java)
@@ -43,6 +45,9 @@ object UploadAlarmScheduler {
             false
         }
     }
+
+    fun scheduleSoon(context: Context, item: UploadItem, delayMs: Long = 60_000L): Boolean =
+        scheduleAt(context, item, System.currentTimeMillis() + delayMs)
 
     fun cancel(context: Context, itemId: String) {
         context.getSystemService(AlarmManager::class.java)
