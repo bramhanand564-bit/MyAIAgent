@@ -22,7 +22,9 @@ class UploadQueueStore(context: Context) {
                 visibility = o.optString("visibility", "PRIVATE"),
                 scheduledAt = if (o.has("scheduledAt") && !o.isNull("scheduledAt")) o.getLong("scheduledAt") else null,
                 status = o.optString("status", "QUEUED"),
-                automationMode = o.optString("automationMode", "EMBEDDED_WEB")
+                automationMode = o.optString("automationMode", "EMBEDDED_WEB"),
+                lastRunAt = if (o.has("lastRunAt") && !o.isNull("lastRunAt")) o.getLong("lastRunAt") else null,
+                resultNote = o.optString("resultNote")
             )
         }
     }
@@ -41,6 +43,8 @@ class UploadQueueStore(context: Context) {
                 if (item.scheduledAt == null) put("scheduledAt", JSONObject.NULL) else put("scheduledAt", item.scheduledAt)
                 put("status", item.status)
                 put("automationMode", item.automationMode)
+                if (item.lastRunAt == null) put("lastRunAt", JSONObject.NULL) else put("lastRunAt", item.lastRunAt)
+                put("resultNote", item.resultNote)
             })
         }
         prefs.edit().putString("items", array.toString()).apply()
@@ -86,6 +90,6 @@ class UploadQueueStore(context: Context) {
 
     fun resetForRetry(itemId: String) {
         val item = load().firstOrNull { it.id == itemId } ?: return
-        update(item.copy(status = "QUEUED"))
+        update(item.copy(status = "QUEUED", resultNote = "Reset for retry"))
     }
 }
