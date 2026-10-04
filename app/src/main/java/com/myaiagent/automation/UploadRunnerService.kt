@@ -81,6 +81,7 @@ class UploadRunnerService : Service() {
 
         val initialState = AutomationState.WAITING_FOR_APP
         sessionStore.begin(item, initialState, testMode)
+        MindStore(this).log("RUNNER • foreground service started • " + item.fileName)
 
         // All legacy modes now resolve to the native YouTube Studio app.
         // This removes the desktop Studio WebView entirely.
@@ -88,6 +89,11 @@ class UploadRunnerService : Service() {
 
         if (!started) {
             val note = "Could not start YouTube Studio or access the selected video"
+            MindEngine.onError(
+                this,
+                note,
+                "Confirm YouTube Studio is installed, the video URI is still readable, and Accessibility is enabled."
+            )
             queueStore.update(
                 item.copy(
                     status = "ERROR",
