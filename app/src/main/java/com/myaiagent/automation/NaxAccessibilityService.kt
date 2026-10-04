@@ -21,6 +21,7 @@ class NaxAccessibilityService : AccessibilityService() {
     private var retryRunnable: Runnable? = null
     private var watchdogRunnable: Runnable? = null
     private var visionInFlight = false
+    private var lastVisionRequestAt = 0L
     private val visionExecutor = Executors.newSingleThreadExecutor()
 
     private val maxAttemptsPerState = 5
@@ -92,23 +93,51 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.FIND_CREATE -> {
                 if (clickByLabels(root, listOf("Create", "Create a video"))) {
-                    testLog("Clicked Create.")
-                    sessionStore.setState(AutomationState.FIND_UPLOAD)
+                    testLog("Clicked Create • verifying the next screen.")
+                    sessionStore.setState(AutomationState.VERIFY_CREATE_MENU)
                     scheduleRetry(item)
                 } else {
                     scheduleRetry(item)
                 }
             }
 
+            AutomationState.VERIFY_CREATE_MENU -> {
+                val targets = if (item.contentType == "SHORT") {
+                    listOf("Create a Short", "Short", "Upload videos", "Upload a video", "Upload video")
+                } else {
+                    listOf("Upload videos", "Upload a video", "Upload video", "Upload videos from device", "Create a Short")
+                }
+                if (containsAny(root, targets)) {
+                    testLog("Create screen verified.")
+                    sessionStore.setState(AutomationState.FIND_UPLOAD)
+                    driveState(item, root)
+                } else {
+                    scheduleRetry(item)
+                }
+            }
+
             AutomationState.FIND_UPLOAD -> {
-                if (clickByLabels(root, listOf(
-                    "Upload videos",
-                    "Upload a video",
-                    "Upload video",
-                    "Upload videos from device"
-                ))) {
-                    testLog("Clicked Upload a video.")
+                val targets = if (item.contentType == "SHORT") {
+                    listOf("Create a Short", "Short", "Upload videos", "Upload a video", "Upload video")
+                } else {
+                    listOf("Upload videos", "Upload a video", "Upload video", "Upload videos from device")
+                }
+                if (clickByLabels(root, targets)) {
+                    testLog("Selected ${item.contentType.lowercase(Locale.getDefault())} upload path • verifying picker.")
+                    sessionStore.setState(AutomationState.VERIFY_UPLOAD_PICKER)
+                    scheduleRetry(item)
+                } else {
+                    scheduleRetry(item)
+                }
+            }
+
+            AutomationState.VERIFY_UPLOAD_PICKER -> {
+                if (isDocumentPicker(root.packageName?.toString().orEmpty()) ||
+                    containsAny(root, listOf("Recent", "Browse", "Open", "Select", "Choose"))
+                ) {
+                    testLog("File picker screen verified.")
                     sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
+                    driveState(item, root)
                 } else {
                     scheduleRetry(item)
                 }
@@ -154,8 +183,22 @@ class NaxAccessibilityService : AccessibilityService() {
                     return
                 }
 
-                if (titleSet) testLog("Title field completed: " + title)
-                if (item.description.isNotBlank()) testLog("Description field completed.")
+                if (titleSet && !fieldContainsValue(root, listOf("Title", "Add a title", "Video title", "Enter a title", "Add title"), title)) {
+                    testLog("Title write was not verified; retrying.")
+                    scheduleRetry(item)
+                    return
+                }
+                if (item.description.isNotBlank() &&
+                    descriptionSet &&
+                    !fieldContainsValue(root, listOf("Description", "Add a description", "Video description", "Add description"), item.description)
+                ) {
+                    testLog("Description write was not verified; retrying.")
+                    scheduleRetry(item)
+                    return
+                }
+
+                if (titleSet) testLog("Title field verified: " + title)
+                if (item.description.isNotBlank()) testLog("Description field verified.")
                 sessionStore.setState(AutomationState.SET_VISIBILITY)
             }
 
@@ -389,7 +432,20 @@ class NaxAccessibilityService : AccessibilityService() {
         val node = findNode(root, labels) ?: return false
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (current.isClickable) {
+                val clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (clicked) {
+                    WorkflowMemoryStore(this).remember(
+                        root.packageName?.toString().orEmpty(),
+                        sessionStore.state().name,
+                        node.text?.toString().orEmpty().ifBlank {
+                            node.contentDescription?.toString().orEmpty().ifBlank { labels.firstOrNull().orEmpty() }
+                        },
+                        node
+                    )
+                }
+                return clicked
+            }
             current = current.parent
         }
         return false
@@ -398,10 +454,19 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun setTextByLabels(root: AccessibilityNodeInfo, labels: List<String>, value: String): Boolean {
         if (value.isBlank()) return true
         val node = findNode(root, labels) ?: return false
-        if (node.isEditable) return setText(node, value)
-        val parent = node.parent ?: return false
-        val editable = findEditableDescendant(parent) ?: return false
-        return setText(editable, value)
+        val target = if (node.isEditable) node else findEditableDescendant(node.parent ?: return false) ?: return false
+        val written = setText(target, value)
+        if (written) {
+            WorkflowMemoryStore(this).remember(
+                root.packageName?.toString().orEmpty(),
+                sessionStore.state().name,
+                node.text?.toString().orEmpty().ifBlank {
+                    node.contentDescription?.toString().orEmpty().ifBlank { labels.firstOrNull().orEmpty() }
+                },
+                node
+            )
+        }
+        return written
     }
 
     private fun setText(node: AccessibilityNodeInfo, value: String): Boolean =
@@ -425,6 +490,11 @@ class NaxAccessibilityService : AccessibilityService() {
         return null
     }
     private fun findNode(root: AccessibilityNodeInfo, labels: List<String>): AccessibilityNodeInfo? {
+        val remembered = runCatching {
+            WorkflowMemoryStore(this).findNode(root, sessionStore.state().name, labels)
+        }.getOrNull()
+        if (remembered != null) return remembered
+
         val normalized = labels.map { it.trim().lowercase() }
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
@@ -444,6 +514,17 @@ class NaxAccessibilityService : AccessibilityService() {
             }
         }
         return null
+    }
+
+    private fun fieldContainsValue(
+        root: AccessibilityNodeInfo,
+        labels: List<String>,
+        expected: String
+    ): Boolean {
+        if (expected.isBlank()) return true
+        val node = findNode(root, labels) ?: return false
+        val editable = if (node.isEditable) node else findEditableDescendant(node.parent ?: return false) ?: return false
+        return editable.text?.toString()?.trim() == expected.trim()
     }
 
     private fun containsAny(root: AccessibilityNodeInfo, labels: List<String>): Boolean =
@@ -549,6 +630,13 @@ class NaxAccessibilityService : AccessibilityService() {
             return
         }
 
+        val elapsed = System.currentTimeMillis() - lastVisionRequestAt
+        val waitMs = 15_000L - elapsed
+        if (waitMs > 0L) {
+            handler.postDelayed({ requestVisionFallback(item) }, waitMs)
+            return
+        }
+        lastVisionRequestAt = System.currentTimeMillis()
         visionInFlight = true
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
@@ -671,8 +759,10 @@ class NaxAccessibilityService : AccessibilityService() {
         }
 
         when (sessionStore.state()) {
-            AutomationState.FIND_CREATE -> sessionStore.setState(AutomationState.FIND_UPLOAD)
-            AutomationState.FIND_UPLOAD -> sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
+            AutomationState.FIND_CREATE -> sessionStore.setState(AutomationState.VERIFY_CREATE_MENU)
+            AutomationState.VERIFY_CREATE_MENU -> sessionStore.setState(AutomationState.FIND_UPLOAD)
+            AutomationState.FIND_UPLOAD -> sessionStore.setState(AutomationState.VERIFY_UPLOAD_PICKER)
+            AutomationState.VERIFY_UPLOAD_PICKER -> sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
             AutomationState.WAITING_FOR_PICKER -> sessionStore.setState(AutomationState.FILL_DETAILS)
             AutomationState.FILL_DETAILS -> sessionStore.setState(AutomationState.SET_VISIBILITY)
             AutomationState.SET_VISIBILITY -> sessionStore.setState(AutomationState.PUBLISH)
