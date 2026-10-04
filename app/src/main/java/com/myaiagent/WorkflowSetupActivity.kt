@@ -109,8 +109,8 @@ class WorkflowSetupActivity : AppCompatActivity() {
         visibilitySpinner = spinner(arrayOf("PRIVATE", "UNLISTED", "PUBLIC"))
         visibilitySpinner.setSelection(arrayOf("PRIVATE","UNLISTED","PUBLIC").indexOf(config.visibility).coerceAtLeast(0))
         root.addView(visibilitySpinner)
-        mode = spinner(arrayOf("EMBEDDED_WEB", "EXTERNAL_APP"))
-        mode.setSelection(arrayOf("EMBEDDED_WEB","EXTERNAL_APP").indexOf(config.automationMode).coerceAtLeast(0))
+        mode = spinner(arrayOf("NATIVE_STUDIO"))
+        mode.setSelection(0)
         root.addView(mode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
 
         root.addView(section("WORKFLOW"))
@@ -130,7 +130,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
             setOnClickListener {
                 val current = workflowStore.load()
                 val currentVisibility = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibilitySpinner.selectedItemPosition.coerceIn(0,2)]
-                val currentMode = arrayOf("EMBEDDED_WEB","EXTERNAL_APP")[mode.selectedItemPosition.coerceIn(0,1)]
+                val currentMode = "NATIVE_STUDIO"
                 workflowStore.save(
                     current.copy(
                         folderUri = folderUri,
@@ -176,7 +176,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
         val imported = FolderVideoImporter.importVideos(this, Uri.parse(folderUri))
         queueStore.addAllUnique(imported)
         val visibilityValue = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibilitySpinner.selectedItemPosition.coerceIn(0,2)]
-        val modeValue = arrayOf("EMBEDDED_WEB","EXTERNAL_APP")[mode.selectedItemPosition.coerceIn(0,1)]
+        val modeValue = "NATIVE_STUDIO"
 
         val config = WorkflowConfig(true, folderUri, selectedTimes, count, visibilityValue, modeValue)
         workflowStore.save(config)
