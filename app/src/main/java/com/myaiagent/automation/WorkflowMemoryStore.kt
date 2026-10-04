@@ -76,7 +76,7 @@ class WorkflowMemoryStore(context: Context) {
                     val desc = normalize(item.optString("contentDescription"))
                     w == label || w == text || w == desc || label.contains(w) || text.contains(w) || desc.contains(w)
                 }) continue
-            candidates += findNodeByMemoryIdentity(root, item)
+            findNodeByMemoryIdentity(root, item)?.let(candidates::add)
         }
 
         candidates.firstOrNull { isUsable(it) }?.let { return it }
