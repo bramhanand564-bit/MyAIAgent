@@ -172,10 +172,12 @@ class QueueItemActivity : AppCompatActivity() {
                     this@QueueItemActivity,
                     serviceIntent
                 )
-                startActivity(android.content.Intent(
+                Toast.makeText(
                     this@QueueItemActivity,
-                    AutomationLiveActivity::class.java
-                ))
+                    "Post started • YouTube Studio is opening",
+                    Toast.LENGTH_SHORT
+                ).show()
+                finish()
             }
         })
 
