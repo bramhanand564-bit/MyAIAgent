@@ -99,7 +99,9 @@ class AutomationLiveActivity : AppCompatActivity() {
         "FILL_DETAILS" -> "Filling details…"
         "SET_VISIBILITY" -> "Setting visibility…"
         "PUBLISH" -> "Publishing…"
-        "VERIFY" -> "Verifying…"
+        "MONITOR_UPLOAD" -> "Monitoring upload progress…"
+        "VERIFY" -> "Final verification…"
+        "WAITING_USER" -> "Waiting for your action…"
         else -> "Working…"
     }
 
