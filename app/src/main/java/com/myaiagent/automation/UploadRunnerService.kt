@@ -69,11 +69,9 @@ class UploadRunnerService : Service() {
         val initialState = AutomationState.WAITING_FOR_APP
         sessionStore.begin(item, initialState, testMode)
 
-        val started = if (item.automationMode == "EXTERNAL_APP") {
-            launchExternalYouTube(item)
-        } else {
-            launchEmbeddedYouTube(item)
-        }
+        // All legacy modes now resolve to the native YouTube Studio app.
+        // This removes the desktop Studio WebView entirely.
+        val started = launchNativeYouTubeStudio(item)
 
         if (!started) {
             queueStore.update(
@@ -90,21 +88,12 @@ class UploadRunnerService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun launchEmbeddedYouTube(item: UploadItem): Boolean {
-        return runCatching {
-            startActivity(Intent(this, YouTubeWorkspaceActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                putExtra("item_id", item.id)
-            })
-            updateNotification("Embedded YouTube opened for: " + item.fileName)
-            true
-        }.getOrDefault(false)
-    }
+    private fun launchNativeYouTubeStudio(item: UploadItem): Boolean {
+        val studioPackage = "com.google.android.apps.youtube.creator"
+        val studioIntent = packageManager.getLaunchIntentForPackage(studioPackage)
 
-    private fun launchExternalYouTube(item: UploadItem): Boolean {
-        val youtubePackage = "com.google.android.youtube"
-        if (packageManager.getLaunchIntentForPackage(youtubePackage) == null) {
-            updateNotification("YouTube app is not installed")
+        if (studioIntent == null) {
+            updateNotification("YouTube Studio app is not installed")
             return false
         }
 
@@ -115,24 +104,14 @@ class UploadRunnerService : Service() {
                 return false
             }
 
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = contentResolver.getType(uri) ?: "video/*"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                clipData = android.content.ClipData.newRawUri(item.fileName, uri)
-                setPackage(youtubePackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            }
-            startActivity(shareIntent)
-            updateNotification("Video handed to YouTube: " + item.fileName)
+            // Open the actual mobile YouTube Studio app. The accessibility
+            // service then drives its visible UI and the system picker.
+            studioIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(studioIntent)
+            updateNotification("Native YouTube Studio opened: " + item.fileName)
             true
         }.onFailure {
-            if (it is ActivityNotFoundException) {
-                updateNotification("YouTube cannot accept this video")
-            } else {
-                updateNotification("Could not start YouTube automation")
-            }
+            updateNotification("Could not start YouTube Studio")
         }.getOrDefault(false)
     }
 
