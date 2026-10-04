@@ -10,5 +10,7 @@ data class UploadItem(
     val visibility: String = "PRIVATE",
     val scheduledAt: Long? = null,
     val status: String = "QUEUED",
-    val automationMode: String = "EMBEDDED_WEB"
+    val automationMode: String = "EMBEDDED_WEB",
+    val lastRunAt: Long? = null,
+    val resultNote: String = ""
 )
