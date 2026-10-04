@@ -115,6 +115,41 @@ class WorkflowSetupActivity : AppCompatActivity() {
 
         root.addView(section("WORKFLOW"))
 
+        val demoCard = MaterialCardView(this).apply {
+            radius = dp(18).toFloat()
+            cardElevation = 0f
+            setCardBackgroundColor(Color.argb(42, 194, 164, 255))
+            strokeWidth = dp(1)
+            strokeColor = Color.argb(85, 194, 164, 255)
+        }
+        val demoBody = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+        demoBody.addView(label("DEMO WORKFLOW • ACTION → CHECK", 10f, Color.rgb(204, 180, 255), Typeface.BOLD))
+        demoBody.addView(label(
+            "1  Open YouTube Studio  →  verify Studio is active\n" +
+                "2  Create → Upload      →  verify upload screen\n" +
+                "3  Select video         →  verify correct file\n" +
+                "4  Fill details         →  verify title/description\n" +
+                "5  Set visibility       →  verify selected privacy\n" +
+                "6  Publish              →  start progress monitoring\n" +
+                "7  Preparing/Sending    →  keep checking, do not finish\n" +
+                "8  100% / Published     →  final verification\n" +
+                "9  Video visible        →  mark SUCCESS",
+            12f,
+            Color.WHITE,
+            Typeface.NORMAL
+        ).apply { setPadding(0, dp(9), 0, dp(5)) })
+        demoBody.addView(label(
+            "A failed UI match retries. Security/login screens pause for user action. SUCCESS is written only after a real upload verification signal.",
+            10f,
+            Color.rgb(165, 170, 186),
+            Typeface.NORMAL
+        ))
+        demoCard.addView(demoBody)
+        root.addView(demoCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3) })
+
         root.addView(MaterialButton(this).apply {
             text = "▶  Test one video before scheduling"
             textSize = 15f
