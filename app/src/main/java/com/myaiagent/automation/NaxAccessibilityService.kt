@@ -1,8 +1,12 @@
 package com.myaiagent.automation
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.Display
+import java.util.concurrent.Executors
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.myaiagent.model.UploadItem
@@ -16,6 +20,8 @@ class NaxAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var retryRunnable: Runnable? = null
     private var watchdogRunnable: Runnable? = null
+    private var visionInFlight = false
+    private val visionExecutor = Executors.newSingleThreadExecutor()
 
     private val maxAttemptsPerState = 5
     private val sessionTimeoutMs = 10 * 60 * 1000L
@@ -309,16 +315,182 @@ class NaxAccessibilityService : AccessibilityService() {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = Runnable {
             if (!::sessionStore.isInitialized) return@Runnable
-            if (sessionStore.incrementAttempt() > maxAttemptsPerState) {
+            val attempt = sessionStore.incrementAttempt()
+            if (attempt >= 3 && !visionInFlight && VisionAgentSettings(this).enabled) {
+                requestVisionFallback(item)
+                return@Runnable
+            }
+            if (attempt > maxAttemptsPerState) {
                 finishSession(item, "UI step did not match after retries")
                 return@Runnable
             }
             val root = rootInActiveWindow
             val packageName = root?.packageName?.toString().orEmpty()
-            if (root != null &&
-                isAutomationPackage(packageName)
-            ) driveState(item, root)
+            if (root != null && isAutomationPackage(packageName)) {
+                driveState(item, root)
+            }
         }.also { handler.postDelayed(it, 1200L) }
+    }
+
+    private fun requestVisionFallback(item: UploadItem) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            scheduleRetryWithoutVision(item)
+            return
+        }
+
+        val settings = VisionAgentSettings(this)
+        if (!settings.enabled || settings.apiKey.isBlank() || visionInFlight) {
+            scheduleRetryWithoutVision(item)
+            return
+        }
+
+        visionInFlight = true
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            visionExecutor,
+            object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    val bitmap = Bitmap.wrapHardwareBuffer(
+                        screenshot.hardwareBuffer,
+                        screenshot.colorSpace
+                    )
+                    if (bitmap == null) {
+                        visionInFlight = false
+                        handler.post { scheduleRetryWithoutVision(item) }
+                        return
+                    }
+
+                    visionExecutor.execute {
+                        val decision = GeminiVisionAgent(
+                            settings.apiKey,
+                            settings.model
+                        ).analyze(
+                            bitmap,
+                            sessionStore.state(),
+                            item.title.ifBlank { item.fileName },
+                            item.visibility
+                        )
+                        handler.post {
+                            visionInFlight = false
+                            bitmap.recycle()
+                            if (decision == null) {
+                                scheduleRetryWithoutVision(item)
+                            } else {
+                                applyVisionDecision(item, decision.action)
+                            }
+                        }
+                    }
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    visionInFlight = false
+                    handler.post { scheduleRetryWithoutVision(item) }
+                }
+            }
+        )
+    }
+
+    private fun scheduleRetryWithoutVision(item: UploadItem) {
+        handler.postDelayed({
+            if (::sessionStore.isInitialized && sessionStore.itemId() == item.id) {
+                driveState(item, rootInActiveWindow ?: return@postDelayed)
+            }
+        }, 1000L)
+    }
+
+    private fun applyVisionDecision(item: UploadItem, action: VisionAction) {
+        if (action.confidence < 0.80f) {
+            scheduleRetryWithoutVision(item)
+            return
+        }
+
+        if (action.action == "NEEDS_USER" || action.screen == "SECURITY") {
+            setWaitingForUser(item)
+            return
+        }
+
+        val root = rootInActiveWindow
+        if (root == null) {
+            scheduleRetryWithoutVision(item)
+            return
+        }
+
+        when (action.action) {
+            "SET_TEXT" -> {
+                val target = action.targetText
+                val value = action.value
+                if (target != null && value != null &&
+                    setTextByLabels(root, listOf(target), value)
+                ) {
+                    advanceStateAfterVisionAction(action, clicked = false)
+                } else {
+                    scheduleRetryWithoutVision(item)
+                }
+            }
+
+            "SELECT_FILE", "CLICK" -> {
+                val clicked = action.targetText?.let {
+                    clickByLabels(root, listOf(it))
+                } ?: false
+                val coordinateClicked = if (!clicked && action.x != null && action.y != null) {
+                    dispatchTap(action.x, action.y)
+                } else {
+                    clicked
+                }
+
+                if (coordinateClicked) {
+                    advanceStateAfterVisionAction(action, clicked = true)
+                } else {
+                    scheduleRetryWithoutVision(item)
+                }
+            }
+
+            else -> scheduleRetryWithoutVision(item)
+        }
+    }
+
+    private fun advanceStateAfterVisionAction(action: VisionAction, clicked: Boolean) {
+        if (!clicked && sessionStore.state() == AutomationState.FILL_DETAILS) {
+            return
+        }
+
+        when (sessionStore.state()) {
+            AutomationState.FIND_CREATE -> sessionStore.setState(AutomationState.FIND_UPLOAD)
+            AutomationState.FIND_UPLOAD -> sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
+            AutomationState.WAITING_FOR_PICKER -> sessionStore.setState(AutomationState.FILL_DETAILS)
+            AutomationState.FILL_DETAILS -> sessionStore.setState(AutomationState.SET_VISIBILITY)
+            AutomationState.SET_VISIBILITY -> sessionStore.setState(AutomationState.PUBLISH)
+            AutomationState.PUBLISH -> {
+                if (action.targetText?.lowercase()?.contains("publish") == true) {
+                    sessionStore.setState(AutomationState.VERIFY)
+                }
+            }
+            else -> Unit
+        }
+        handler.postDelayed({
+            val root = rootInActiveWindow
+            if (root != null) {
+                val id = sessionStore.itemId()
+                if (id != null) {
+                    queueStore.load().firstOrNull { it.id == id }?.let { driveState(it, root) }
+                }
+            }
+        }, 800L)
+    }
+
+    private fun dispatchTap(x: Float, y: Float): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        val path = android.graphics.Path().apply { moveTo(x, y) }
+        val gesture = android.accessibilityservice.GestureDescription.Builder()
+            .addStroke(
+                android.accessibilityservice.GestureDescription.StrokeDescription(
+                    path,
+                    0L,
+                    80L
+                )
+            )
+            .build()
+        return dispatchGesture(gesture, null, handler)
     }
 
     private fun startWatchdog() {
@@ -373,6 +545,7 @@ class NaxAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         retryRunnable?.let(handler::removeCallbacks)
         watchdogRunnable?.let(handler::removeCallbacks)
+        visionExecutor.shutdownNow()
         super.onDestroy()
     }
 }
