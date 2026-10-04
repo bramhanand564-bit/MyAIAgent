@@ -6,7 +6,9 @@ import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.myaiagent.model.UploadItem
+import com.myaiagent.queue.UploadQueueCoordinator
 import com.myaiagent.queue.UploadQueueStore
+import androidx.core.content.ContextCompat
 
 class NaxAccessibilityService : AccessibilityService() {
     private lateinit var queueStore: UploadQueueStore
@@ -290,10 +292,11 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun finishSession(item: UploadItem?, message: String) {
+        val successful = message.contains("signal detected")
         if (item != null) {
             queueStore.update(
                 item.copy(
-                    status = if (message.contains("signal detected")) "SUBMITTED" else "ERROR",
+                    status = if (successful) "SUBMITTED" else "ERROR",
                     lastRunAt = System.currentTimeMillis(),
                     resultNote = message
                 )
@@ -302,6 +305,19 @@ class NaxAccessibilityService : AccessibilityService() {
         sessionStore.clear()
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
+
+        if (successful) {
+            val next = UploadQueueCoordinator.nextEligible(queueStore.load())
+            if (next != null) {
+                val intent = android.content.Intent(
+                    this,
+                    UploadRunnerService::class.java
+                ).apply {
+                    putExtra(UploadRunnerService.EXTRA_ITEM_ID, next.id)
+                }
+                ContextCompat.startForegroundService(this, intent)
+            }
+        }
     }
 
     override fun onDestroy() {
