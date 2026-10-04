@@ -152,9 +152,11 @@ class NaxAccessibilityService : AccessibilityService() {
             AutomationState.VERIFY -> {
                 when {
                     containsAny(root, listOf("Video published", "Published", "Upload complete")) ->
-                        finishSession(item, "Upload submitted")
+                        finishSession(item, "Published signal detected")
+
                     containsAny(root, listOf("Processing", "Processing will continue in the background")) ->
-                        finishSession(item, "Upload submitted")
+                        finishSession(item, "Processing signal detected; final availability verification pending")
+
                     else -> scheduleRetry(item)
                 }
             }
@@ -168,7 +170,13 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun setWaitingForUser(item: UploadItem) {
         sessionStore.setState(AutomationState.WAITING_USER)
-        queueStore.update(item.copy(status = "NEEDS_USER_ACTION"))
+        queueStore.update(
+            item.copy(
+                status = "NEEDS_USER_ACTION",
+                lastRunAt = System.currentTimeMillis(),
+                resultNote = "User action required on a security/login screen"
+            )
+        )
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
     }
@@ -279,7 +287,11 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun finishSession(item: UploadItem?, message: String) {
         if (item != null) {
             queueStore.update(
-                item.copy(status = if (message == "Upload submitted") "SUBMITTED" else "ERROR")
+                item.copy(
+                    status = if (message.contains("signal detected")) "SUBMITTED" else "ERROR",
+                    lastRunAt = System.currentTimeMillis(),
+                    resultNote = message
+                )
             )
         }
         sessionStore.clear()
