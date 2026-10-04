@@ -56,24 +56,40 @@ class MainActivity : AppCompatActivity() {
             textSize = 15f
             setPadding(0, 20, 0, 0)
         }
-        root.addView(title); root.addView(status); root.addView(addVideos)
-        root.addView(accessibility); root.addView(queueText)
+        root.addView(title)
+        root.addView(status)
+        root.addView(addVideos)
+        root.addView(accessibility)
+        root.addView(queueText)
         setContentView(root)
         refreshQueue()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::queueStore.isInitialized) refreshQueue()
+    }
+
     private fun refreshQueue() {
         val items = queueStore.load()
-        queueText.text = if (items.isEmpty()) "Queue is empty." else
-            "Upload Queue (" + items.size + ")\n\n" +
+        queueText.text = if (items.isEmpty()) {
+            "Queue is empty."
+        } else {
             items.mapIndexed { index, item ->
-                (index + 1).toString() + ". " + item.fileName + "\n   Status: " + item.status
+                val time = item.scheduledAt?.let { java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(it) }
+                    ?: "Not scheduled"
+                (index + 1).toString() + ". " + item.fileName +
+                    "\n   " + (item.title.ifBlank { "Title not set" }) +
+                    "\n   " + item.visibility + " • " + time +
+                    "\n   Status: " + item.status
             }.joinToString("\n\n")
+        }
     }
 
     private fun persistReadPermission(uri: Uri) {
-        try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        catch (_: SecurityException) {}
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: SecurityException) {}
     }
 
     private fun resolveName(uri: Uri): String {
