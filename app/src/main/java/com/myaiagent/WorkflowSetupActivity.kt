@@ -114,6 +114,34 @@ class WorkflowSetupActivity : AppCompatActivity() {
         root.addView(mode, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
 
         root.addView(section("WORKFLOW"))
+
+        root.addView(MaterialButton(this).apply {
+            text = "▶  Test one video before scheduling"
+            textSize = 15f
+            isAllCaps = false
+            cornerRadius = dp(17)
+            minHeight = dp(54)
+            insetTop = 0
+            insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(37,39,48))
+            strokeWidth = dp(1)
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(95,255,255,255))
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                val current = workflowStore.load()
+                val currentVisibility = arrayOf("PRIVATE","UNLISTED","PUBLIC")[visibility.selectedItemPosition.coerceIn(0,2)]
+                val currentMode = arrayOf("EMBEDDED_WEB","EXTERNAL_APP")[mode.selectedItemPosition.coerceIn(0,1)]
+                workflowStore.save(
+                    current.copy(
+                        folderUri = folderUri,
+                        visibility = currentVisibility,
+                        automationMode = currentMode
+                    )
+                )
+                startActivity(Intent(this@WorkflowSetupActivity, WorkflowTestActivity::class.java))
+            }
+        }, LinearLayout.LayoutParams(-1, dp(54)).apply { topMargin = dp(4) })
+
         val start = MaterialButton(this).apply {
             text = if (config.enabled) "✓  Workflow is ON" else "Start workflow"
             textSize = 16f; isAllCaps = false; cornerRadius = dp(18); minHeight = dp(58); insetTop = 0; insetBottom = 0
