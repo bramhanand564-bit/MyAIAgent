@@ -39,6 +39,10 @@ object MindEngine {
         MindStore(context).diagnose(diagnosis, fix, "ERROR")
     }
 
+    fun onWarning(context: Context, diagnosis: String, fix: String) {
+        MindStore(context).diagnose(diagnosis, fix, "WARNING")
+    }
+
     fun onSuccess(context: Context, note: String) {
         MindStore(context).diagnose(
             "Flow completed and passed final verification.",
@@ -112,15 +116,6 @@ object MindEngine {
             return
         }
 
-        if (age > 15_000L && state != AutomationState.MONITOR_UPLOAD && state != AutomationState.VERIFY &&
-            state != AutomationState.WAITING_USER && retries >= 2) {
-            store.diagnose(
-                "The flow appears stuck in " + state.name + " longer than expected.",
-                "The agent is retrying safely. If the UI still does not match, use Fix now or enable AI Vision to identify the current Studio screen.",
-                "WARNING"
-            )
-        }
-
         when (state) {
             AutomationState.WAITING_FOR_APP -> store.diagnose(
                 "Agent is waiting for the native YouTube Studio surface.",
@@ -184,6 +179,15 @@ object MindEngine {
                 "No automation flow is active.",
                 "Start a test or scheduled upload to monitor it.",
                 "INFO"
+            )
+        }
+
+        if (age > 15_000L && state != AutomationState.MONITOR_UPLOAD &&
+            state != AutomationState.VERIFY && state != AutomationState.WAITING_USER && retries >= 2) {
+            store.diagnose(
+                "The flow appears stuck in " + state.name + " longer than expected.",
+                "The agent is retrying safely. If the UI still does not match, use Fix now or enable AI Vision to identify the current Studio screen.",
+                "WARNING"
             )
         }
     }
