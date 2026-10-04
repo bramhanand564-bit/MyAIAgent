@@ -250,7 +250,7 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun isAutomationPackage(packageName: String): Boolean =
-        packageName == "com.google.android.youtube" ||
+        packageName == "com.google.android.youtube" || packageName == "com.google.android.apps.youtube.creator" ||
             packageName == "com.myaiagent" ||
             isDocumentPicker(packageName)
 
