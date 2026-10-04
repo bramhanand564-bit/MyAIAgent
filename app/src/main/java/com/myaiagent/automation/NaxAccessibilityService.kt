@@ -264,7 +264,8 @@ class NaxAccessibilityService : AccessibilityService() {
             packageName == "com.google.android.providers.media.module" ||
             packageName.contains("documentsui")
     private fun isYouTube(root: AccessibilityNodeInfo): Boolean =
-        root.packageName?.toString() == "com.google.android.youtube"
+        root.packageName?.toString() == "com.google.android.youtube" ||
+            root.packageName?.toString() == "com.google.android.apps.youtube.creator"
 
     private fun isEmbedded(item: UploadItem): Boolean =
         item.automationMode == "EMBEDDED_WEB"
@@ -570,7 +571,8 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun finishSession(item: UploadItem?, message: String) {
-        val successful = message.contains("signal detected")
+        val successful = message.contains("signal detected", ignoreCase = true) ||
+            message.startsWith("Published", ignoreCase = true)
         if (item != null) {
             queueStore.update(
                 item.copy(
