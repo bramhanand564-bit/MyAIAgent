@@ -44,7 +44,7 @@ class NaxAccessibilityService : AccessibilityService() {
 
         val root = rootInActiveWindow ?: return
         val packageName = root.packageName?.toString().orEmpty()
-        if (packageName != "com.google.android.youtube" && packageName != "com.myaiagent") return
+        if (!isAutomationPackage(packageName)) return
 
         if (containsAny(root, listOf(
                 "Sign in",
@@ -102,10 +102,16 @@ class NaxAccessibilityService : AccessibilityService() {
             }
 
             AutomationState.WAITING_FOR_PICKER -> {
-                if (containsAny(root, listOf(item.fileName)) &&
-                    clickByLabels(root, listOf("Open", "Select", "Done"))
-                ) {
+                val picker = isDocumentPicker(root.packageName?.toString().orEmpty())
+                val openClicked = clickByLabels(root, listOf(
+                    "Open", "Select", "Done", "Use this file", "Choose", "Select this file"
+                ))
+                if (picker && openClicked) {
                     sessionStore.setState(AutomationState.FILL_DETAILS)
+                    driveState(item, root)
+                } else if (!picker && containsAny(root, listOf(item.fileName))) {
+                    sessionStore.setState(AutomationState.FILL_DETAILS)
+                    driveState(item, root)
                 } else {
                     scheduleRetry(item)
                 }
@@ -188,6 +194,15 @@ class NaxAccessibilityService : AccessibilityService() {
         retryRunnable = null
     }
 
+    private fun isAutomationPackage(packageName: String): Boolean =
+        packageName == "com.google.android.youtube" ||
+            packageName == "com.myaiagent" ||
+            isDocumentPicker(packageName)
+
+    private fun isDocumentPicker(packageName: String): Boolean =
+        packageName == "com.google.android.documentsui" ||
+            packageName == "com.google.android.providers.media.module" ||
+            packageName.contains("documentsui")
     private fun isYouTube(root: AccessibilityNodeInfo): Boolean =
         root.packageName?.toString() == "com.google.android.youtube"
 
@@ -266,7 +281,7 @@ class NaxAccessibilityService : AccessibilityService() {
             val root = rootInActiveWindow
             val packageName = root?.packageName?.toString().orEmpty()
             if (root != null &&
-                (packageName == "com.google.android.youtube" || packageName == "com.myaiagent")
+                isAutomationPackage(packageName)
             ) driveState(item, root)
         }.also { handler.postDelayed(it, 1200L) }
     }
