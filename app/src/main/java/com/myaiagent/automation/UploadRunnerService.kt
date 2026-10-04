@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.app.PendingIntent
+import android.app.ActivityOptions
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
@@ -147,11 +149,29 @@ class UploadRunnerService : Service() {
                 return false
             }
 
-            // Open the actual mobile YouTube Studio app. The accessibility
-            // service then drives its visible UI and the system picker.
-            studioIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(studioIntent)
-            updateNotification("Native YouTube Studio opened: " + item.fileName)
+            // Enter our own visible Workspace Activity first. On Android 14+,
+            // the PendingIntent sender opts into background-activity start for this
+            // user-configured exact-alarm workflow; the workspace then opens native Studio.
+            val workspaceIntent = Intent(this@UploadRunnerService, YouTubeWorkspaceActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            val pi = PendingIntent.getActivity(
+                this@UploadRunnerService,
+                item.id.hashCode(),
+                workspaceIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (Build.VERSION.SDK_INT >= 34) {
+                val options = ActivityOptions.makeBasic().apply {
+                    setPendingIntentBackgroundActivityStartMode(
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                    )
+                }
+                pi.send(this@UploadRunnerService, 0, null, null, null, null, options.toBundle())
+            } else {
+                pi.send()
+            }
+            updateNotification("Launching native YouTube Studio: " + item.fileName)
             true
         }.onFailure {
             updateNotification("Could not start YouTube Studio")
