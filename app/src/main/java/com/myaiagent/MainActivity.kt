@@ -21,6 +21,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textview.MaterialTextView
 import com.myaiagent.automation.AutomationSessionStore
+import com.myaiagent.automation.TestRunStore
 import com.myaiagent.folder.FolderVideoImporter
 import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueCoordinator
@@ -36,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var queueCountText: MaterialTextView
     private lateinit var serviceStatusText: MaterialTextView
     private lateinit var scheduleStatusText: MaterialTextView
+    private lateinit var lastTestContainer: LinearLayout
 
     private val pickVideos = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -84,6 +86,7 @@ class MainActivity : AppCompatActivity() {
             refreshQueue()
             rescheduleUploads()
             updateServiceStatus()
+            refreshLastTest()
         }
     }
 
@@ -138,6 +141,13 @@ class MainActivity : AppCompatActivity() {
         })
 
         root.addView(buildStatusCard())
+
+        lastTestContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(lastTestContainer, lp(-1, -2, 0, 10, 0, 0))
+        refreshLastTest()
+
         root.addView(MaterialButton(this).apply {
             text = "✦  AI API & Model Settings"
             textSize = 14f
@@ -167,6 +177,22 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.rgb(224,226,234))
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowSetupActivity::class.java)) }
         }, lp(-1, 52, 0, 10, 0, 0))
+
+        root.addView(MaterialButton(this).apply {
+            text = "▶  Test one video now"
+            textSize = 15f
+            isAllCaps = false
+            cornerRadius = dp(16)
+            minHeight = dp(52)
+            insetTop = 0
+            insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(38, 194,164,255))
+            strokeWidth = dp(1)
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(90,194,164,255))
+            setTextColor(Color.rgb(220,210,245))
+            setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowTestActivity::class.java)) }
+        }, lp(-1, 52, 0, 0, 0, 0))
+
         root.addView(buildKpiRow())
         root.addView(sectionTitle("CREATE").apply {
             setPadding(0, dp(22), 0, dp(9))
@@ -268,6 +294,80 @@ class MainActivity : AppCompatActivity() {
 
         scroll.addView(root)
         return scroll
+    }
+
+    private fun refreshLastTest() {
+        if (!::lastTestContainer.isInitialized) return
+        val snapshot = TestRunStore(this).snapshot()
+        lastTestContainer.removeAllViews()
+        if (snapshot.fileName.isBlank() || snapshot.result.isBlank()) return
+
+        val card = MaterialCardView(this).apply {
+            radius = dp(18).toFloat()
+            cardElevation = 0f
+            setCardBackgroundColor(
+                when (snapshot.result) {
+                    "SUCCESS" -> Color.argb(58, 74, 190, 126)
+                    "ERROR" -> Color.argb(58, 190, 74, 86)
+                    "WAITING_USER" -> Color.argb(58, 190, 140, 74)
+                    else -> Color.argb(45, 255,255,255)
+                }
+            )
+            strokeWidth = dp(1)
+            strokeColor = when (snapshot.result) {
+                "SUCCESS" -> Color.argb(100, 108,220,157)
+                "ERROR" -> Color.argb(100, 255,112,112)
+                "WAITING_USER" -> Color.argb(100, 255,181,105)
+                else -> Color.argb(70,255,255,255)
+            }
+        }
+
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+        }
+        body.addView(label("LAST WORKFLOW TEST", 10f, Color.rgb(151,157,173), Typeface.BOLD))
+        body.addView(label(
+            snapshot.fileName,
+            15f,
+            Color.WHITE,
+            Typeface.BOLD
+        ).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(5), 0, dp(4))
+        })
+        val resultText = when (snapshot.result) {
+            "SUCCESS" -> "✓ Upload submitted successfully"
+            "ERROR" -> "✕ Test failed / stopped"
+            "WAITING_USER" -> "⚠ User action required"
+            else -> snapshot.result
+        }
+        body.addView(label(
+            resultText,
+            12f,
+            when (snapshot.result) {
+                "SUCCESS" -> Color.rgb(125,220,164)
+                "ERROR" -> Color.rgb(255,112,112)
+                "WAITING_USER" -> Color.rgb(255,181,105)
+                else -> Color.rgb(180,185,198)
+            },
+            Typeface.BOLD
+        ))
+        if (snapshot.resultNote.isNotBlank()) {
+            body.addView(label(
+                snapshot.resultNote,
+                11f,
+                Color.rgb(169,175,191),
+                Typeface.NORMAL
+            ).apply {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(0, dp(5), 0, 0)
+            })
+        }
+        card.addView(body)
+        lastTestContainer.addView(card)
     }
 
     private fun buildKpiRow(): View {
