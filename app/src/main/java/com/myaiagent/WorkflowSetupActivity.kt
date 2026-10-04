@@ -11,6 +11,7 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
+import android.view.View
 import android.widget.Spinner
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,19 +63,19 @@ class WorkflowSetupActivity : AppCompatActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(22), dp(20), dp(30))
-            setBackgroundColor(Color.rgb(15, 16, 20))
+            setPadding(dp(18), dp(12), dp(18), dp(32))
+            setBackgroundColor(Color.rgb(8, 9, 13))
         }
 
-        root.addView(label("Workflow setup", 28f, Color.WHITE, Typeface.BOLD))
-        root.addView(label("Set it once. MyAIAgent keeps the schedule running automatically.", 14f, Color.rgb(158, 164, 179), Typeface.NORMAL).apply {
+        root.addView(label("Workflow", 30f, Color.WHITE, Typeface.BOLD))
+        root.addView(label("Set once. Run automatically.", 14f, Color.rgb(145, 150, 164), Typeface.NORMAL).apply {
             setPadding(0, dp(6), 0, dp(18))
         })
 
         val folderCard = MaterialCardView(this).apply {
             radius = dp(18).toFloat(); cardElevation = 0f
-            setCardBackgroundColor(Color.rgb(24, 25, 32))
-            strokeWidth = dp(1); strokeColor = Color.rgb(48, 50, 61)
+            setCardBackgroundColor(Color.argb(48, 255, 255, 255))
+            strokeWidth = dp(1); strokeColor = Color.argb(72, 255, 255, 255)
         }
         val folderBody = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14)) }
         folderBody.addView(label("VIDEO SOURCE", 10f, Color.rgb(151,157,173), Typeface.BOLD))
@@ -233,7 +234,7 @@ class WorkflowSetupActivity : AppCompatActivity() {
         setPadding(dp(8), 0, dp(8), 0)
     }
 
-    private fun section(value: String): MaterialTextView = label(value, 10f, Color.rgb(151,157,173), Typeface.BOLD).apply {
+    private fun section(value: String): MaterialTextView = label(value, 10f, Color.rgb(132,137,151), Typeface.BOLD).apply {
         setPadding(0, dp(20), 0, dp(7))
     }
 
