@@ -25,7 +25,10 @@ class AutomationSessionStore(context: Context) {
         }.getOrDefault(AutomationState.IDLE)
 
     fun setState(state: AutomationState) {
-        prefs.edit().putString("state", state.name).apply()
+        prefs.edit()
+            .putString("state", state.name)
+            .putInt("attempt", 0)
+            .apply()
     }
 
     fun incrementAttempt(): Int {
@@ -33,10 +36,6 @@ class AutomationSessionStore(context: Context) {
         prefs.edit().putInt("attempt", next).apply()
         return next
     }
-
-    fun attempt(): Int = prefs.getInt("attempt", 0)
-
-    fun startedAt(): Long = prefs.getLong("started_at", 0L)
 
     fun clear() {
         prefs.edit().clear().apply()
