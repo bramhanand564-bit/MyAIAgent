@@ -7,9 +7,9 @@ enum class AutomationState {
     FIND_UPLOAD,
     WAITING_FOR_PICKER,
     FILL_DETAILS,
+    SET_VISIBILITY,
     PUBLISH,
     VERIFY,
-    RETRY,
     COMPLETE,
     ERROR
 }
