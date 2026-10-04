@@ -17,6 +17,7 @@ import com.myaiagent.scheduler.UploadAlarmScheduler
 class UploadRunnerService : Service() {
     companion object {
         const val EXTRA_ITEM_ID = "item_id"
+        const val EXTRA_TEST_MODE = "test_mode"
         private const val CHANNEL_ID = "automation"
         private const val NOTIFICATION_ID = 7001
     }
@@ -43,6 +44,7 @@ class UploadRunnerService : Service() {
         }
 
         val sessionStore = AutomationSessionStore(this)
+        val testMode = intent?.getBooleanExtra(EXTRA_TEST_MODE, false) == true
         if (sessionStore.isActive(item.id)) {
             queueStore.update(
                 item.copy(
@@ -58,13 +60,14 @@ class UploadRunnerService : Service() {
         queueStore.update(
             item.copy(
                 status = "RUNNING",
+                scheduledAt = if (testMode) null else item.scheduledAt,
                 lastRunAt = System.currentTimeMillis(),
-                resultNote = "Automation session started"
+                resultNote = if (testMode) "TEST • Automation session started" else "Automation session started"
             )
         )
 
         val initialState = AutomationState.WAITING_FOR_APP
-        sessionStore.begin(item, initialState)
+        sessionStore.begin(item, initialState, testMode)
 
         val started = if (item.automationMode == "EXTERNAL_APP") {
             launchExternalYouTube(item)
