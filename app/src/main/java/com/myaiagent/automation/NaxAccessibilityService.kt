@@ -248,8 +248,14 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun setTextByLabels(root: AccessibilityNodeInfo, labels: List<String>, value: String): Boolean {
         if (value.isBlank()) return true
         val node = findNode(root, labels) ?: return false
-        if (!node.isEditable) return false
-        return node.performAction(
+        if (node.isEditable) return setText(node, value)
+        val parent = node.parent ?: return false
+        val editable = findEditableDescendant(parent) ?: return false
+        return setText(editable, value)
+    }
+
+    private fun setText(node: AccessibilityNodeInfo, value: String): Boolean =
+        node.performAction(
             AccessibilityNodeInfo.ACTION_SET_TEXT,
             android.os.Bundle().apply {
                 putCharSequence(
@@ -258,8 +264,16 @@ class NaxAccessibilityService : AccessibilityService() {
                 )
             }
         )
-    }
 
+    private fun findEditableDescendant(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isEditable) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findEditableDescendant(child)
+            if (found != null) return found
+        }
+        return null
+    }
     private fun findNode(root: AccessibilityNodeInfo, labels: List<String>): AccessibilityNodeInfo? {
         val normalized = labels.map { it.trim().lowercase() }
         val queue = ArrayDeque<AccessibilityNodeInfo>()
