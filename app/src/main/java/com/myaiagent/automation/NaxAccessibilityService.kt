@@ -117,16 +117,17 @@ class NaxAccessibilityService : AccessibilityService() {
             }
 
             AutomationState.SET_VISIBILITY -> {
+                if (clickByLabels(root, visibilityLabels(item.visibility))) {
+                    sessionStore.setState(AutomationState.PUBLISH)
+                    return
+                }
+
                 if (clickByLabels(root, listOf("Visibility", "Who can see this video"))) {
                     scheduleRetry(item)
                     return
                 }
 
-                if (clickByLabels(root, visibilityLabels(item.visibility))) {
-                    sessionStore.setState(AutomationState.PUBLISH)
-                } else {
-                    scheduleRetry(item)
-                }
+                scheduleRetry(item)
             }
 
             AutomationState.PUBLISH -> {
