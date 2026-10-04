@@ -11,21 +11,31 @@ object UploadAlarmScheduler {
     private const val ACTION_UPLOAD_ALARM = "com.myaiagent.action.UPLOAD_ALARM"
     private const val EXTRA_ITEM_ID = "item_id"
 
-    fun schedule(context: Context, item: UploadItem) {
-        val whenAt = item.scheduledAt ?: return
-        if (whenAt <= System.currentTimeMillis()) return
+    fun schedule(context: Context, item: UploadItem): Boolean {
+        val whenAt = item.scheduledAt ?: return false
+        if (whenAt <= System.currentTimeMillis()) return false
 
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         val pendingIntent = pendingIntent(context, item.id)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                whenAt,
-                pendingIntent
-            )
-        } else {
-            alarmManager.setExact(AlarmManager.RTC_WAKEUP, whenAt, pendingIntent)
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                !alarmManager.canScheduleExactAlarms()
+            ) {
+                false
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    whenAt,
+                    pendingIntent
+                )
+                true
+            } else {
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, whenAt, pendingIntent)
+                true
+            }
+        } catch (_: SecurityException) {
+            false
         }
     }
 
