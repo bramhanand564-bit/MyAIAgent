@@ -423,7 +423,20 @@ class NaxAccessibilityService : AccessibilityService() {
         val node = findNode(root, listOf(fileName, base)) ?: return false
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable) return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (current.isClickable) {
+                val clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (clicked) {
+                    WorkflowMemoryStore(this).remember(
+                        root.packageName?.toString().orEmpty(),
+                        sessionStore.state().name,
+                        node.text?.toString().orEmpty().ifBlank {
+                            node.contentDescription?.toString().orEmpty().ifBlank { fileName }
+                        },
+                        node
+                    )
+                }
+                return clicked
+            }
             current = current.parent
         }
         return false
@@ -666,7 +679,11 @@ class NaxAccessibilityService : AccessibilityService() {
                                 bitmap,
                                 sessionStore.state(),
                                 item.title.ifBlank { item.fileName },
-                                item.visibility
+                                item.visibility,
+                                WorkflowMemoryStore(this@NaxAccessibilityService).promptContext(
+                                    rootInActiveWindow?.packageName?.toString().orEmpty(),
+                                    sessionStore.state().name
+                                )
                             )
                             else -> GeminiVisionAgent(settings.apiKey, settings.model).analyze(
                                 bitmap,
