@@ -24,6 +24,7 @@ class QueueItemActivity : AppCompatActivity() {
     private lateinit var titleInput: TextInputEditText
     private lateinit var descriptionInput: TextInputEditText
     private lateinit var visibility: Spinner
+    private lateinit var modeSpinner: Spinner
     private lateinit var scheduleText: MaterialTextView
     private var scheduledAt: Long? = null
 
@@ -75,7 +76,21 @@ class QueueItemActivity : AppCompatActivity() {
         visibility.setSelection(arrayOf("PRIVATE", "UNLISTED", "PUBLIC").indexOf(item.visibility).coerceAtLeast(0))
         root.addView(visibility)
 
-        scheduleText = MaterialTextView(this).apply { textSize = 16f; setPadding(0, 24, 0, 12) }
+        root.addView(MaterialTextView(this).apply {
+            text = "YouTube Mode"
+            textSize = 15f
+            setPadding(0, 18, 0, 6)
+        })
+        modeSpinner = Spinner(this)
+        val modes = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
+        modeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+        modeSpinner.setSelection(modes.indexOf(item.automationMode).coerceAtLeast(0))
+        root.addView(modeSpinner)
+
+        scheduleText = MaterialTextView(this).apply {
+            textSize = 16f
+            setPadding(0, 24, 0, 12)
+        }
         root.addView(scheduleText)
         refreshScheduleLabel()
 
@@ -113,12 +128,14 @@ class QueueItemActivity : AppCompatActivity() {
 
     private fun saveItem() {
         val selectedVisibility = visibility.selectedItem?.toString() ?: "PRIVATE"
+        val selectedMode = modeSpinner.selectedItem?.toString() ?: "EMBEDDED_WEB"
         val updated = item.copy(
             title = titleInput.text?.toString()?.trim().orEmpty(),
             description = descriptionInput.text?.toString().orEmpty(),
             visibility = selectedVisibility,
             scheduledAt = scheduledAt,
-            status = if (scheduledAt != null) "SCHEDULED" else item.status
+            status = if (scheduledAt != null) "SCHEDULED" else item.status,
+            automationMode = selectedMode
         )
         store.update(updated)
         if (scheduledAt != null) {
