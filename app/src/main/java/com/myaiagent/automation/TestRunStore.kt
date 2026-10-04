@@ -60,7 +60,7 @@ class TestRunStore(context: Context) {
     }
 
     fun finish(success: Boolean, note: String) {
-        log(if (success) "TEST COMPLETE • Upload submitted successfully." else "TEST COMPLETE • Upload did not complete.")
+        log(if (success) "TEST COMPLETE • Upload verified successfully." else "TEST COMPLETE • Upload did not complete.")
         log(note)
         prefs.edit()
             .putBoolean("active", false)
@@ -112,7 +112,8 @@ class TestRunStore(context: Context) {
         AutomationState.FILL_DETAILS -> "Filling title and description"
         AutomationState.SET_VISIBILITY -> "Setting visibility"
         AutomationState.PUBLISH -> "Publishing"
-        AutomationState.VERIFY -> "Verifying upload result"
+        AutomationState.MONITOR_UPLOAD -> "Checking real upload progress"
+        AutomationState.VERIFY -> "Final verification"
         AutomationState.WAITING_USER -> "Waiting for user action"
         AutomationState.COMPLETE -> "Completed"
         AutomationState.ERROR -> "Error"
