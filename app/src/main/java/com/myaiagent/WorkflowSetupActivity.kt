@@ -6,6 +6,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.text.TextUtils
 import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
@@ -132,6 +134,11 @@ class WorkflowSetupActivity : AppCompatActivity() {
     }
 
     private fun startWorkflow() {
+        if (!isAccessibilityEnabled()) {
+            Toast.makeText(this, "Enable MyAIAgent Accessibility Service first", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            return
+        }
         if (folderUri.isBlank()) { Toast.makeText(this, "Choose a video folder first", Toast.LENGTH_SHORT).show(); return }
         val count = frequency.selectedItemPosition + 1
         val selectedTimes = times.take(count)
@@ -182,6 +189,17 @@ class WorkflowSetupActivity : AppCompatActivity() {
         }
     }
 
+    private fun isAccessibilityEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val expected = packageName + "/com.myaiagent.automation.NaxAccessibilityService"
+        return TextUtils.SimpleStringSplitter(':').let { splitter ->
+            splitter.setString(enabled)
+            splitter.any { it.equals(expected, ignoreCase = true) }
+        }
+    }
     private fun stopWorkflow() {
         workflowStore.setEnabled(false)
         queueStore.load().filter { it.status == "SCHEDULED" }.forEach { item ->
