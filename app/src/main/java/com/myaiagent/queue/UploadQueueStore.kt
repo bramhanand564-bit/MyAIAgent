@@ -46,10 +46,26 @@ class UploadQueueStore(context: Context) {
         prefs.edit().putString("items", array.toString()).apply()
     }
 
-    fun add(item: UploadItem) {
+    fun add(item: UploadItem): Boolean {
         val items = load()
+        if (items.any { it.uri == item.uri }) return false
         items.add(item)
         save(items)
+        return true
+    }
+
+    fun addAllUnique(itemsToAdd: List<UploadItem>): Int {
+        val items = load()
+        val knownUris = items.mapTo(mutableSetOf()) { it.uri }
+        var added = 0
+        itemsToAdd.forEach { item ->
+            if (knownUris.add(item.uri)) {
+                items.add(item)
+                added++
+            }
+        }
+        if (added > 0) save(items)
+        return added
     }
 
     fun update(item: UploadItem) {
@@ -59,5 +75,17 @@ class UploadQueueStore(context: Context) {
             items[index] = item
             save(items)
         }
+    }
+
+    fun remove(itemId: String): Boolean {
+        val items = load()
+        val removed = items.removeAll { it.id == itemId }
+        if (removed) save(items)
+        return removed
+    }
+
+    fun resetForRetry(itemId: String) {
+        val item = load().firstOrNull { it.id == itemId } ?: return
+        update(item.copy(status = "QUEUED"))
     }
 }
