@@ -4,6 +4,7 @@ import android.content.Context
 import com.myaiagent.model.UploadItem
 
 class AutomationSessionStore(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs =
         context.getSharedPreferences("automation_session", Context.MODE_PRIVATE)
 
@@ -21,7 +22,7 @@ class AutomationSessionStore(context: Context) {
             .apply()
 
         if (testMode) {
-            TestRunStore(this).setState(initialState)
+            TestRunStore(appContext).setState(initialState)
         }
     }
 
@@ -56,7 +57,7 @@ class AutomationSessionStore(context: Context) {
             .apply()
 
         if (isTestMode()) {
-            TestRunStore(this).setState(state)
+            TestRunStore(appContext).setState(state)
         }
     }
 
