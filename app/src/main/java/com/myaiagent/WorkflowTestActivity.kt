@@ -33,6 +33,7 @@ class WorkflowTestActivity : AppCompatActivity() {
     private lateinit var eventContainer: LinearLayout
     private lateinit var runButton: MaterialButton
     private lateinit var homeButton: MaterialButton
+    private lateinit var liveScroll: ScrollView
     private val testStore by lazy { TestRunStore(this) }
     private val handler = Handler(Looper.getMainLooper())
     private var selectedItem: UploadItem? = null
@@ -87,9 +88,10 @@ class WorkflowTestActivity : AppCompatActivity() {
     }
 
     private fun buildUi(): android.view.View {
-        val scroll = ScrollView(this).apply {
+        liveScroll = ScrollView(this).apply {
             setBackgroundColor(Color.rgb(8, 9, 13))
         }
+        val scroll = liveScroll
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(12), dp(18), dp(34))
@@ -282,6 +284,8 @@ class WorkflowTestActivity : AppCompatActivity() {
             eventCard.addView(body)
             eventContainer.addView(eventCard, lp(-1, -2, 0, 0, 0, 6))
         }
+
+        liveScroll.post { liveScroll.fullScroll(ScrollView.FOCUS_DOWN) }
 
         if (snapshot.result == "SUCCESS" && !completionHomePosted) {
             completionHomePosted = true
