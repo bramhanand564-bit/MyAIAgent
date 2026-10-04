@@ -120,7 +120,9 @@ class TestRunStore(context: Context) {
     private fun stateLabel(state: AutomationState): String = when (state) {
         AutomationState.WAITING_FOR_APP -> "YouTube screen detected / opening"
         AutomationState.FIND_CREATE -> "Finding Create"
+        AutomationState.VERIFY_CREATE_MENU -> "Verifying Create menu"
         AutomationState.FIND_UPLOAD -> "Finding Upload a video"
+        AutomationState.VERIFY_UPLOAD_PICKER -> "Verifying file picker"
         AutomationState.WAITING_FOR_PICKER -> "Selecting the video file"
         AutomationState.FILL_DETAILS -> "Filling title and description"
         AutomationState.SET_VISIBILITY -> "Setting visibility"
