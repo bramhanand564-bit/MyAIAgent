@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.myaiagent.queue.UploadQueueStore
 
 class YouTubeWorkspaceActivity : AppCompatActivity() {
     private lateinit var webView: WebView
@@ -29,6 +30,11 @@ class YouTubeWorkspaceActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val itemId = intent.getStringExtra("item_id")
+        val queuedItem = itemId?.let { id ->
+            UploadQueueStore(this).load().firstOrNull { it.id == id }
+        }
+
         webView = WebView(this)
         webView.settings.apply {
             javaScriptEnabled = true
@@ -38,23 +44,36 @@ class YouTubeWorkspaceActivity : AppCompatActivity() {
             allowContentAccess = true
             cacheMode = WebSettings.LOAD_DEFAULT
         }
+
         webView.webViewClient = WebViewClient()
         webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
-                webView: WebView?,
-                filePath: ValueCallback<Array<Uri>>?,
-                fileChooserParams: FileChooserParams?
+                view: WebView?,
+                callback: ValueCallback<Array<Uri>>?,
+                params: FileChooserParams?
             ): Boolean {
                 filePathCallback?.onReceiveValue(null)
-                filePathCallback = filePath
+                filePathCallback = callback
 
-                val acceptTypes = fileChooserParams?.acceptTypes?.filter { it.isNotBlank() }
+                val queuedUri = queuedItem?.uri?.let(Uri::parse)
+                val queuedType = queuedUri?.let {
+                    contentResolver.getType(it)
+                }
+
+                if (queuedUri != null &&
+                    (queuedType?.startsWith("video/") == true || params?.acceptTypes?.any { it.startsWith("video/") } == true)
+                ) {
+                    filePathCallback?.onReceiveValue(arrayOf(queuedUri))
+                    filePathCallback = null
+                    return true
+                }
+
+                val acceptTypes = params?.acceptTypes?.filter { it.isNotBlank() }
                 val mimeTypes = if (acceptTypes.isNullOrEmpty()) {
                     arrayOf("video/*")
                 } else {
                     acceptTypes.toTypedArray()
                 }
-
                 pickWebUploadFile.launch(mimeTypes)
                 return true
             }
