@@ -22,7 +22,12 @@ object UploadAlarmScheduler {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
                 !alarmManager.canScheduleExactAlarms()
             ) {
-                false
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    whenAt,
+                    pendingIntent
+                )
+                true
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
@@ -45,7 +50,8 @@ object UploadAlarmScheduler {
     }
 
     fun rescheduleAll(context: Context, items: List<UploadItem>) {
-        items.filter { it.status != "UPLOADED" }.forEach { schedule(context, it) }
+        items.filter { it.status != "UPLOADED" && it.scheduledAt != null }
+            .forEach { schedule(context, it) }
     }
 
     private fun pendingIntent(context: Context, itemId: String): PendingIntent {
