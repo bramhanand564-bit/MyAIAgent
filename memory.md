@@ -14,6 +14,7 @@ Phone files/folders → MyAIAgent queue → metadata → scheduler → YouTube U
 - EMBEDDED_WEB: in-app YouTube Studio WebView workspace.
 - EXTERNAL_APP: installed YouTube app fallback, controlled through Android UI automation.
 - Queue items can choose the mode.
+- External mode hands the selected, user-authorized video URI directly to the YouTube app with an Android share intent.
 
 ## Implemented
 - Android project/build configuration.
@@ -28,12 +29,15 @@ Phone files/folders → MyAIAgent queue → metadata → scheduler → YouTube U
 - Scheduled foreground runner.
 - Reboot/package-replaced schedule restoration.
 - Embedded YouTube Studio workspace.
-- External YouTube app launch fallback.
+- External YouTube handoff via ACTION_SEND.
 - Per-item automation mode selection.
-- Accessibility upload state machine with bounded retries and session timeout.
+- Accessibility upload state machine with bounded retries, session timeout and stale-session watchdog.
+- Security-screen detection that pauses automation and requires the user to act.
+- Direct external YouTube composer handoff.
 
 ## Automation State Machine
 WAITING_FOR_APP → FIND_CREATE → FIND_UPLOAD → WAITING_FOR_PICKER → FILL_DETAILS → SET_VISIBILITY → PUBLISH → VERIFY
+Optional pause state: WAITING_USER
 
 The service uses accessibility node text/content descriptions and clickable ancestors instead of fixed screen coordinates. Unsupported/security-gated screens are not bypassed.
 
@@ -53,10 +57,11 @@ Data model includes:
 - User-authorized files/accounts only.
 - No CAPTCHA/security/quota/rate-limit bypass.
 - UI matching is label-based and may need maintenance when YouTube changes.
-- Each state has bounded retries; sessions have a timeout.
+- Each state has bounded retries; sessions have a timeout and watchdog.
+- Login, verification, CAPTCHA or security-check screens are paused as NEEDS_USER_ACTION.
 - Android background/battery restrictions must be handled.
 - Background activity-launch restrictions can affect scheduled UI automation.
-- Upload completion currently means an explicit success/processing UI signal was detected; final public availability verification is still pending.
+- Upload completion currently means an explicit published/upload-complete/processing UI signal was detected; final public availability verification is still pending.
 
 ## Scheduler
 - Scheduled uploads use Android AlarmManager.
@@ -66,7 +71,7 @@ Data model includes:
 
 ## Planned Next
 1. Device-tested YouTube selectors/state transitions and upload flow refinement.
-2. Upload completion verification and stronger duplicate protection.
-3. Queue controls: remove, reorder, retry and Run Now test action.
-4. Embedded workspace upload handoff.
+2. Upload completion verification and persistent result details.
+3. Queue ordering and batch scheduling.
+4. Embedded workspace upload/file chooser integration.
 5. AI video-generator workflow within each service's allowed limits.
