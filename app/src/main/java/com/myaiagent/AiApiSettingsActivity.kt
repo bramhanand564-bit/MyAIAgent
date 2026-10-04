@@ -32,8 +32,20 @@ class AiApiSettingsActivity : AppCompatActivity() {
             setPadding(dp(18), dp(18), dp(18), dp(30))
         }
 
-        root.addView(label("AI Assist", 30f, Color.WHITE, Typeface.BOLD))
-        root.addView(label("Custom API • Open-source / external model API", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(label("AI SETTINGS", 28f, Color.WHITE, Typeface.BOLD),
+            LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(navIcon("⌂", "Home") {
+            startActivity(Intent(this@AiApiSettingsActivity, MainActivity::class.java))
+        })
+        header.addView(navIcon("✦", "NAX Mind") {
+            startActivity(Intent(this@AiApiSettingsActivity, AiMindActivity::class.java))
+        })
+        root.addView(header)
+        root.addView(label("Gemini • OpenAI-compatible • Local API", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
             setPadding(0, dp(5), 0, dp(18))
         })
 
@@ -154,6 +166,13 @@ class AiApiSettingsActivity : AppCompatActivity() {
     }
     private fun label(t:String,s:Float,c:Int,style:Int)=TextView(this).apply{
         text=t;textSize=s;setTextColor(c);typeface=Typeface.create(Typeface.DEFAULT,style)
+    }
+    private fun navIcon(glyph:String, desc:String, onClick:()->Unit)=MaterialButton(this).apply{
+        text=glyph;contentDescription=desc;isAllCaps=false;textSize=17f
+        minWidth=dp(44);minHeight=dp(42);cornerRadius=dp(13);insetTop=0;insetBottom=0
+        setPadding(0,0,0,0)
+        backgroundTintList=ColorStateList.valueOf(Color.argb(44,255,255,255))
+        setOnClickListener{onClick()}
     }
     private fun rounded(c:Int,r:Int)=android.graphics.drawable.GradientDrawable().apply{
         setColor(c);cornerRadius=r.toFloat()
