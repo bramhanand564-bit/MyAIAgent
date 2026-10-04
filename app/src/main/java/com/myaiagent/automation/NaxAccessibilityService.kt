@@ -226,22 +226,12 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun containsSecurityChallenge(root: AccessibilityNodeInfo): Boolean {
         val packageName = root.packageName?.toString().orEmpty()
-        if (packageName == "com.myaiagent") {
-            // The app's own test/dashboard text can contain words like "verify".
-            // Never treat those generic words as a YouTube security challenge.
-            return containsAny(
-                root,
-                listOf(
-                    "Sign in to continue",
-                    "Google sign in",
-                    "verification required",
-                    "CAPTCHA",
-                    "I'm not a robot",
-                    "Security check",
-                    "Confirm your identity",
-                    "Account verification required"
-                )
-            )
+
+        // MyAIAgent contains instructional words such as "verify" and "security"
+        // on its own test/dashboard screens. Only YouTube or the system picker
+        // may raise a security/login stop.
+        if (packageName != "com.google.android.youtube" && !isDocumentPicker(packageName)) {
+            return false
         }
 
         return containsAny(
