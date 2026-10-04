@@ -42,8 +42,7 @@ class MainActivity : AppCompatActivity() {
     ) { uri ->
         uri ?: return@registerForActivityResult
         persistTreePermission(uri)
-        val imported = FolderVideoImporter.importVideos(this, uri)
-        queueStore.addAllUnique(imported)
+        queueStore.addAllUnique(FolderVideoImporter.importVideos(this, uri))
         refreshQueue()
     }
 
@@ -55,87 +54,140 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 48, 32, 32)
         }
+
         root.addView(MaterialTextView(this).apply {
             text = "MyAIAgent"
             textSize = 28f
         })
+
         root.addView(MaterialTextView(this).apply {
-            text = "Automation workspace
-Embedded YouTube + External YouTube fallback"
+            text = "Automation workspace\nEmbedded YouTube + External YouTube fallback"
             textSize = 16f
             setPadding(0, 20, 0, 20)
         })
+
         root.addView(MaterialButton(this).apply {
             text = "Open Embedded YouTube"
-            setOnClickListener { startActivity(Intent(this@MainActivity, YouTubeWorkspaceActivity::class.java)) }
+            setOnClickListener {
+                startActivity(
+                    Intent(
+                        this@MainActivity,
+                        YouTubeWorkspaceActivity::class.java
+                    )
+                )
+            }
         })
+
         root.addView(MaterialButton(this).apply {
             text = "Add Videos"
-            setOnClickListener { pickVideos.launch(arrayOf("video/*")) }
+            setOnClickListener {
+                pickVideos.launch(arrayOf("video/*"))
+            }
         })
+
         root.addView(MaterialButton(this).apply {
             text = "Add Folder"
-            setOnClickListener { pickFolder.launch(null) }
+            setOnClickListener {
+                pickFolder.launch(null)
+            }
         })
+
         root.addView(MaterialButton(this).apply {
             text = "Enable Automation Service"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
         })
+
         root.addView(MaterialButton(this).apply {
             text = "Enable Exact Scheduling"
             setOnClickListener {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                    val alarmManager = getSystemService(android.app.AlarmManager::class.java)
+                    val alarmManager =
+                        getSystemService(android.app.AlarmManager::class.java)
                     if (!alarmManager.canScheduleExactAlarms()) {
-                        startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                            data = Uri.parse("package:" + packageName)
-                        })
+                        startActivity(
+                            Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                                data = Uri.parse("package:" + packageName)
+                            }
+                        )
                     }
                 }
             }
         })
+
         queueText = MaterialTextView(this).apply {
             textSize = 18f
             setPadding(0, 24, 0, 8)
         }
-        queueContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+
+        queueContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
         root.addView(queueText)
         root.addView(queueContainer)
         setContentView(root)
+
         refreshQueue()
-        UploadAlarmScheduler.rescheduleAll(this, queueStore.load())
+        rescheduleUploads()
     }
 
     override fun onResume() {
         super.onResume()
         if (::queueStore.isInitialized) {
             refreshQueue()
-            UploadAlarmScheduler.rescheduleAll(this, queueStore.load())
+            rescheduleUploads()
         }
+    }
+
+    private fun rescheduleUploads() {
+        UploadAlarmScheduler.rescheduleAll(this, queueStore.load())
     }
 
     private fun refreshQueue() {
         val items = queueStore.load()
         queueText.text = "Upload Queue (" + items.size + ")"
         queueContainer.removeAllViews()
+
         items.forEachIndexed { index, item ->
             val time = item.scheduledAt?.let {
-                java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(it)
+                java.text.SimpleDateFormat(
+                    "dd MMM yyyy, hh:mm a",
+                    java.util.Locale.getDefault()
+                ).format(it)
             } ?: "Not scheduled"
+
+            val result = item.resultNote.ifBlank { "—" }
+
             queueContainer.addView(MaterialButton(this).apply {
-                text = (index + 1).toString() + ". " + item.fileName +
-                    "
-" + item.title.ifBlank { "Title not set" } +
-                    " • " + item.visibility +
-                    " • " + time +
-                    "
-Mode: " + item.automationMode +
-                    " • Status: " + item.status +
-                    "\nResult: " + item.resultNote.ifBlank { "—" }
+                text = buildString {
+                    append(index + 1)
+                    append(". ")
+                    append(item.fileName)
+                    append("\n")
+                    append(item.title.ifBlank { "Title not set" })
+                    append(" • ")
+                    append(item.visibility)
+                    append(" • ")
+                    append(time)
+                    append("\nMode: ")
+                    append(item.automationMode)
+                    append(" • Status: ")
+                    append(item.status)
+                    append("\nResult: ")
+                    append(result)
+                }
+
                 setOnClickListener {
-                    startActivity(Intent(this@MainActivity, QueueItemActivity::class.java).apply {
-                        putExtra("item_id", item.id)
-                    })
+                    startActivity(
+                        Intent(
+                            this@MainActivity,
+                            QueueItemActivity::class.java
+                        ).apply {
+                            putExtra("item_id", item.id)
+                        }
+                    )
                 }
             })
         }
@@ -143,8 +195,12 @@ Mode: " + item.automationMode +
 
     private fun persistReadPermission(uri: Uri) {
         try {
-            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } catch (_: SecurityException) {}
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+        }
     }
 
     private fun persistTreePermission(uri: Uri) {
@@ -153,17 +209,23 @@ Mode: " + item.automationMode +
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-        } catch (_: SecurityException) {}
+        } catch (_: SecurityException) {
+        }
     }
 
     private fun resolveName(uri: Uri): String {
         contentResolver.query(
             uri,
             arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),
-            null, null, null
+            null,
+            null,
+            null
         )?.use { cursor ->
             if (cursor.moveToFirst()) return cursor.getString(0)
         }
-        return DocumentFile.fromSingleUri(this, uri)?.name ?: uri.lastPathSegment ?: "video"
+
+        return DocumentFile.fromSingleUri(this, uri)?.name
+            ?: uri.lastPathSegment
+            ?: "video"
     }
 }
