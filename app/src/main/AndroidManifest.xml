@@ -39,6 +39,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".WorkflowTestActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".YouTubeWorkspaceActivity"
             android:exported="false" />
 
