@@ -21,7 +21,8 @@ class UploadQueueStore(context: Context) {
                 thumbnailUri = o.optString("thumbnailUri").ifBlank { null },
                 visibility = o.optString("visibility", "PRIVATE"),
                 scheduledAt = if (o.has("scheduledAt") && !o.isNull("scheduledAt")) o.getLong("scheduledAt") else null,
-                status = o.optString("status", "QUEUED")
+                status = o.optString("status", "QUEUED"),
+                automationMode = o.optString("automationMode", "EMBEDDED_WEB")
             )
         }
     }
@@ -39,6 +40,7 @@ class UploadQueueStore(context: Context) {
                 put("visibility", item.visibility)
                 if (item.scheduledAt == null) put("scheduledAt", JSONObject.NULL) else put("scheduledAt", item.scheduledAt)
                 put("status", item.status)
+                put("automationMode", item.automationMode)
             })
         }
         prefs.edit().putString("items", array.toString()).apply()
