@@ -15,7 +15,8 @@ class GeminiVisionAgent(
         bitmap: Bitmap,
         currentState: AutomationState,
         itemTitle: String,
-        visibility: String
+        visibility: String,
+        memoryContext: String = ""
     ): VisionDecision? {
         if (apiKey.isBlank()) return null
 
