@@ -127,9 +127,19 @@ object MindEngine {
                 "If Create is missing, update YouTube Studio and keep its main screen visible.",
                 "INFO"
             )
+            AutomationState.VERIFY_CREATE_MENU -> store.diagnose(
+                "Create was tapped; the agent is verifying the Create menu before continuing.",
+                "Wait for the upload/Short options to become visible. No state advance is assumed.",
+                "INFO"
+            )
             AutomationState.FIND_UPLOAD -> store.diagnose(
                 "Agent is locating the Upload action.",
                 "Open the native Create menu. The agent accepts common Studio upload labels.",
+                "INFO"
+            )
+            AutomationState.VERIFY_UPLOAD_PICKER -> store.diagnose(
+                "Upload was tapped; the agent is verifying that the Android file picker opened.",
+                "Wait for the picker or file-selection UI. No selector advance is assumed.",
                 "INFO"
             )
             AutomationState.WAITING_FOR_PICKER -> store.diagnose(
