@@ -3,6 +3,7 @@ package com.myaiagent
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.os.Bundle
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -28,6 +29,8 @@ class QueueItemActivity : AppCompatActivity() {
     private lateinit var modeSpinner: Spinner
     private lateinit var scheduleText: MaterialTextView
     private var scheduledAt: Long? = null
+    private var selectedVisibilityIndex = 0
+    private var selectedModeIndex = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,7 +86,14 @@ class QueueItemActivity : AppCompatActivity() {
             android.R.layout.simple_spinner_dropdown_item,
             visibilityValues
         )
-        visibility.setSelection(visibilityValues.indexOf(item.visibility).coerceAtLeast(0))
+        selectedVisibilityIndex = visibilityValues.indexOf(item.visibility).coerceAtLeast(0)
+        visibility.setSelection(selectedVisibilityIndex)
+        visibility.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                selectedVisibilityIndex = position
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
         root.addView(visibility)
 
         root.addView(MaterialTextView(this).apply {
@@ -93,8 +103,15 @@ class QueueItemActivity : AppCompatActivity() {
         })
         modeSpinner = Spinner(this)
         val modes = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
+        selectedModeIndex = modes.indexOf(item.automationMode).coerceAtLeast(0)
         modeSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
-        modeSpinner.setSelection(modes.indexOf(item.automationMode).coerceAtLeast(0))
+        modeSpinner.setSelection(selectedModeIndex)
+        modeSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                selectedModeIndex = position
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
         root.addView(modeSpinner)
 
         scheduleText = MaterialTextView(this).apply {
@@ -130,9 +147,9 @@ class QueueItemActivity : AppCompatActivity() {
                     title = titleInput.text?.toString()?.trim().orEmpty(),
                     description = descriptionInput.text?.toString().orEmpty(),
                     visibility = arrayOf("PRIVATE", "UNLISTED", "PUBLIC")
-                        .getOrElse(visibility.getSelectedItemPosition()) { "PRIVATE" },
+                        .getOrElse(selectedVisibilityIndex) { "PRIVATE" },
                     automationMode = listOf("EMBEDDED_WEB", "EXTERNAL_APP")
-                        .getOrElse(modeSpinner.getSelectedItemPosition()) { "EMBEDDED_WEB" },
+                        .getOrElse(selectedModeIndex) { "EMBEDDED_WEB" },
                     status = "RUNNING"
                 )
                 store.update(updated)
