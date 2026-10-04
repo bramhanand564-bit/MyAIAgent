@@ -130,7 +130,8 @@ Embedded YouTube + External YouTube fallback"
                     " • " + time +
                     "
 Mode: " + item.automationMode +
-                    " • Status: " + item.status
+                    " • Status: " + item.status +
+                    "\nResult: " + item.resultNote.ifBlank { "—" }
                 setOnClickListener {
                     startActivity(Intent(this@MainActivity, QueueItemActivity::class.java).apply {
                         putExtra("item_id", item.id)
