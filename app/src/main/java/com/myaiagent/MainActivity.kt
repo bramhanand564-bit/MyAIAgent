@@ -171,7 +171,7 @@ class MainActivity : AppCompatActivity() {
         refreshLiveAutomation()
 
         root.addView(MaterialButton(this).apply {
-            text = "✦  AI API & Model Settings"
+            text = "✦  NAX Mind & AI Settings"
             textSize = 14f
             isAllCaps = false
             cornerRadius = dp(16)
@@ -182,8 +182,23 @@ class MainActivity : AppCompatActivity() {
             strokeWidth = dp(1)
             strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(80, 194, 164, 255))
             setTextColor(Color.rgb(220, 210, 245))
-            setOnClickListener { startActivity(Intent(this@MainActivity, AiApiSettingsActivity::class.java)) }
+            setOnClickListener { startActivity(Intent(this@MainActivity, AiMindActivity::class.java)) }
         }, lp(-1, 50, 0, 10, 0, 0))
+
+        root.addView(MaterialButton(this).apply {
+            text = "AI Provider & Model"
+            textSize = 13f
+            isAllCaps = false
+            cornerRadius = dp(15)
+            minHeight = dp(46)
+            insetTop = 0
+            insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(36,255,255,255))
+            strokeWidth = dp(1)
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(70,255,255,255))
+            setTextColor(Color.rgb(205,208,220))
+            setOnClickListener { startActivity(Intent(this@MainActivity, AiApiSettingsActivity::class.java)) }
+        }, lp(-1, 46, 0, 0, 0, 10))
         root.addView(MaterialButton(this).apply {
             text = "⚙  Setup daily workflow"
             textSize = 15f
@@ -630,6 +645,22 @@ class MainActivity : AppCompatActivity() {
         card.addView(body)
         return card
     }
+
+    private fun navIcon(glyph: String, description: String, onClick: () -> Unit): MaterialButton =
+        MaterialButton(this).apply {
+            text = glyph
+            contentDescription = description
+            isAllCaps = false
+            textSize = 17f
+            minWidth = dp(42)
+            minHeight = dp(42)
+            cornerRadius = dp(13)
+            insetTop = 0
+            insetBottom = 0
+            setPadding(0,0,0,0)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(42,255,255,255))
+            setOnClickListener { onClick() }
+        }
 
     private fun actionButton(textValue: String, filled: Boolean, onClick: () -> Unit): MaterialButton =
         MaterialButton(this).apply {
