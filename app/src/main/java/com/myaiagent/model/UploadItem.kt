@@ -9,5 +9,6 @@ data class UploadItem(
     val thumbnailUri: String? = null,
     val visibility: String = "PRIVATE",
     val scheduledAt: Long? = null,
-    val status: String = "QUEUED"
+    val status: String = "QUEUED",
+    val automationMode: String = "EMBEDDED_WEB"
 )
