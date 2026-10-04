@@ -52,6 +52,11 @@ class NaxAccessibilityService : AccessibilityService() {
         val packageName = root.packageName?.toString().orEmpty()
         if (!isAutomationPackage(packageName)) return
 
+        val mindSnapshot = MindStore(this).snapshot()
+        if (mindSnapshot.packageName != packageName) {
+            MindEngine.onScreen(this, packageName)
+        }
+
         if (containsSecurityChallenge(root)) {
             setWaitingForUser(item)
             return
@@ -68,6 +73,10 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun driveState(item: UploadItem, root: AccessibilityNodeInfo) {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
+
+        if (MindStore(this).consumeRecovery()) {
+            testLog("NAX MIND • Safe recovery consumed; retrying from current verified state.")
+        }
 
         when (sessionStore.state()) {
             AutomationState.WAITING_FOR_APP -> {
@@ -188,6 +197,7 @@ class NaxAccessibilityService : AccessibilityService() {
                 val observation = findUploadObservation(root)
                 if (observation != null && observation != sessionStore.lastObservation()) {
                     sessionStore.recordObservation(observation)
+                    MindEngine.onScreen(this, root.packageName?.toString().orEmpty(), observation)
                     testLog("Upload check • " + observation)
                 }
 
@@ -295,6 +305,12 @@ class NaxAccessibilityService : AccessibilityService() {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
 
+        MindEngine.onWarning(
+            this,
+            "The flow is blocked by a user-controlled security/login/verification screen.",
+            "Complete the Google/Studio step manually. Automation will resume after the screen clears."
+        )
+
         if (sessionStore.isTestMode()) {
             TestRunStore(this).markWaitingForUser("Login, verification, CAPTCHA, or security screen detected.")
         }
@@ -302,6 +318,7 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun testLog(message: String) {
         if (::sessionStore.isInitialized && sessionStore.isActive()) {
+            MindStore(this).log(message)
             AutomationLiveStore(this).log(message)
             if (sessionStore.isTestMode()) {
                 TestRunStore(this).log(message)
@@ -728,6 +745,15 @@ class NaxAccessibilityService : AccessibilityService() {
             )
         }
         val testMode = sessionStore.isTestMode()
+        if (successful) {
+            MindEngine.onSuccess(this, message)
+        } else {
+            MindEngine.onError(
+                this,
+                "Automation stopped: " + message,
+                "Review NAX Mind timeline for the exact state and retry safely. No success is recorded without verification."
+            )
+        }
         AutomationLiveStore(this).finish(successful, message)
         if (testMode) {
             TestRunStore(this).finish(successful, message)
