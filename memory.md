@@ -66,7 +66,7 @@ Data model includes:
 
 ## Planned Next
 1. Device-tested YouTube selectors/state transitions and upload flow refinement.
-2. Upload completion verification and duplicate protection.
-3. Queue controls: remove, reorder and retry.
+2. Upload completion verification and stronger duplicate protection.
+3. Queue controls: remove, reorder, retry and Run Now test action.
 4. Embedded workspace upload handoff.
 5. AI video-generator workflow within each service's allowed limits.
