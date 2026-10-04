@@ -43,11 +43,7 @@ class MainActivity : AppCompatActivity() {
         uri ?: return@registerForActivityResult
         persistTreePermission(uri)
         val imported = FolderVideoImporter.importVideos(this, uri)
-        if (imported.isNotEmpty()) {
-            val current = queueStore.load().toMutableList()
-            current.addAll(imported)
-            queueStore.save(current)
-        }
+        queueStore.addAllUnique(imported)
         refreshQueue()
     }
 
@@ -124,7 +120,7 @@ Embedded YouTube + External YouTube fallback"
         queueContainer.removeAllViews()
         items.forEachIndexed { index, item ->
             val time = item.scheduledAt?.let {
-                java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(it)
+                java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()).format(it)
             } ?: "Not scheduled"
             queueContainer.addView(MaterialButton(this).apply {
                 text = (index + 1).toString() + ". " + item.fileName +
@@ -133,7 +129,8 @@ Embedded YouTube + External YouTube fallback"
                     " • " + item.visibility +
                     " • " + time +
                     "
-Mode: " + item.automationMode
+Mode: " + item.automationMode +
+                    " • Status: " + item.status
                 setOnClickListener {
                     startActivity(Intent(this@MainActivity, QueueItemActivity::class.java).apply {
                         putExtra("item_id", item.id)
