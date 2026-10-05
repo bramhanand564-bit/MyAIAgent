@@ -486,7 +486,10 @@ class NaxAccessibilityService : AccessibilityService() {
 
                     if (bitmap == null) {
                         pickerVisualInFlight = false
-                        handler.post { testLog("Photo Picker screenshot unavailable; returning to normal picker retry.") }
+                        handler.post {
+                            testLog("Photo Picker screenshot unavailable; returning to normal picker retry.")
+                            scheduleRetry(item)
+                        }
                         return
                     }
 
@@ -526,6 +529,7 @@ class NaxAccessibilityService : AccessibilityService() {
                             } else {
                                 testLog("Local thumbnail match found no reliable target in the visible picker grid.")
                             }
+                            scheduleRetry(item)
                         }
                     }
                 }
@@ -534,6 +538,7 @@ class NaxAccessibilityService : AccessibilityService() {
                     pickerVisualInFlight = false
                     handler.post {
                         testLog("Photo Picker screenshot failed • code=$errorCode")
+                        scheduleRetry(item)
                     }
                 }
             }
