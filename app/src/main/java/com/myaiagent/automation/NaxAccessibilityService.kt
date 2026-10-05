@@ -28,6 +28,7 @@ class NaxAccessibilityService : AccessibilityService() {
     private val visionExecutor = Executors.newSingleThreadExecutor()
     private val agentExecutor = Executors.newSingleThreadExecutor()
     private val agentLoop = AgentLoop()
+    private lateinit var floatingCursor: NaxFloatingCursor
     @Volatile private var agentScreenshotInFlight = false
     @Volatile private var agentAiInFlight = false
 
@@ -39,6 +40,7 @@ class NaxAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         queueStore = UploadQueueStore(this)
         sessionStore = AutomationSessionStore(this)
+        floatingCursor = NaxFloatingCursor(this)
         val settings = VisionAgentSettings(this)
         agentLoop.updateInterval(settings.observationIntervalSeconds * 1000L)
         agentLoop.start { captureAgentObservation() }
@@ -69,6 +71,7 @@ class NaxAccessibilityService : AccessibilityService() {
         }
 
         if (containsSecurityChallenge(root)) {
+            floatingCursor.setMessage("🔐 waiting for you")
             setWaitingForUser(item)
             return
         }
@@ -79,15 +82,6 @@ class NaxAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
-    }
-
-    override fun onDestroy() {
-        agentLoop.stop()
-        retryRunnable?.let(handler::removeCallbacks)
-        watchdogRunnable?.let(handler::removeCallbacks)
-        visionExecutor.shutdownNow()
-        agentExecutor.shutdownNow()
-        super.onDestroy()
     }
 
     private fun driveState(item: UploadItem, root: AccessibilityNodeInfo) {
@@ -1050,6 +1044,7 @@ class NaxAccessibilityService : AccessibilityService() {
         val label = node.text?.toString().orEmpty().ifBlank {
             node.contentDescription?.toString().orEmpty().ifBlank { labels.firstOrNull().orEmpty() }
         }
+        floatingCursor.showForNode(node, "👆 " + label)
 
         // First use the accessibility click action. This is the safest path when
         // YouTube Studio exposes a real clickable node.
@@ -1106,6 +1101,7 @@ class NaxAccessibilityService : AccessibilityService() {
         if (value.isBlank()) return true
         val node = findNode(root, labels) ?: return false
         val target = if (node.isEditable) node else findEditableDescendant(node.parent ?: return false) ?: return false
+        floatingCursor.showForNode(target, "✍️ entering text")
         val written = setText(target, value)
         if (written) {
             WorkflowMemoryStore(this).remember(
@@ -1492,6 +1488,9 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun dispatchTap(x: Float, y: Float): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        if (::floatingCursor.isInitialized) {
+            floatingCursor.showAt(x, y, "👆 tapping here")
+        }
         val path = android.graphics.Path().apply { moveTo(x, y) }
         val gesture = android.accessibilityservice.GestureDescription.Builder()
             .addStroke(
@@ -1504,6 +1503,7 @@ class NaxAccessibilityService : AccessibilityService() {
             .build()
         val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
+                floatingCursor.setMessage("✓ checking result")
                 testLog("Gesture tap completed • x=$x y=$y")
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
@@ -1564,6 +1564,7 @@ class NaxAccessibilityService : AccessibilityService() {
         }
 
         sessionStore.clear()
+        floatingCursor.hide()
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
 
@@ -1590,7 +1591,10 @@ class NaxAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         retryRunnable?.let(handler::removeCallbacks)
         watchdogRunnable?.let(handler::removeCallbacks)
+        agentLoop.stop()
+        if (::floatingCursor.isInitialized) floatingCursor.hide()
         visionExecutor.shutdownNow()
+        agentExecutor.shutdownNow()
         super.onDestroy()
     }
 }
