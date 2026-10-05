@@ -450,3 +450,15 @@ After installing the latest successful main build:
 - Latest repository audit after the replacement must confirm zero references to TapDiagnosticActivity/TapDiagnosticStore before release.
 
 - Build #444 exposed a real compile error in `RealTapTestEngineV2.kt:95`: `keyboardRoot` was referenced inside the target-app screen-read step before it existed. Fixed in commit `5f524bc098b4e8851fa4fea15c4e76d6a5687f73` by reading the current `root`; keyboard-specific steps already use the keyboard root.
+
+
+### FLEXIBLE AGENT / UI INTERRUPTION HARDENING — October 6, 2026
+- RealTapTest is now target-flexible: it can choose an installed supported browser/search app instead of assuming Chrome only.
+- Added package visibility for Chrome, Google Search, Firefox and Microsoft Edge in the manifest so Android package discovery is reliable.
+- Added a reusable `UiInterruptionDetector` that classifies common CAPTCHA/human-verification/security-check/login interruptions across providers instead of depending on one CAPTCHA vendor or one exact string.
+- CAPTCHA/security handling is **pause-and-wait**, never bypass/solve. NAX keeps the workflow alive, shows a manual-action state, and resumes after the interruption disappears.
+- Manual interruption time is excluded from the active interaction timeout, so a legitimate human verification does not consume the automation's normal work budget.
+- Login detection was tightened to avoid false pauses from ordinary browser pages that merely show a generic "Sign in" button.
+- RealTapTest launch now has a launcher-intent fallback if the normal package launch intent is unavailable.
+- Reliability model: observe current package/UI → classify interruption → locate live target → real gesture → verify transition → continue. Do not rely on one fixed coordinate, one package, one keyboard, or one CAPTCHA provider.
+- Future generalization should use the same interruption layer for YouTube Studio, media pickers and other Android workflows.
