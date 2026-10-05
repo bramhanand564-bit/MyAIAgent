@@ -147,22 +147,54 @@ class NaxAccessibilityService : AccessibilityService() {
 
             AutomationState.WAITING_FOR_PICKER -> {
                 val picker = isDocumentPicker(root.packageName?.toString().orEmpty())
-                if (picker && clickFileIfVisible(root, item.fileName)) {
-                    testLog("Selected video in the file picker: " + item.fileName)
+                if (!picker) {
+                    if (containsAny(root, listOf(item.fileName))) {
+                        testLog("Picker closed and selected file is visible in Studio: " + item.fileName)
+                        sessionStore.setState(AutomationState.FILL_DETAILS)
+                        driveState(item, root)
+                    } else {
+                        scheduleRetry(item)
+                    }
+                    return
+                }
+
+                // Never tap Open/Done before the target file has actually been selected.
+                // Some Android pickers expose the action even while no file is selected.
+                if (!sessionStore.isPickerSelectionPending()) {
+                    val selected = clickFileIfVisible(root, item.fileName)
+                    if (selected) {
+                        sessionStore.markPickerSelectionPending()
+                        testLog("Video row tapped in picker; waiting for selection confirmation: " + item.fileName)
+                        scheduleRetry(item)
+                        return
+                    }
+
+                    if (scrollPickerTowardsFile(root)) {
+                        testLog("Target video is not visible yet; scrolling picker to find: " + item.fileName)
+                        scheduleRetry(item)
+                        return
+                    }
+
                     scheduleRetry(item)
                     return
                 }
+
+                // A pending selection exists. Verify it before confirming with Open/Done.
+                if (!isFileSelectionConfirmed(root, item.fileName)) {
+                    testLog("Picker tap was not verified yet; waiting before Open: " + item.fileName)
+                    scheduleRetry(item)
+                    return
+                }
+
                 val openClicked = clickByLabels(root, listOf(
                     "Open", "Select", "Done", "Use this file", "Choose", "Select this file"
                 ))
-                if (picker && openClicked) {
-                    testLog("Confirmed the selected video.")
-                    sessionStore.setState(AutomationState.FILL_DETAILS)
-                    driveState(item, root)
-                } else if (!picker && containsAny(root, listOf(item.fileName))) {
+                if (openClicked) {
+                    testLog("Confirmed selected video with picker action: " + item.fileName)
                     sessionStore.setState(AutomationState.FILL_DETAILS)
                     driveState(item, root)
                 } else {
+                    testLog("Selected video is verified but picker confirmation control is not clickable yet.")
                     scheduleRetry(item)
                 }
             }
@@ -422,23 +454,97 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun clickFileIfVisible(root: AccessibilityNodeInfo, fileName: String): Boolean {
         val base = fileName.substringBeforeLast('.')
         val node = findNode(root, listOf(fileName, base)) ?: return false
+        val label = node.text?.toString().orEmpty().ifBlank {
+            node.contentDescription?.toString().orEmpty().ifBlank { fileName }
+        }
+
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable) {
-                val clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (clicked) {
+            if (current.isEnabled && current.isClickable) {
+                if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     WorkflowMemoryStore(this).remember(
                         root.packageName?.toString().orEmpty(),
                         sessionStore.state().name,
-                        node.text?.toString().orEmpty().ifBlank {
-                            node.contentDescription?.toString().orEmpty().ifBlank { fileName }
-                        },
+                        label,
                         node
                     )
+                    testLog("Picker file ACTION_CLICK sent: $label")
+                    return true
                 }
-                return clicked
+                break
             }
             current = current.parent
+        }
+
+        // Android DocumentsUI can expose the filename as a non-clickable virtual/text
+        // node. Use the live node bounds so the gesture hits the visible file row.
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (!bounds.isEmpty && bounds.width() >= 8 && bounds.height() >= 8) {
+            val x = bounds.centerX().toFloat()
+            val y = bounds.centerY().toFloat()
+            if (dispatchTap(x, y)) {
+                WorkflowMemoryStore(this).remember(
+                    root.packageName?.toString().orEmpty(),
+                    sessionStore.state().name,
+                    label,
+                    node
+                )
+                testLog("Picker file gesture dispatched: $label • x=$x y=$y")
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private fun isFileSelectionConfirmed(root: AccessibilityNodeInfo, fileName: String): Boolean {
+        val base = fileName.substringBeforeLast('.')
+        val node = findNode(root, listOf(fileName, base)) ?: return false
+
+        // Native picker implementations vary. Accept any explicit selected/checked state
+        // on the file node or a nearby ancestor.
+        var current: AccessibilityNodeInfo? = node
+        repeat(4) {
+            if (current == null) return@repeat
+            if (current!!.isSelected || current!!.isChecked) return true
+
+            val text = current!!.text?.toString().orEmpty()
+            val desc = current!!.contentDescription?.toString().orEmpty()
+            val combined = "$text $desc".lowercase(Locale.getDefault())
+            if (combined.contains("selected") || combined.contains("checked")) return true
+
+            current = current!!.parent
+        }
+
+        // A picker can also expose an enabled confirmation action only after a valid
+        // selection. Do not tap it here; merely use its enabled/clickable state as proof.
+        val action = findNode(root, listOf(
+            "Open", "Select", "Done", "Use this file", "Choose", "Select this file"
+        ))
+        if (action != null) {
+            var candidate: AccessibilityNodeInfo? = action
+            repeat(4) {
+                if (candidate == null) return@repeat
+                if (candidate!!.isEnabled && candidate!!.isClickable) return true
+                candidate = candidate!!.parent
+            }
+        }
+
+        return false
+    }
+
+    private fun scrollPickerTowardsFile(root: AccessibilityNodeInfo): Boolean {
+        val pending = ArrayDeque<AccessibilityNodeInfo>()
+        pending.add(root)
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            if (node.isScrollable && node.isEnabled) {
+                if (node.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let(pending::addLast)
+            }
         }
         return false
     }
