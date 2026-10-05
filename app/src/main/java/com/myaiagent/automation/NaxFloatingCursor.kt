@@ -9,7 +9,6 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.os.Handler
 import android.os.Looper
-import kotlin.math.max
 
 /**
  * Non-touchable accessibility overlay used as NAX's visible "thinking cursor".
@@ -31,12 +30,24 @@ class NaxFloatingCursor(private val context: Context) {
             view.message = message
             view.visibility = View.VISIBLE
             val lp = view.layoutParams as WindowManager.LayoutParams
-            lp.x = (x - 72f).toInt()
-            lp.y = (y - 72f).toInt()
+            val maxX = (context.resources.displayMetrics.widthPixels - dp(150)).coerceAtLeast(0)
+            val maxY = (context.resources.displayMetrics.heightPixels - dp(112)).coerceAtLeast(0)
+            lp.x = (x - dp(75)).toInt().coerceIn(0, maxX)
+            lp.y = (y - dp(55)).toInt().coerceIn(0, maxY)
             windowManager.updateViewLayout(view, lp)
             view.startPulse()
         }
     }
+
+    fun showStatus(message: String = "🤖 watching") {
+        showAt(
+            dp(82).toFloat(),
+            dp(125).toFloat(),
+            message
+        )
+    }
+
+    fun isShown(): Boolean = attached
 
     fun showForNode(node: AccessibilityNodeInfo, message: String) {
         val bounds = Rect()
