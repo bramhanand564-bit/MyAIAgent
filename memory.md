@@ -402,3 +402,12 @@ After installing the latest successful main build:
 - Fix: when an active session detects a supported media picker early, normalize directly to **WAITING_FOR_PICKER** and continue the normal exact-file selection/verification flow.
 - Additional picker-media detection bug fixed: the candidate matching string was accidentally omitting the node's text value.
 - The flow must still select the exact queued video, verify selection, then press Open/Done; it must never select an arbitrary visible thumbnail.
+
+
+### Test Workflow — Selected Video Handoff Fix
+- The video chosen inside Workflow Test is already the exact source URI for the test run.
+- Previously UploadRunnerService only verified that URI was readable, then opened YouTube Studio normally; Studio consequently opened Google Photos and asked for a second file selection.
+- The runner now passes the selected URI and filename through YouTubeWorkspaceActivity.
+- Workspace first attempts a package-targeted Android ACTION_SEND with EXTRA_STREAM to the official YouTube Studio package.
+- If Studio accepts the hand-off and opens the upload details surface, NAX detects the verified details screen and skips FIND_CREATE/FIND_UPLOAD/WAITING_FOR_PICKER.
+- If the direct hand-off is unsupported and Google Photos still appears, the existing exact-file picker verification remains the safe fallback; NAX never assumes a file was selected without evidence.
