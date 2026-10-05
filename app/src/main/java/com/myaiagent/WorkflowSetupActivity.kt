@@ -218,11 +218,11 @@ class WorkflowSetupActivity : AppCompatActivity() {
         val imported = FolderVideoImporter.importVideos(this, Uri.parse(folderUri))
             .map { it.copy(visibility = visibilityValue, automationMode = modeValue, contentType = contentTypeValue) }
         queueStore.addAllUnique(imported)
+        val workflowUris = imported.mapTo(mutableSetOf()) { it.uri }
 
-        // Apply the active workflow profile to every pending item so the Auto-Tapper
-        // knows whether this run is for a normal video or a Short.
+        // Only videos discovered from this workflow folder receive the workflow profile.
         queueStore.load()
-            .filter { it.status == "QUEUED" || it.status == "SCHEDULED" }
+            .filter { (it.status == "QUEUED" || it.status == "SCHEDULED") && it.uri in workflowUris }
             .forEach { item ->
                 queueStore.update(
                     item.copy(
@@ -243,14 +243,21 @@ class WorkflowSetupActivity : AppCompatActivity() {
             contentType = contentTypeValue
         )
         workflowStore.save(config)
-        scheduleQueue(selectedTimes, visibilityValue, modeValue)
+        scheduleQueue(selectedTimes, visibilityValue, modeValue, workflowUris)
         Toast.makeText(this, "Workflow ON • ${count} upload(s) per day", Toast.LENGTH_SHORT).show()
         finish()
     }
 
-    private fun scheduleQueue(selectedTimes: List<String>, visibilityValue: String, modeValue: String) {
+    private fun scheduleQueue(
+        selectedTimes: List<String>,
+        visibilityValue: String,
+        modeValue: String,
+        workflowUris: Set<String>
+    ) {
         val now = Calendar.getInstance()
-        val items = queueStore.load().filter { it.status == "QUEUED" || it.status == "SCHEDULED" }.toMutableList()
+        val items = queueStore.load()
+            .filter { (it.status == "QUEUED" || it.status == "SCHEDULED") && it.uri in workflowUris }
+            .toMutableList()
         var slot = 0
         var dayOffset = 0
         while (slot < items.size && dayOffset < 366) {
