@@ -9,25 +9,47 @@ class UploadQueueStore(context: Context) {
     private val prefs = context.getSharedPreferences("upload_queue", Context.MODE_PRIVATE)
 
     fun load(): MutableList<UploadItem> {
-        val array = JSONArray(prefs.getString("items", "[]") ?: "[]")
-        return MutableList(array.length()) { i ->
-            val o = array.getJSONObject(i)
-            UploadItem(
+        val array = runCatching {
+            JSONArray(prefs.getString("items", "[]") ?: "[]")
+        }.getOrElse {
+            return mutableListOf()
+        }
+
+        val result = mutableListOf<UploadItem>()
+        for (i in 0 until array.length()) {
+            val item = runCatching {
+                val o = array.getJSONObject(i)
+                val visibility = o.optString("visibility", "PRIVATE")
+                    .uppercase()
+                    .takeIf { it == "PUBLIC" || it == "UNLISTED" || it == "PRIVATE" }
+                    ?: "PRIVATE"
+                val mode = o.optString("automationMode", "NATIVE_STUDIO")
+                    .takeIf { it == "NATIVE_STUDIO" }
+                    ?: "NATIVE_STUDIO"
+                val contentType = o.optString("contentType", "VIDEO")
+                    .uppercase()
+                    .takeIf { it == "VIDEO" || it == "SHORT" }
+                    ?: "VIDEO"
+
+                UploadItem(
                 id = o.getString("id"),
                 uri = o.getString("uri"),
                 fileName = o.getString("fileName"),
                 title = o.optString("title"),
                 description = o.optString("description"),
-                thumbnailUri = o.optString("thumbnailUri").ifBlank { null },
-                visibility = o.optString("visibility", "PRIVATE"),
+                visibility = visibility,
                 scheduledAt = if (o.has("scheduledAt") && !o.isNull("scheduledAt")) o.getLong("scheduledAt") else null,
                 status = o.optString("status", "QUEUED"),
-                automationMode = o.optString("automationMode", "NATIVE_STUDIO"),
-                contentType = o.optString("contentType", "VIDEO"),
+                automationMode = mode,
+                contentType = contentType,
                 lastRunAt = if (o.has("lastRunAt") && !o.isNull("lastRunAt")) o.getLong("lastRunAt") else null,
                 resultNote = o.optString("resultNote")
-            )
+                )
+            }.getOrNull()
+
+            if (item != null) result += item
         }
+        return result
     }
 
     fun save(items: List<UploadItem>) {
@@ -39,7 +61,6 @@ class UploadQueueStore(context: Context) {
                 put("fileName", item.fileName)
                 put("title", item.title)
                 put("description", item.description)
-                put("thumbnailUri", item.thumbnailUri)
                 put("visibility", item.visibility)
                 if (item.scheduledAt == null) put("scheduledAt", JSONObject.NULL) else put("scheduledAt", item.scheduledAt)
                 put("status", item.status)
