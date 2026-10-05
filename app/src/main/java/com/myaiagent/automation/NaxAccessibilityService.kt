@@ -1655,6 +1655,7 @@ class NaxAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         retryRunnable?.let(handler::removeCallbacks)
         watchdogRunnable?.let(handler::removeCallbacks)
+        realTapTestEngine.stop()
         agentLoop.stop()
         if (::floatingCursor.isInitialized) floatingCursor.hide()
         visionExecutor.shutdownNow()
