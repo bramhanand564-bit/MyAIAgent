@@ -49,6 +49,14 @@ class VisionAgentSettings(context: Context) {
             .putInt("observation_interval_seconds", value.coerceIn(2, 60))
             .apply()
 
+    fun geminiModelCandidates(): List<String> {
+        val selected = model.ifBlank { DEFAULT_MODEL }
+        return listOf(
+            if (selected == LEGACY_REQUESTED_MODEL) DEFAULT_MODEL else selected,
+            GEMINI_FALLBACK_MODEL
+        ).distinct()
+    }
+
     companion object {
         const val PROVIDER_GEMINI = "GEMINI"
         const val PROVIDER_CUSTOM = "CUSTOM"
