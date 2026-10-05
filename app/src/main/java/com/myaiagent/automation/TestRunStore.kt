@@ -42,7 +42,11 @@ class TestRunStore(context: Context) {
     }
 
     fun log(message: String) {
-        val events = JSONArray(prefs.getString("events", "[]") ?: "[]")
+        val events = runCatching {
+            JSONArray(prefs.getString("events", "[]") ?: "[]")
+        }.getOrElse {
+            JSONArray()
+        }
         events.put(JSONObject().apply {
             put("at", System.currentTimeMillis())
             put("message", message)
@@ -93,7 +97,11 @@ class TestRunStore(context: Context) {
                 .apply()
         }
 
-        val events = JSONArray(prefs.getString("events", "[]") ?: "[]")
+        val events = runCatching {
+            JSONArray(prefs.getString("events", "[]") ?: "[]")
+        }.getOrElse {
+            JSONArray()
+        }
         val parsed = buildList {
             for (i in 0 until events.length()) {
                 val event = events.optJSONObject(i) ?: continue
