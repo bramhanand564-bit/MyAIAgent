@@ -51,6 +51,9 @@ class NaxAccessibilityService : AccessibilityService() {
         if (event == null || !::sessionStore.isInitialized) return
 
         val itemId = sessionStore.itemId() ?: return
+        if (::floatingCursor.isInitialized && !floatingCursor.isShown()) {
+            floatingCursor.showStatus("🤖 NAX is working")
+        }
         val item = queueStore.load().firstOrNull { it.id == itemId } ?: run {
             finishSession(null, "Queue item not found")
             return
