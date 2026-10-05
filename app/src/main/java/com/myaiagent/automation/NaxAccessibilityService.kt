@@ -458,9 +458,13 @@ class NaxAccessibilityService : AccessibilityService() {
             node.contentDescription?.toString().orEmpty().ifBlank { fileName }
         }
 
+        // Prefer the closest enabled clickable node because DocumentsUI frequently
+        // exposes the filename as a child of the actual selectable row/tile.
+        var clickableTarget: AccessibilityNodeInfo? = null
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
             if (current.isEnabled && current.isClickable) {
+                clickableTarget = current
                 if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     WorkflowMemoryStore(this).remember(
                         root.packageName?.toString().orEmpty(),
@@ -476,10 +480,11 @@ class NaxAccessibilityService : AccessibilityService() {
             current = current.parent
         }
 
-        // Android DocumentsUI can expose the filename as a non-clickable virtual/text
-        // node. Use the live node bounds so the gesture hits the visible file row.
+        // ACTION_CLICK may be exposed but not work on a Compose/custom row.
+        // Gesture the actual selectable row when available, otherwise the filename bounds.
+        val tapNode = clickableTarget ?: node
         val bounds = android.graphics.Rect()
-        node.getBoundsInScreen(bounds)
+        tapNode.getBoundsInScreen(bounds)
         if (!bounds.isEmpty && bounds.width() >= 8 && bounds.height() >= 8) {
             val x = bounds.centerX().toFloat()
             val y = bounds.centerY().toFloat()
@@ -575,11 +580,19 @@ class NaxAccessibilityService : AccessibilityService() {
         }
 
         // Studio uses Compose/custom surfaces in some screens where text is visible
-        // to Accessibility but ACTION_CLICK is not exposed. Fall back to a real
-        // Android accessibility gesture at the node's live center — not a blind
-        // hard-coded coordinate.
+        // to Accessibility but ACTION_CLICK is not exposed. Prefer the nearest enabled
+        // clickable ancestor's live bounds before falling back to the text node bounds.
+        val tapNode = run {
+            var candidate: AccessibilityNodeInfo? = node
+            var best: AccessibilityNodeInfo? = null
+            while (candidate != null) {
+                if (candidate.isEnabled && candidate.isClickable) best = candidate
+                candidate = candidate.parent
+            }
+            best ?: node
+        }
         val bounds = android.graphics.Rect()
-        node.getBoundsInScreen(bounds)
+        tapNode.getBoundsInScreen(bounds)
         if (!bounds.isEmpty && bounds.width() >= 4 && bounds.height() >= 4) {
             val x = bounds.centerX().toFloat()
             val y = bounds.centerY().toFloat()
