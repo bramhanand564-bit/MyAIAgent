@@ -869,7 +869,16 @@ class NaxAccessibilityService : AccessibilityService() {
                 )
             )
             .build()
-        return dispatchGesture(gesture, null, handler)
+        val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                testLog("Gesture tap completed • x=$x y=$y")
+            }
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                testLog("Gesture tap cancelled • x=$x y=$y")
+            }
+        }, handler)
+        if (!accepted) testLog("Gesture tap rejected • x=$x y=$y")
+        return accepted
     }
 
     private fun startWatchdog() {
