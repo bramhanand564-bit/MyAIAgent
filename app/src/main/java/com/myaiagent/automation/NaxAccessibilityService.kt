@@ -76,6 +76,26 @@ class NaxAccessibilityService : AccessibilityService() {
             MindEngine.onScreen(this, packageName)
         }
 
+        // The picker can appear directly after the Create action. Do not wait for
+        // a YouTube accessibility event to prove an intermediate menu when the
+        // actual user-authorized media picker is already on screen.
+        if (isDocumentPicker(packageName) &&
+            sessionStore.state() != AutomationState.WAITING_FOR_PICKER &&
+            sessionStore.state() != AutomationState.FILL_DETAILS &&
+            sessionStore.state() != AutomationState.SET_VISIBILITY &&
+            sessionStore.state() != AutomationState.PUBLISH &&
+            sessionStore.state() != AutomationState.MONITOR_UPLOAD &&
+            sessionStore.state() != AutomationState.VERIFY &&
+            sessionStore.state() != AutomationState.COMPLETE &&
+            sessionStore.state() != AutomationState.ERROR &&
+            sessionStore.state() != AutomationState.IDLE
+        ) {
+            testLog("Picker detected early • normalizing state to WAITING_FOR_PICKER.")
+            sessionStore.setState(AutomationState.WAITING_FOR_PICKER)
+            driveState(item, root)
+            return
+        }
+
         if (containsSecurityChallenge(root)) {
             floatingCursor.setMessage("🔐 manual action required")
             floatingCursor.setState("WAITING_USER", "resume after security check")
@@ -786,7 +806,7 @@ class NaxAccessibilityService : AccessibilityService() {
             val node = pending.removeFirst()
             val text = node.text?.toString().orEmpty().lowercase(Locale.getDefault())
             val desc = node.contentDescription?.toString().orEmpty().lowercase(Locale.getDefault())
-            val combined = "$" + "text $desc"
+            val combined = "$text $desc"
             val looksLikeMedia = combined.contains("media") ||
                 combined.contains("video taken on") ||
                 combined.contains("photo taken on") ||
