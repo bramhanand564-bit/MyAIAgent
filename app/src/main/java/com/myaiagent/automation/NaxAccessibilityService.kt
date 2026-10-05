@@ -47,8 +47,65 @@ class NaxAccessibilityService : AccessibilityService() {
         startWatchdog()
     }
 
+    private fun handleTapDiagnostic(): Boolean {
+        val diagnostic = TapDiagnosticStore(this)
+        if (!diagnostic.isActive()) return false
+        val root = rootInActiveWindow ?: return true
+        if (root.packageName?.toString().orEmpty() != packageName) return true
+        when (diagnostic.step()) {
+            0 -> {
+                val target = findDiagnosticNode(root, "TAP TARGET")
+                if (target != null) {
+                    val accepted = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    diagnostic.log("NODE_CLICK requested • accepted=" + accepted)
+                    diagnostic.setStep(if (accepted) 1 else 99)
+                } else diagnostic.log("NODE_CLICK target not found")
+            }
+            1 -> if (findDiagnosticNode(root, "NODE TAP SUCCESS") != null) {
+                diagnostic.log("NODE_CLICK verified")
+                diagnostic.setStep(2)
+            }
+            2 -> {
+                val target = findDiagnosticNode(root, "GESTURE TARGET")
+                if (target != null) {
+                    val bounds = android.graphics.Rect()
+                    target.getBoundsInScreen(bounds)
+                    if (!bounds.isEmpty && bounds.width() >= 4 && bounds.height() >= 4) {
+                        val x = bounds.centerX().toFloat()
+                        val y = bounds.centerY().toFloat()
+                        val accepted = dispatchTap(x, y)
+                        diagnostic.log("GESTURE requested • accepted=" + accepted + " • x=" + x + " y=" + y)
+                        diagnostic.setStep(if (accepted) 3 else 99)
+                    } else diagnostic.log("GESTURE target has invalid bounds")
+                } else diagnostic.log("GESTURE target not found")
+            }
+            3 -> if (findDiagnosticNode(root, "GESTURE TAP SUCCESS") != null) {
+                diagnostic.log("GESTURE verified")
+                diagnostic.finish(true, "Both tap methods passed")
+            }
+            99 -> diagnostic.finish(false, "Tap diagnostic failed")
+        }
+        return true
+    }
+
+    private fun findDiagnosticNode(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
+        val wanted = label.trim().lowercase()
+        val pending = ArrayDeque<AccessibilityNodeInfo>()
+        pending.add(root)
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            val text = node.text?.toString()?.trim()?.lowercase().orEmpty()
+            val description = node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
+            if (text == wanted || description == wanted || text.contains(wanted) || description.contains(wanted)) return node
+            for (i in 0 until node.childCount) node.getChild(i)?.let(pending::addLast)
+        }
+        return null
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null || !::sessionStore.isInitialized) return
+
+        if (handleTapDiagnostic()) return
 
         val itemId = sessionStore.itemId() ?: return
         if (::floatingCursor.isInitialized && !floatingCursor.isShown()) {
