@@ -362,3 +362,18 @@ After installing the latest successful main build:
 - Login, CAPTCHA, verification and security-check screens remain NEEDS_USER_ACTION and are never bypassed.
 - Exact target filename selection remains mandatory in picker workflows.
 - No YouTube Data API upload path is introduced.
+
+
+### NAX Floating Cursor
+- Added a non-touchable **NAX Floating Cursor** using Android Accessibility Overlay.
+- A cute animated mini-robot floats above the active YouTube screen while automation is running.
+- At the actual target node/coordinate it moves to that target and shows contextual micro-status such as:
+  - 🤖 NAX is working
+  - 👆 target label
+  - ✍️ entering text
+  - 👆 tapping here
+  - ✓ checking result
+  - 🔐 waiting for you
+- The cursor is deliberately non-touchable, so it never blocks YouTube interaction.
+- It remains active throughout the automation session and is removed only when the session finishes or the accessibility service is destroyed.
+- This visual layer is informational/feedback only; actual actions remain controlled by the existing Accessibility automation + verification state machine.
