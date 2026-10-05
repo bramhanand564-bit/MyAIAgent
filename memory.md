@@ -448,3 +448,5 @@ After installing the latest successful main build:
 - NAX Floating Cursor now supports a compact experimental/chat-style panel showing the live test stage, screenshot/read status, target and result.
 - Real tap test failure is contained inside the test engine; exceptions become a visible FAIL message instead of propagating into the YouTube automation state machine.
 - Latest repository audit after the replacement must confirm zero references to TapDiagnosticActivity/TapDiagnosticStore before release.
+
+- Build #444 exposed a real compile error in `RealTapTestEngineV2.kt:95`: `keyboardRoot` was referenced inside the target-app screen-read step before it existed. Fixed in commit `5f524bc098b4e8851fa4fea15c4e76d6a5687f73` by reading the current `root`; keyboard-specific steps already use the keyboard root.
