@@ -231,7 +231,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowTestActivity::class.java)) }
         }, lp(-1, 52, 0, 0, 0, 0))
         root.addView(MaterialButton(this).apply {
-            text = "⚙  Tap engine diagnostic"
+            text = "🧪  Real tap + type test"
             textSize = 14f
             isAllCaps = false
             cornerRadius = dp(16)
@@ -242,7 +242,7 @@ class MainActivity : AppCompatActivity() {
             strokeWidth = dp(1)
             strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(70,255,255,255))
             setTextColor(Color.rgb(205,208,220))
-            setOnClickListener { startActivity(Intent(this@MainActivity, TapDiagnosticActivity::class.java)) }
+            setOnClickListener { startActivity(Intent(this@MainActivity, RealTapTestActivity::class.java)) }
         }, lp(-1, 48, 0, 8, 0, 0))
 
 
