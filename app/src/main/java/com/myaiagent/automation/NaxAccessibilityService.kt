@@ -29,7 +29,7 @@ class NaxAccessibilityService : AccessibilityService() {
     private val agentExecutor = Executors.newSingleThreadExecutor()
     private val agentLoop = AgentLoop()
     private lateinit var floatingCursor: NaxFloatingCursor
-    private val realTapTestEngine = RealTapTestEngine(this)
+    private val realTapTestEngine = RealTapTestEngineV2(this)
     @Volatile private var agentScreenshotInFlight = false
     @Volatile private var agentAiInFlight = false
 
