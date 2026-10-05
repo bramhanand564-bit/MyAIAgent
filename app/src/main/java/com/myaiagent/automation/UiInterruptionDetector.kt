@@ -63,15 +63,18 @@ object UiInterruptionDetector {
             return Result(Type.SECURITY_CHECK, "Human/security verification")
         }
 
-        val loginSignals = listOf(
-            "sign in",
-            "log in",
+        val strongLoginSignals = listOf(
             "login required",
             "enter your password",
             "password required",
-            "verification code"
+            "verification code",
+            "enter password"
         )
-        if (loginSignals.any { text.contains(it) }) {
+        val signInWithAccountContext =
+            (text.contains("sign in") || text.contains("log in")) &&
+                listOf("email", "account", "username", "password").any { text.contains(it) }
+
+        if (strongLoginSignals.any { text.contains(it) } || signInWithAccountContext) {
             return Result(Type.LOGIN_REQUIRED, "Login / verification required")
         }
 
