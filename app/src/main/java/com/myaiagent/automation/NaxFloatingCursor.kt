@@ -94,14 +94,6 @@ class NaxFloatingCursor(private val context: Context) {
         }
     }
 
-    fun moveTo(x: Float, y: Float) {
-        handler.post {
-            if (!attached) return@post
-            val target = targetLayout(x, y)
-            animateTo(target.first, target.second)
-        }
-    }
-
     fun tapFeedback() {
         handler.post {
             if (!attached || view.visibility != View.VISIBLE) return@post
