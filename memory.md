@@ -411,3 +411,18 @@ After installing the latest successful main build:
 - Workspace first attempts a package-targeted Android ACTION_SEND with EXTRA_STREAM to the official YouTube Studio package.
 - If Studio accepts the hand-off and opens the upload details surface, NAX detects the verified details screen and skips FIND_CREATE/FIND_UPLOAD/WAITING_FOR_PICKER.
 - If the direct hand-off is unsupported and Google Photos still appears, the existing exact-file picker verification remains the safe fallback; NAX never assumes a file was selected without evidence.
+
+
+### Full A-to-Z Audit — October 5, 2026
+- Audited repository tree and cross-checked the Android manifest, Gradle configuration, Activities, automation engine, queue, scheduler, workflow, model and resources/config.
+- Confirmed dead `UploadRunResult` had no call-sites and removed it.
+- Removed unused AgentLoop API and unused Floating Cursor movement helper.
+- Removed unused UI imports where the connector allowed safe isolated cleanup.
+- Hardened queue JSON loading so malformed persisted queue data no longer crashes `load()`.
+- Sanitized legacy queue values to the active `NATIVE_STUDIO` / `VIDEO|SHORT` / `PUBLIC|UNLISTED|PRIVATE` contract.
+- Removed unused thumbnail URI from the queue data model.
+- Scoped WorkflowReconciler updates/scheduling to videos actually discovered from the configured workflow folder.
+- Added exact-alarm permission change handling to the BootReceiver manifest filter.
+- Updated Gemini default to current GA `gemini-3.5-flash`, while treating old `gemini-3.1-flash` default values as legacy and retaining `gemini-3.1-flash-lite` fallback behavior.
+- The selected Test Workflow video remains the single source URI and the direct Studio hand-off code remains in place.
+- Current build validation must use the latest main-branch Actions run after the final cleanup changes; cancelled intermediate runs are not evidence of a failed final source tree.
