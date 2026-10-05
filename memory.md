@@ -377,3 +377,13 @@ After installing the latest successful main build:
 - The cursor is deliberately non-touchable, so it never blocks YouTube interaction.
 - It remains active throughout the automation session and is removed only when the session finishes or the accessibility service is destroyed.
 - This visual layer is informational/feedback only; actual actions remain controlled by the existing Accessibility automation + verification state machine.
+
+
+### NAX Floating Cursor — Polished Action Feedback
+- NAX Floating Cursor is a non-touchable TYPE_ACCESSIBILITY_OVERLAY that stays above the active automation app.
+- It smoothly moves to the real node/gesture target instead of jumping instantly.
+- The robot has an animated target ring and a one-shot ripple whenever a real gesture tap is dispatched/completed.
+- State-aware labels now show the current verified workflow step without moving the cursor away from its target.
+- Accessibility ACTION_CLICK success, text entry success, gesture completion, gesture cancellation and gesture rejection each update the cursor feedback.
+- The cursor remains informational only; it cannot receive touch input and never replaces the real Accessibility action/verification layer.
+- Security/login/CAPTCHA states visibly switch to a manual-action message.
