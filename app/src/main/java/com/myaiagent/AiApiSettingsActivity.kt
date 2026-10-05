@@ -47,7 +47,7 @@ class AiApiSettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@AiApiSettingsActivity, AiMindActivity::class.java))
         })
         root.addView(header)
-        root.addView(label("Gemini 3.1 Flash • screenshot observer • 15s AI pacing", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
+        root.addView(label("Gemini 3.5 Flash • screenshot observer • 15s AI pacing", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
             setPadding(0, dp(5), 0, dp(18))
         })
 
