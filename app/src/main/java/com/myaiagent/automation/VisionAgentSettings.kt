@@ -49,22 +49,13 @@ class VisionAgentSettings(context: Context) {
             .putInt("observation_interval_seconds", value.coerceIn(2, 60))
             .apply()
 
-    fun geminiModelCandidates(): List<String> {
-        val selected = model.ifBlank { DEFAULT_MODEL }
-        return listOf(
-            if (selected == LEGACY_REQUESTED_MODEL) DEFAULT_MODEL else selected,
-            GEMINI_FALLBACK_MODEL
-        ).distinct()
-    }
-
     companion object {
         const val PROVIDER_GEMINI = "GEMINI"
         const val PROVIDER_CUSTOM = "CUSTOM"
         const val PROVIDER_LOCAL = "LOCAL_OPENAI"
 
-        // User-selected primary model. The current public Gemini model catalog may
-        // not expose this exact non-live model id; callers should use the candidate
-        // list so the stable 3.1 Flash-Lite fallback remains functional.
+        // Current default model for the agent. The legacy 3.1 Flash identifier is
+        // migrated when it was only an older app default.
         const val REQUESTED_GEMINI_MODEL = "gemini-3.5-flash"
         const val LEGACY_REQUESTED_MODEL = "gemini-3.1-flash"
         const val GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"
