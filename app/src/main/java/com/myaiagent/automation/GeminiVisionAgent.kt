@@ -16,6 +16,7 @@ class GeminiVisionAgent(
         currentState: AutomationState,
         itemTitle: String,
         visibility: String,
+        targetFileName: String = "",
         memoryContext: String = ""
     ): VisionDecision? {
         if (apiKey.isBlank()) return null
@@ -33,6 +34,7 @@ rate limits, or any other access control.
 Current automation state: ${currentState.name}
 Desired title: $itemTitle
 Desired visibility: $visibility
+Target file name: $targetFileName
 
 Return ONLY one compact JSON object:
 {
@@ -49,7 +51,8 @@ Return ONLY one compact JSON object:
 Rules:
 - Use x/y only when the target is visibly identifiable by position.
 - For SET_TEXT, targetText identifies the visible field and value is the desired text.
-- For SELECT_FILE, targetText should identify the visible filename when possible.
+- For SELECT_FILE, targetText should identify the target file "$targetFileName" when it is visible.
+- On a PICKER screen, prioritize selecting the target file "$targetFileName"; do not select another file just because it is visible.
 - If a security/login/CAPTCHA/verification screen is visible, action must be NEEDS_USER.
 - Never invent a button that is not visible.
 - If confidence is below 0.80, use WAIT.
