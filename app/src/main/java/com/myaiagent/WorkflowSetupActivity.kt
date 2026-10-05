@@ -300,11 +300,29 @@ class WorkflowSetupActivity : AppCompatActivity() {
         }
     }
     private fun stopWorkflow() {
-        workflowStore.setEnabled(false)
-        queueStore.load().filter { it.status == "SCHEDULED" }.forEach { item ->
-            UploadAlarmScheduler.cancel(this, item.id)
-            queueStore.update(item.copy(status = "QUEUED", scheduledAt = null, resultNote = "Workflow stopped"))
+        val config = workflowStore.load()
+        val workflowUris = if (config.folderUri.isBlank()) {
+            emptySet()
+        } else {
+            runCatching {
+                FolderVideoImporter.importVideos(this, Uri.parse(config.folderUri))
+                    .mapTo(mutableSetOf()) { it.uri }
+            }.getOrDefault(emptySet())
         }
+
+        workflowStore.setEnabled(false)
+        queueStore.load()
+            .filter { it.status == "SCHEDULED" && it.uri in workflowUris }
+            .forEach { item ->
+                UploadAlarmScheduler.cancel(this, item.id)
+                queueStore.update(
+                    item.copy(
+                        status = "QUEUED",
+                        scheduledAt = null,
+                        resultNote = "Workflow stopped"
+                    )
+                )
+            }
         Toast.makeText(this, "Workflow stopped", Toast.LENGTH_SHORT).show()
         finish()
     }
