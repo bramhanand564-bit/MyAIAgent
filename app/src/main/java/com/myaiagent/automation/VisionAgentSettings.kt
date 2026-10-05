@@ -8,8 +8,9 @@ class VisionAgentSettings(context: Context) {
     init {
         // Earlier builds used Flash-Lite as the default. Migrate that legacy
         // default to the user's newly requested Gemini 3.1 Flash primary.
+        val storedModel = prefs.getString("model", null)
         if (!prefs.getBoolean("model_user_set", false) &&
-            prefs.getString("model", null) == GEMINI_FALLBACK_MODEL
+            (storedModel == GEMINI_FALLBACK_MODEL || storedModel == LEGACY_REQUESTED_MODEL)
         ) {
             prefs.edit().putString("model", REQUESTED_GEMINI_MODEL).apply()
         }
@@ -50,11 +51,10 @@ class VisionAgentSettings(context: Context) {
 
     fun geminiModelCandidates(): List<String> {
         val selected = model.ifBlank { DEFAULT_MODEL }
-        return if (selected == REQUESTED_GEMINI_MODEL) {
-            listOf(selected, GEMINI_FALLBACK_MODEL).distinct()
-        } else {
-            listOf(selected)
-        }
+        return listOf(
+            if (selected == LEGACY_REQUESTED_MODEL) DEFAULT_MODEL else selected,
+            GEMINI_FALLBACK_MODEL
+        ).distinct()
     }
 
     companion object {
@@ -65,7 +65,8 @@ class VisionAgentSettings(context: Context) {
         // User-selected primary model. The current public Gemini model catalog may
         // not expose this exact non-live model id; callers should use the candidate
         // list so the stable 3.1 Flash-Lite fallback remains functional.
-        const val REQUESTED_GEMINI_MODEL = "gemini-3.1-flash"
+        const val REQUESTED_GEMINI_MODEL = "gemini-3.5-flash"
+        const val LEGACY_REQUESTED_MODEL = "gemini-3.1-flash"
         const val GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"
         const val DEFAULT_MODEL = REQUESTED_GEMINI_MODEL
         const val DEFAULT_OBSERVATION_SECONDS = 6
