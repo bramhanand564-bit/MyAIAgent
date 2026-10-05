@@ -444,24 +444,50 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun clickByLabels(root: AccessibilityNodeInfo, labels: List<String>): Boolean {
         val node = findNode(root, labels) ?: return false
+        val label = node.text?.toString().orEmpty().ifBlank {
+            node.contentDescription?.toString().orEmpty().ifBlank { labels.firstOrNull().orEmpty() }
+        }
+
+        // First use the accessibility click action. This is the safest path when
+        // YouTube Studio exposes a real clickable node.
         var current: AccessibilityNodeInfo? = node
         while (current != null) {
-            if (current.isClickable) {
-                val clicked = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                if (clicked) {
+            if (current.isClickable && current.isEnabled) {
+                if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     WorkflowMemoryStore(this).remember(
                         root.packageName?.toString().orEmpty(),
                         sessionStore.state().name,
-                        node.text?.toString().orEmpty().ifBlank {
-                            node.contentDescription?.toString().orEmpty().ifBlank { labels.firstOrNull().orEmpty() }
-                        },
+                        label,
                         node
                     )
+                    return true
                 }
-                return clicked
+                break
             }
             current = current.parent
         }
+
+        // Studio uses Compose/custom surfaces in some screens where text is visible
+        // to Accessibility but ACTION_CLICK is not exposed. Fall back to a real
+        // Android accessibility gesture at the node's live center — not a blind
+        // hard-coded coordinate.
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (!bounds.isEmpty && bounds.width() >= 4 && bounds.height() >= 4) {
+            val x = bounds.centerX().toFloat()
+            val y = bounds.centerY().toFloat()
+            if (dispatchTap(x, y)) {
+                WorkflowMemoryStore(this).remember(
+                    root.packageName?.toString().orEmpty(),
+                    sessionStore.state().name,
+                    label,
+                    node
+                )
+                testLog("Gesture tap dispatched • $label • x=$x y=$y")
+                return true
+            }
+        }
+
         return false
     }
 
@@ -483,16 +509,25 @@ class NaxAccessibilityService : AccessibilityService() {
         return written
     }
 
-    private fun setText(node: AccessibilityNodeInfo, value: String): Boolean =
-        node.performAction(
-            AccessibilityNodeInfo.ACTION_SET_TEXT,
-            android.os.Bundle().apply {
-                putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                    value
-                )
-            }
-        )
+    private fun setText(node: AccessibilityNodeInfo, value: String): Boolean {
+        if (node.performAction(
+                AccessibilityNodeInfo.ACTION_SET_TEXT,
+                android.os.Bundle().apply {
+                    putCharSequence(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        value
+                    )
+                }
+            )
+        ) return true
+
+        // Some Compose fields do not expose ACTION_SET_TEXT. Tap the live field
+        // first so the IME/focus is real; do not invent a coordinate.
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.isEmpty || bounds.width() < 4 || bounds.height() < 4) return false
+        return dispatchTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+    }
 
     private fun findEditableDescendant(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isEditable) return node
