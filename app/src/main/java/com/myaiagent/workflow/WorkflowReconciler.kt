@@ -26,7 +26,11 @@ object WorkflowReconciler {
         }
         queue.addAllUnique(imported)
 
-        queue.load().filter { it.status == "QUEUED" }.forEach { item ->
+        val workflowUris = imported.mapTo(mutableSetOf()) { it.uri }
+
+        queue.load()
+            .filter { it.status == "QUEUED" && it.uri in workflowUris }
+            .forEach { item ->
             queue.update(
                 item.copy(
                     visibility = config.visibility,
@@ -36,7 +40,12 @@ object WorkflowReconciler {
             )
         }
 
-        val pending = queue.load().filter { it.status == "QUEUED" && it.scheduledAt == null }
+        val pending = queue.load()
+            .filter {
+                it.status == "QUEUED" &&
+                    it.scheduledAt == null &&
+                    it.uri in workflowUris
+            }
             .sortedBy { it.fileName.lowercase() }
         if (pending.isEmpty()) return 0
 
