@@ -119,6 +119,19 @@ class AiMindActivity : AppCompatActivity() {
         }
         root.addView(timeline)
 
+        val agentObservation = AgentObservationStore(this).last()
+        val agentMemory = AgentVerifiedMemoryStore(this).learnedCount()
+        val interval = VisionAgentSettings(this).observationIntervalSeconds
+        root.addView(card(
+            "AGENT CORE",
+            "Observe every " + interval + "s • learned " + agentMemory + " verified steps",
+            "Last screen: " + agentObservation.aiScreen.ifBlank { "not analyzed yet" } +
+                " • action: " + agentObservation.aiAction.ifBlank { "WAIT" } +
+                " • confidence: " + String.format(java.util.Locale.US, "%.2f", agentObservation.aiConfidence) +
+                " • " + agentObservation.aiReason.ifBlank { "Waiting for the next meaningful screen change." },
+            Color.rgb(194,164,255)
+        ))
+
         root.addView(card(
             "RELIABILITY CORE",
             "No fake success",
