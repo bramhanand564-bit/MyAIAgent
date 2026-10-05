@@ -51,7 +51,7 @@
             android:exported="false" />
 
         <activity
-            android:name=".TapDiagnosticActivity"
+            android:name=".RealTapTestActivity"
             android:exported="false" />
 
         <activity
