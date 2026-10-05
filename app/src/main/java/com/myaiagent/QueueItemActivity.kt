@@ -6,7 +6,6 @@ import android.os.Bundle
 import android.widget.AdapterView
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.Spinner
