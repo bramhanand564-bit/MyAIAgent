@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.app.PendingIntent
 import android.app.ActivityOptions
@@ -145,7 +144,10 @@ class UploadRunnerService : Service() {
 
         return runCatching {
             val uri = Uri.parse(item.uri)
-            if (contentResolver.openAssetFileDescriptor(uri, "r") == null) {
+            val accessible = runCatching {
+                contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+            }.getOrDefault(false)
+            if (!accessible) {
                 updateNotification("Video file is no longer accessible")
                 return false
             }
