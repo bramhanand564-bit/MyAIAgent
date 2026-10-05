@@ -54,6 +54,15 @@ class RealTapTestActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onBackPressed() {
+        if (test.isActive()) {
+            test.finish(false, "Stopped by Back")
+            render()
+            return
+        }
+        super.onBackPressed()
+    }
+
     private fun buildUi(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
