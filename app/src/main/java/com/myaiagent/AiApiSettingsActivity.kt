@@ -19,6 +19,7 @@ class AiApiSettingsActivity : AppCompatActivity() {
     private lateinit var apiKey: EditText
     private lateinit var model: EditText
     private lateinit var headers: EditText
+    private lateinit var observationInterval: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +47,7 @@ class AiApiSettingsActivity : AppCompatActivity() {
             startActivity(Intent(this@AiApiSettingsActivity, AiMindActivity::class.java))
         })
         root.addView(header)
-        root.addView(label("Gemini • OpenAI-compatible • Local API • 15s pacing", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
+        root.addView(label("Gemini 3.1 Flash • screenshot observer • 15s AI pacing", 13f, Color.rgb(145,150,164), Typeface.NORMAL).apply {
             setPadding(0, dp(5), 0, dp(18))
         })
 
@@ -87,6 +88,11 @@ class AiApiSettingsActivity : AppCompatActivity() {
         body.addView(label("MODEL",10f,Color.rgb(132,137,151),Typeface.BOLD).apply { setPadding(0,dp(12),0,dp(6)) })
         model = field("Model name")
         body.addView(model)
+
+        body.addView(label("SCREENSHOT OBSERVATION • SECONDS",10f,Color.rgb(132,137,151),Typeface.BOLD).apply { setPadding(0,dp(12),0,dp(6)) })
+        observationInterval = field("6")
+        observationInterval.inputType = 2
+        body.addView(observationInterval)
 
         body.addView(label("EXTRA HEADERS • JSON",10f,Color.rgb(132,137,151),Typeface.BOLD).apply { setPadding(0,dp(12),0,dp(6)) })
         headers = field("{\"X-Custom-Header\":\"value\"}")
@@ -136,6 +142,7 @@ class AiApiSettingsActivity : AppCompatActivity() {
         endpoint.setText(s.endpoint)
         apiKey.setText(s.apiKey)
         model.setText(s.model)
+        observationInterval.setText(s.observationIntervalSeconds.toString())
         headers.setText(s.extraHeaders)
     }
 
@@ -150,6 +157,8 @@ class AiApiSettingsActivity : AppCompatActivity() {
         s.endpoint=endpoint.text.toString()
         s.apiKey=apiKey.text.toString()
         s.model=model.text.toString()
+        s.observationIntervalSeconds =
+            observationInterval.text.toString().toIntOrNull()?.coerceIn(2, 60) ?: 6
         s.extraHeaders=headers.text.toString()
         Toast.makeText(this,"AI API configuration saved",Toast.LENGTH_SHORT).show()
         finish()
