@@ -8,10 +8,8 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
-import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
-import android.view.View
 import android.widget.Spinner
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,15 +18,12 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textview.MaterialTextView
 import com.myaiagent.folder.FolderVideoImporter
-import com.myaiagent.model.UploadItem
 import com.myaiagent.queue.UploadQueueStore
 import com.myaiagent.scheduler.UploadAlarmScheduler
 import com.myaiagent.workflow.WorkflowConfig
 import com.myaiagent.workflow.WorkflowStore
-import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import java.util.UUID
 
 class WorkflowSetupActivity : AppCompatActivity() {
     private lateinit var workflowStore: WorkflowStore
