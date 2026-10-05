@@ -29,10 +29,32 @@ class VisionAgentSettings(context: Context) {
         get() = prefs.getString("extra_headers", "") ?: ""
         set(value) = prefs.edit().putString("extra_headers", value).apply()
 
+    var observationIntervalSeconds: Int
+        get() = prefs.getInt("observation_interval_seconds", DEFAULT_OBSERVATION_SECONDS)
+        set(value) = prefs.edit()
+            .putInt("observation_interval_seconds", value.coerceIn(2, 60))
+            .apply()
+
+    fun geminiModelCandidates(): List<String> {
+        val selected = model.ifBlank { DEFAULT_MODEL }
+        return if (selected == REQUESTED_GEMINI_MODEL) {
+            listOf(selected, GEMINI_FALLBACK_MODEL).distinct()
+        } else {
+            listOf(selected)
+        }
+    }
+
     companion object {
         const val PROVIDER_GEMINI = "GEMINI"
         const val PROVIDER_CUSTOM = "CUSTOM"
         const val PROVIDER_LOCAL = "LOCAL_OPENAI"
-        const val DEFAULT_MODEL = "gemini-3.1-flash-lite"
+
+        // User-selected primary model. The current public Gemini model catalog may
+        // not expose this exact non-live model id; callers should use the candidate
+        // list so the stable 3.1 Flash-Lite fallback remains functional.
+        const val REQUESTED_GEMINI_MODEL = "gemini-3.1-flash"
+        const val GEMINI_FALLBACK_MODEL = "gemini-3.1-flash-lite"
+        const val DEFAULT_MODEL = REQUESTED_GEMINI_MODEL
+        const val DEFAULT_OBSERVATION_SECONDS = 6
     }
 }
