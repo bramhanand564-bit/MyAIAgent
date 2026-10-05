@@ -105,6 +105,7 @@ class UploadRunnerService : Service() {
                 MindStore(this@UploadRunnerService).log("AI CONTENT • metadata prepared")
             }
 
+            sessionStore.markDirectMediaHandoffAttempted(true)
             val started = launchNativeYouTubeStudio(enriched)
 
             mainHandler.post {
@@ -154,6 +155,8 @@ class UploadRunnerService : Service() {
             // user-configured exact-alarm workflow; the workspace then opens native Studio.
             val workspaceIntent = Intent(this@UploadRunnerService, YouTubeWorkspaceActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(YouTubeWorkspaceActivity.EXTRA_VIDEO_URI, item.uri)
+                putExtra(YouTubeWorkspaceActivity.EXTRA_VIDEO_NAME, item.fileName)
             }
             val pi = PendingIntent.getActivity(
                 this@UploadRunnerService,
