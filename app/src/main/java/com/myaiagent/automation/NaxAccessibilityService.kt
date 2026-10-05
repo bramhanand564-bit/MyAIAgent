@@ -860,6 +860,7 @@ class NaxAccessibilityService : AccessibilityService() {
                                 sessionStore.state(),
                                 item.title.ifBlank { item.fileName },
                                 item.visibility,
+                                item.fileName,
                                 WorkflowMemoryStore(this@NaxAccessibilityService).promptContext(
                                     rootInActiveWindow?.packageName?.toString().orEmpty(),
                                     sessionStore.state().name
@@ -935,7 +936,17 @@ class NaxAccessibilityService : AccessibilityService() {
                 }
 
                 if (coordinateClicked) {
-                    advanceStateAfterVisionAction(action, clicked = true)
+                    if (action.action == "SELECT_FILE" &&
+                        sessionStore.state() == AutomationState.WAITING_FOR_PICKER
+                    ) {
+                        // A vision-selected file is not enough to advance immediately.
+                        // Google Photos/DocumentsUI may require a separate Open/Done confirmation.
+                        sessionStore.markPickerSelectionPending()
+                        testLog("Vision selected target file; waiting for picker confirmation • " + item.fileName)
+                        scheduleRetryWithoutVision(item)
+                    } else {
+                        advanceStateAfterVisionAction(action, clicked = true)
+                    }
                 } else {
                     scheduleRetryWithoutVision(item)
                 }
