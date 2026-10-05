@@ -3,7 +3,7 @@ package com.myaiagent.automation
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
-import android.graphics.Display
+import android.view.Display
 import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
@@ -26,7 +26,7 @@ class RealTapTestEngine(private val service: AccessibilityService) {
     private var stopped = false
 
     fun onAccessibilityEvent(event: AccessibilityEvent?): Boolean {
-        if (event == null || !store.isActive() || stopped) return false
+        if (!store.isActive() || stopped) return false
         try {
             if (System.currentTimeMillis() - store.startedAt() > 60_000L) {
                 finish(false, "Test timed out")
@@ -411,6 +411,13 @@ class RealTapTestEngine(private val service: AccessibilityService) {
         }
 
     private fun findLetterKey(root: AccessibilityNodeInfo, char: Char): AccessibilityNodeInfo? {
+        if (char == ' ') {
+            return findKeyboardNode(root) { text, desc ->
+                text == "space" || desc == "space" ||
+                    desc.contains("space bar") || desc.contains("spacebar")
+            }
+        }
+
         val wanted = char.lowercaseChar().toString()
         return findKeyboardNode(root) { text, desc ->
             text == wanted || desc == wanted ||
@@ -544,8 +551,8 @@ class RealTapTestEngine(private val service: AccessibilityService) {
         ))
         pump?.let(handler::removeCallbacks)
         pump = null
-        handler.postDelayed {
+        handler.postDelayed({
             runCatching { cursor.hide() }
-        }
+        }, 1800L)
     }
 }
