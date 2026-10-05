@@ -56,12 +56,29 @@ Never claim an upload succeeded unless final verification says so. Prefer eviden
                 ))
             ))
         GeminiRequestGate.awaitTurn()
-        return post(
+        val primary = post(
             "https://generativelanguage.googleapis.com/v1beta/models/" + settings.model + ":generateContent",
             body.toString(),
             mapOf("x-goog-api-key" to settings.apiKey),
             true
         )
+
+        // Keep the requested Gemini 3.1 Flash model as primary, but preserve a
+        // stable public Gemini fallback when the exact model id is unavailable.
+        return if (
+            settings.model == VisionAgentSettings.REQUESTED_GEMINI_MODEL &&
+            primary.contains("HTTP 404")
+        ) {
+            post(
+                "https://generativelanguage.googleapis.com/v1beta/models/" +
+                    VisionAgentSettings.GEMINI_FALLBACK_MODEL + ":generateContent",
+                body.toString(),
+                mapOf("x-goog-api-key" to settings.apiKey),
+                true
+            )
+        } else {
+            primary
+        }
     }
 
     private fun askOpenAi(system: String, user: String, context: String): String {
