@@ -669,8 +669,7 @@ class NaxAccessibilityService : AccessibilityService() {
         // MyAIAgent contains instructional words such as "verify" and "security"
         // on its own test/dashboard screens. Only YouTube or the system picker
         // may raise a security/login stop.
-        if (packageName != "com.google.android.youtube" &&
-            packageName != "com.google.android.apps.youtube.creator" &&
+        if (packageName != "com.google.android.apps.youtube.creator" &&
             !isDocumentPicker(packageName)) {
             return false
         }
@@ -691,8 +690,7 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     private fun isAutomationPackage(packageName: String): Boolean =
-        packageName == "com.google.android.youtube" ||
-            packageName == "com.google.android.apps.youtube.creator" ||
+        packageName == "com.google.android.apps.youtube.creator" ||
             isDocumentPicker(packageName)
 
     private fun isDocumentPicker(packageName: String): Boolean =
@@ -701,11 +699,7 @@ class NaxAccessibilityService : AccessibilityService() {
             packageName.contains("documentsui") ||
             packageName == "com.google.android.apps.photos"
     private fun isYouTube(root: AccessibilityNodeInfo): Boolean =
-        root.packageName?.toString() == "com.google.android.youtube" ||
-            root.packageName?.toString() == "com.google.android.apps.youtube.creator"
-
-    private fun isEmbedded(item: UploadItem): Boolean =
-        item.automationMode == "EMBEDDED_WEB"
+        root.packageName?.toString() == "com.google.android.apps.youtube.creator"
 
     private fun looksLikeUploadDetailsScreen(root: AccessibilityNodeInfo): Boolean {
         val titleLabels = listOf("Title", "Add a title", "Video title", "Enter a title", "Add title")
