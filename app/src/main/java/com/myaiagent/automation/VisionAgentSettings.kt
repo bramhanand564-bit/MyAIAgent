@@ -5,6 +5,16 @@ import android.content.Context
 class VisionAgentSettings(context: Context) {
     private val prefs = context.getSharedPreferences("vision_agent", Context.MODE_PRIVATE)
 
+    init {
+        // Earlier builds used Flash-Lite as the default. Migrate that legacy
+        // default to the user's newly requested Gemini 3.1 Flash primary.
+        if (!prefs.getBoolean("model_user_set", false) &&
+            prefs.getString("model", null) == GEMINI_FALLBACK_MODEL
+        ) {
+            prefs.edit().putString("model", REQUESTED_GEMINI_MODEL).apply()
+        }
+    }
+
     var enabled: Boolean
         get() = prefs.getBoolean("enabled", false)
         set(value) = prefs.edit().putBoolean("enabled", value).apply()
@@ -23,7 +33,10 @@ class VisionAgentSettings(context: Context) {
 
     var model: String
         get() = prefs.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL
-        set(value) = prefs.edit().putString("model", value.trim()).apply()
+        set(value) = prefs.edit()
+            .putString("model", value.trim())
+            .putBoolean("model_user_set", true)
+            .apply()
 
     var extraHeaders: String
         get() = prefs.getString("extra_headers", "") ?: ""
