@@ -58,6 +58,11 @@ class AutomationSessionStore(context: Context) {
         }.getOrDefault(AutomationState.IDLE)
 
     fun setState(state: AutomationState) {
+        val previousState = this.state()
+        if (previousState != state) {
+            AgentVerifiedMemoryStore(appContext).verifyTransition(previousState, state)
+        }
+
         prefs.edit()
             .putString("state", state.name)
             .putInt("attempt", 0)
