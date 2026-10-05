@@ -52,7 +52,10 @@ class NaxAccessibilityService : AccessibilityService() {
 
         val itemId = sessionStore.itemId() ?: return
         if (::floatingCursor.isInitialized && !floatingCursor.isShown()) {
-            floatingCursor.showStatus("🤖 NAX is working")
+            floatingCursor.showStatus("NAX • WORKING")
+        }
+        if (::floatingCursor.isInitialized) {
+            floatingCursor.setState(sessionStore.state().name)
         }
         val item = queueStore.load().firstOrNull { it.id == itemId } ?: run {
             finishSession(null, "Queue item not found")
@@ -74,7 +77,8 @@ class NaxAccessibilityService : AccessibilityService() {
         }
 
         if (containsSecurityChallenge(root)) {
-            floatingCursor.setMessage("🔐 waiting for you")
+            floatingCursor.setMessage("🔐 manual action required")
+            floatingCursor.setState("WAITING_USER", "resume after security check")
             setWaitingForUser(item)
             return
         }
@@ -90,6 +94,9 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun driveState(item: UploadItem, root: AccessibilityNodeInfo) {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
+        if (::floatingCursor.isInitialized) {
+            floatingCursor.setState(sessionStore.state().name)
+        }
 
         if (MindStore(this).consumeRecovery()) {
             testLog("NAX MIND • Safe recovery consumed; retrying from current verified state.")
@@ -936,6 +943,8 @@ class NaxAccessibilityService : AccessibilityService() {
             if (current.isEnabled && current.isClickable) {
                 clickableTarget = current
                 if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    floatingCursor.setMessage("✓ tap sent • checking")
+                    floatingCursor.tapFeedback()
                     WorkflowMemoryStore(this).remember(
                         root.packageName?.toString().orEmpty(),
                         sessionStore.state().name,
@@ -1107,6 +1116,7 @@ class NaxAccessibilityService : AccessibilityService() {
         floatingCursor.showForNode(target, "✍️ entering text")
         val written = setText(target, value)
         if (written) {
+            floatingCursor.setMessage("✓ text entered • verifying")
             WorkflowMemoryStore(this).remember(
                 root.packageName?.toString().orEmpty(),
                 sessionStore.state().name,
@@ -1510,10 +1520,14 @@ class NaxAccessibilityService : AccessibilityService() {
                 testLog("Gesture tap completed • x=$x y=$y")
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
+                floatingCursor.setMessage("× tap cancelled • retrying")
                 testLog("Gesture tap cancelled • x=$x y=$y")
             }
         }, handler)
-        if (!accepted) testLog("Gesture tap rejected • x=$x y=$y")
+        if (!accepted) {
+            floatingCursor.setMessage("× tap rejected • retrying")
+            testLog("Gesture tap rejected • x=$x y=$y")
+        }
         return accepted
     }
 
