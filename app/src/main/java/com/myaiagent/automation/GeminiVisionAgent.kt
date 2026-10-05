@@ -36,6 +36,9 @@ Desired title: $itemTitle
 Desired visibility: $visibility
 Target file name: $targetFileName
 
+Verified learning / selector context:
+\${memoryContext.ifBlank { "(none yet)" }}
+
 Return ONLY one compact JSON object:
 {
   "screen":"UPLOAD|PICKER|DETAILS|VISIBILITY|PUBLISH|PROCESSING|SECURITY|UNKNOWN",
