@@ -26,6 +26,7 @@ class AutomationSessionStore(context: Context) {
             .putString("last_observation", "")
             .putBoolean("transfer_complete", false)
             .putBoolean("picker_selection_pending", false)
+            .putBoolean("direct_media_handoff", false)
             .apply()
 
         AutomationLiveStore(appContext).start(item.id, item.fileName)
@@ -78,6 +79,13 @@ class AutomationSessionStore(context: Context) {
             TestRunStore(appContext).setState(state)
         }
     }
+
+    fun markDirectMediaHandoffAttempted(value: Boolean = true) {
+        prefs.edit().putBoolean("direct_media_handoff", value).apply()
+    }
+
+    fun directMediaHandoffAttempted(): Boolean =
+        prefs.getBoolean("direct_media_handoff", false)
 
     fun isTestMode(): Boolean = prefs.getBoolean("test_mode", false)
 
