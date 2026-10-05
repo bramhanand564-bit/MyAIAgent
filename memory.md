@@ -426,3 +426,25 @@ After installing the latest successful main build:
 - Updated Gemini default to current GA `gemini-3.5-flash`, while treating old `gemini-3.1-flash` default values as legacy and retaining `gemini-3.1-flash-lite` fallback behavior.
 - The selected Test Workflow video remains the single source URI and the direct Studio hand-off code remains in place.
 - Current build validation must use the latest main-branch Actions run after the final cleanup changes; cancelled intermediate runs are not evidence of a failed final source tree.
+
+
+### REAL TAP + TYPE TEST — October 6, 2026
+- Removed the old TapDiagnosticActivity and TapDiagnosticStore after the user reported a full app crash/back when starting the diagnostic.
+- Main dashboard now opens RealTapTestActivity.
+- New isolated RealTapTestStore persists only the test state; it does not touch the YouTube upload queue/session.
+- New RealTapTestEngine is the only automation path used by this test.
+- Test target preference: Chrome (`com.android.chrome`), with Google Search app (`com.google.android.googlequicksearchbox`) as fallback.
+- Exact test flow:
+  1. open target app;
+  2. screenshot + Accessibility screen read;
+  3. find and real-gesture tap the Search/address field;
+  4. wait for the real on-screen keyboard;
+  5. tap Shift, then each key of `I love you` one-by-one using real Accessibility gestures;
+  6. wait between keys;
+  7. tap the keyboard Search/Enter key;
+  8. screenshot/read and verify the query is visible in the result screen.
+- The test never uses ACTION_SET_TEXT, ACTION_PASTE, clipboard, copy/paste, or direct text injection.
+- Each major step logs screenshot capture, screen-read status, target, requested action, gesture completion, and next target.
+- NAX Floating Cursor now supports a compact experimental/chat-style panel showing the live test stage, screenshot/read status, target and result.
+- Real tap test failure is contained inside the test engine; exceptions become a visible FAIL message instead of propagating into the YouTube automation state machine.
+- Latest repository audit after the replacement must confirm zero references to TapDiagnosticActivity/TapDiagnosticStore before release.
