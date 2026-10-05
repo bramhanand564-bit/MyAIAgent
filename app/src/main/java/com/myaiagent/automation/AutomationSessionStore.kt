@@ -22,6 +22,7 @@ class AutomationSessionStore(context: Context) {
             .putString("waiting_resume_state", null)
             .putString("last_observation", "")
             .putBoolean("transfer_complete", false)
+            .putBoolean("picker_selection_pending", false)
             .apply()
 
         AutomationLiveStore(appContext).start(item.id, item.fileName)
@@ -60,6 +61,7 @@ class AutomationSessionStore(context: Context) {
         prefs.edit()
             .putString("state", state.name)
             .putInt("attempt", 0)
+            .putBoolean("picker_selection_pending", state == AutomationState.WAITING_FOR_PICKER && prefs.getBoolean("picker_selection_pending", false))
             .apply()
 
         AutomationLiveStore(appContext).state(state)
@@ -70,6 +72,14 @@ class AutomationSessionStore(context: Context) {
     }
 
     fun isTestMode(): Boolean = prefs.getBoolean("test_mode", false)
+
+    fun markPickerSelectionPending() {
+        prefs.edit().putBoolean("picker_selection_pending", true).apply()
+    }
+
+    fun isPickerSelectionPending(): Boolean =
+        prefs.getBoolean("picker_selection_pending", false)
+
 
     fun enterWaitingForUser(resumeState: AutomationState) {
         prefs.edit()
