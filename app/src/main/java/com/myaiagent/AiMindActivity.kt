@@ -14,8 +14,11 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.textview.MaterialTextView
+import com.myaiagent.automation.AgentObservationStore
+import com.myaiagent.automation.AgentVerifiedMemoryStore
 import com.myaiagent.automation.MindEngine
 import com.myaiagent.automation.MindStore
+import com.myaiagent.automation.VisionAgentSettings
 
 class AiMindActivity : AppCompatActivity() {
     private lateinit var root: LinearLayout
