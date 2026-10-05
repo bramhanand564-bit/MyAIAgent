@@ -14,7 +14,7 @@ class OpenAiCompatibleVisionAgent(
     private val model: String,
     private val extraHeaders: String = ""
 ) {
-    fun analyze(bitmap: Bitmap, currentState: AutomationState, itemTitle: String, visibility: String): VisionDecision? {
+    fun analyze(bitmap: Bitmap, currentState: AutomationState, itemTitle: String, visibility: String, targetFileName: String = ""): VisionDecision? {
         if (endpoint.isBlank() || model.isBlank()) return null
         val base64 = ByteArrayOutputStream().use { out ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 65, out)
@@ -27,12 +27,14 @@ rate limits or access controls.
 Current state: \${currentState.name}
 Desired title: $itemTitle
 Desired visibility: $visibility
+Target file name: $targetFileName
 Return ONLY JSON:
 {"screen":"UPLOAD|PICKER|DETAILS|VISIBILITY|PUBLISH|PROCESSING|SECURITY|UNKNOWN",
 "action":"CLICK|SET_TEXT|SELECT_FILE|WAIT|NEEDS_USER",
 "targetText":"exact visible text or null","x":0,"y":0,"value":"text or null",
 "confidence":0.0,"reason":"short reason"}
 If security/login/CAPTCHA/verification is visible, use NEEDS_USER.
+On a PICKER screen, select "$targetFileName" and do not select a different file.
 If confidence < 0.80, use WAIT. Never invent a target.
 """.trimIndent()
 
