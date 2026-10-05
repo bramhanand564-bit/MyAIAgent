@@ -387,3 +387,9 @@ After installing the latest successful main build:
 - Accessibility ACTION_CLICK success, text entry success, gesture completion, gesture cancellation and gesture rejection each update the cursor feedback.
 - The cursor remains informational only; it cannot receive touch input and never replaces the real Accessibility action/verification layer.
 - Security/login/CAPTCHA states visibly switch to a manual-action message.
+
+
+### Build Fix — October 5, 2026
+- Fixed missing agent-core imports in AiMindActivity.
+- Fixed AgentVerifiedMemoryStore JSON promotion to avoid invalid JSONObject constructor usage.
+- These fixes address the compile errors reported by Android Build run 380.
