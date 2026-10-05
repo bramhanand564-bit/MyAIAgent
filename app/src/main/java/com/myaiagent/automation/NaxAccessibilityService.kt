@@ -438,7 +438,8 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun isDocumentPicker(packageName: String): Boolean =
         packageName == "com.google.android.documentsui" ||
             packageName == "com.google.android.providers.media.module" ||
-            packageName.contains("documentsui")
+            packageName.contains("documentsui") ||
+            packageName == "com.google.android.apps.photos"
     private fun isYouTube(root: AccessibilityNodeInfo): Boolean =
         root.packageName?.toString() == "com.google.android.youtube" ||
             root.packageName?.toString() == "com.google.android.apps.youtube.creator"
