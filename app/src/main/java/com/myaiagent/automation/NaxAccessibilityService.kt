@@ -521,12 +521,29 @@ class NaxAccessibilityService : AccessibilityService() {
             )
         ) return true
 
-        // Some Compose fields do not expose ACTION_SET_TEXT. Tap the live field
-        // first so the IME/focus is real; do not invent a coordinate.
+        // Compose/custom fields sometimes expose focus but not ACTION_SET_TEXT.
+        // Focus the live field, then paste through the system clipboard.
         val bounds = android.graphics.Rect()
         node.getBoundsInScreen(bounds)
         if (bounds.isEmpty || bounds.width() < 4 || bounds.height() < 4) return false
-        return dispatchTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())
+        if (!dispatchTap(bounds.centerX().toFloat(), bounds.centerY().toFloat())) return false
+
+        val clipboard = getSystemService(android.content.ClipboardManager::class.java)
+        clipboard.setPrimaryClip(
+            android.content.ClipData.newPlainText("NAX automation", value)
+        )
+        val pasted = node.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        if (pasted) return true
+
+        // One more hierarchy-level paste attempt for fields wrapped by Compose.
+        var parent = node.parent
+        while (parent != null) {
+            if (parent.isEditable && parent.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                return true
+            }
+            parent = parent.parent
+        }
+        return false
     }
 
     private fun findEditableDescendant(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
