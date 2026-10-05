@@ -3,7 +3,6 @@ package com.myaiagent
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
