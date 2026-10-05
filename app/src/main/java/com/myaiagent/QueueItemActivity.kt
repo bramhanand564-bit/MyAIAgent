@@ -228,13 +228,14 @@ class QueueItemActivity : AppCompatActivity() {
             .getOrElse(visibility.selectedItemPosition) { "PRIVATE" }
         val selectedMode = "NATIVE_STUDIO"
 
-        if (scheduledAt != null && scheduledAt <= System.currentTimeMillis()) {
+        val selectedScheduledAt = scheduledAt
+        if (selectedScheduledAt != null && selectedScheduledAt <= System.currentTimeMillis()) {
             Toast.makeText(this, "Choose a future schedule time", Toast.LENGTH_SHORT).show()
             return
         }
 
         val nextStatus = when {
-            scheduledAt != null -> "SCHEDULED"
+            selectedScheduledAt != null -> "SCHEDULED"
             item.status == "SCHEDULED" -> "QUEUED"
             else -> item.status
         }
@@ -243,7 +244,7 @@ class QueueItemActivity : AppCompatActivity() {
             title = titleInput.text?.toString()?.trim().orEmpty(),
             description = descriptionInput.text?.toString().orEmpty(),
             visibility = selectedVisibility,
-            scheduledAt = scheduledAt,
+            scheduledAt = selectedScheduledAt,
             status = nextStatus,
             automationMode = selectedMode
         )
