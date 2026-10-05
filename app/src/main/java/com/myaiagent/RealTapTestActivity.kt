@@ -16,9 +16,10 @@ import com.google.android.material.textview.MaterialTextView
 import com.myaiagent.automation.RealTapTestStore
 
 /**
- * A deliberately simple end-to-end interaction test:
- * open Chrome, tap the search field, open the real keyboard, tap every key
- * of "I love you" one-by-one, tap Search/Enter, and verify the results screen.
+ * A deliberately isolated end-to-end interaction test:
+ * launch a supported browser/search app, find its live search field, use real
+ * Accessibility gestures, type "I love you" key-by-key, submit, and verify.
+ * The target is selected from installed candidates rather than hard-coding one app.
  */
 class RealTapTestActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
@@ -84,7 +85,7 @@ class RealTapTestActivity : AppCompatActivity() {
         })
 
         root.addView(text(
-            "Flow: Chrome → Search → keyboard → I love you (key-by-key) → Search → verify.",
+            "Flow: supported browser/search app → Search → keyboard → I love you → Search → verify.",
             13f,
             Color.rgb(145, 150, 164)
         ).apply {
@@ -132,13 +133,18 @@ class RealTapTestActivity : AppCompatActivity() {
 
         val candidates = listOf(
             "com.android.chrome",
-            "com.google.android.googlequicksearchbox"
+            "com.google.android.googlequicksearchbox",
+            "org.mozilla.firefox",
+            "com.microsoft.emmx"
         )
         val target = candidates.firstNotNullOfOrNull { pkg ->
             runCatching {
-                packageManager.getLaunchIntentForPackage(pkg)?.apply {
-                    // Keep the test controller in the same task. Chrome/Google is
-                    // foreground during the test; no NEW_TASK handoff is needed.
+                val direct = packageManager.getLaunchIntentForPackage(pkg)
+                val fallback = Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setPackage(pkg)
+                (direct ?: fallback).takeIf {
+                    it.resolveActivity(packageManager) != null
                 }
             }.getOrNull()?.let { pkg to it }
         }
