@@ -26,6 +26,9 @@ class NaxAccessibilityService : AccessibilityService() {
     private var pickerVisualInFlight = false
     private var lastVisionRequestAt = 0L
     private val visionExecutor = Executors.newSingleThreadExecutor()
+    private val agentLoop = AgentLoop()
+    private var agentScreenshotInFlight = false
+    private var agentAiInFlight = false
 
     private val maxAttemptsPerState = 5
     private val sessionTimeoutMs = 10 * 60 * 1000L
@@ -35,6 +38,9 @@ class NaxAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         queueStore = UploadQueueStore(this)
         sessionStore = AutomationSessionStore(this)
+        val settings = VisionAgentSettings(this)
+        agentLoop.updateInterval(settings.observationIntervalSeconds * 1000L)
+        agentLoop.start { captureAgentObservation() }
         startWatchdog()
     }
 
@@ -72,6 +78,14 @@ class NaxAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         retryRunnable?.let(handler::removeCallbacks)
         retryRunnable = null
+    }
+
+    override fun onDestroy() {
+        agentLoop.stop()
+        retryRunnable?.let(handler::removeCallbacks)
+        watchdogRunnable?.let(handler::removeCallbacks)
+        visionExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun driveState(item: UploadItem, root: AccessibilityNodeInfo) {
@@ -402,6 +416,207 @@ class NaxAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Continuous agent observation:
+     * screenshot every configured interval (6s by default), detect screen changes,
+     * and let Gemini describe the visible screen when analysis is due.
+     *
+     * The observation brain does not directly execute actions. Existing verified
+     * Accessibility state transitions remain the action/verification authority.
+     */
+    private fun captureAgentObservation() {
+        if (!::sessionStore.isInitialized || !sessionStore.isActive()) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        if (agentScreenshotInFlight) return
+
+        val root = rootInActiveWindow ?: return
+        val packageName = root.packageName?.toString().orEmpty()
+        if (!isAutomationPackage(packageName)) return
+
+        val settings = VisionAgentSettings(this)
+        val configuredInterval = settings.observationIntervalSeconds * 1000L
+        if (agentLoop.intervalMs() != configuredInterval) {
+            agentLoop.updateInterval(configuredInterval)
+        }
+
+        val state = sessionStore.state()
+        val observations = AgentObservationStore(this)
+        agentScreenshotInFlight = true
+
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            visionExecutor,
+            object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    val hardware = runCatching {
+                        Bitmap.wrapHardwareBuffer(
+                            screenshot.hardwareBuffer,
+                            screenshot.colorSpace
+                        )
+                    }.getOrNull()
+
+                    val bitmap = hardware?.let {
+                        runCatching {
+                            it.copy(Bitmap.Config.ARGB_8888, false)
+                        }.getOrNull()
+                    }
+
+                    runCatching { screenshot.hardwareBuffer.close() }
+                    if (hardware != null && hardware !== bitmap) {
+                        runCatching { hardware.recycle() }
+                    }
+
+                    if (bitmap == null) {
+                        agentScreenshotInFlight = false
+                        return
+                    }
+
+                    val screenHash = screenSignature(bitmap)
+                    val changed = screenHash != observations.lastHash()
+                    val now = System.currentTimeMillis()
+
+                    observations.record(
+                        packageName = packageName,
+                        state = state.name,
+                        screenHash = screenHash
+                    )
+
+                    handler.post {
+                        if (sessionStore.isActive()) {
+                            testLog(
+                                "AGENT OBS • screenshot captured • " +
+                                    "state=" + state.name +
+                                    " • changed=" + changed
+                            )
+                        }
+                    }
+
+                    val aiConfigured = settings.enabled &&
+                        settings.provider == VisionAgentSettings.PROVIDER_GEMINI &&
+                        settings.apiKey.isNotBlank() &&
+                        changed &&
+                        !agentAiInFlight &&
+                        now - observations.lastAiAt() >= 15_000L
+
+                    if (!aiConfigured) {
+                        bitmap.recycle()
+                        agentScreenshotInFlight = false
+                        return
+                    }
+
+                    agentAiInFlight = true
+                    observations.markAiAt(now)
+
+                    visionExecutor.execute {
+                        val memory = buildString {
+                            val verified = AgentVerifiedMemoryStore(
+                                this@NaxAccessibilityService
+                            ).promptContext(packageName)
+                            val selectorHints = WorkflowMemoryStore(
+                                this@NaxAccessibilityService
+                            ).promptContext(packageName, state.name)
+                            if (verified.isNotBlank()) {
+                                append("Verified learning memory:\n")
+                                append(verified)
+                            }
+                            if (selectorHints.isNotBlank()) {
+                                if (isNotBlank()) append("\n")
+                                append("Selector hints (not proof):\n")
+                                append(selectorHints)
+                            }
+                        }
+
+                        val item = queueStore.load()
+                            .firstOrNull { it.id == sessionStore.itemId() }
+
+                        val decision = if (item != null) {
+                            GeminiVisionAgent(
+                                settings.apiKey,
+                                settings.model
+                            ).analyze(
+                                bitmap = bitmap,
+                                currentState = state,
+                                itemTitle = item.title.ifBlank { item.fileName },
+                                visibility = item.visibility,
+                                targetFileName = item.fileName,
+                                memoryContext = memory
+                            )
+                        } else {
+                            null
+                        }
+
+                        handler.post {
+                            agentAiInFlight = false
+                            agentScreenshotInFlight = false
+
+                            if (decision == null) {
+                                bitmap.recycle()
+                                return@post
+                            }
+
+                            val action = decision.action
+                            observations.record(
+                                packageName = packageName,
+                                state = state.name,
+                                screenHash = screenHash,
+                                aiScreen = action.screen,
+                                aiAction = action.action,
+                                aiConfidence = action.confidence,
+                                aiReason = action.reason
+                            )
+
+                            val summary =
+                                "AGENT THINK • screen=" + action.screen +
+                                    " • action=" + action.action +
+                                    " • confidence=" +
+                                    String.format(
+                                        Locale.US,
+                                        "%.2f",
+                                        action.confidence
+                                    ) +
+                                    " • reason=" + action.reason
+
+                            testLog(summary)
+                            MindEngine.onScreen(
+                                this@NaxAccessibilityService,
+                                packageName,
+                                summary
+                            )
+
+                            bitmap.recycle()
+                        }
+                    }
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    agentScreenshotInFlight = false
+                    handler.post {
+                        if (::sessionStore.isInitialized && sessionStore.isActive()) {
+                            testLog("AGENT OBS • screenshot failed • code=" + errorCode)
+                        }
+                    }
+                }
+            }
+        )
+    }
+
+    private fun screenSignature(bitmap: Bitmap): String {
+        val sample = runCatching {
+            Bitmap.createScaledBitmap(bitmap, 16, 16, true)
+        }.getOrNull() ?: return "unavailable"
+
+        var hash = 1125899906842597L
+        val pixels = IntArray(16 * 16)
+        sample.getPixels(pixels, 0, 16, 0, 0, 16, 16)
+        for (pixel in pixels) {
+            hash = 31L * hash + pixel.toLong()
+        }
+        if (!sample.isRecycled && sample !== bitmap) {
+            sample.recycle()
+        }
+        return java.lang.Long.toHexString(hash)
+    }
+
     private fun testLog(message: String) {
         if (::sessionStore.isInitialized && sessionStore.isActive()) {
             MindStore(this).log(message)
@@ -510,6 +725,14 @@ class NaxAccessibilityService : AccessibilityService() {
                                 val x = match.bounds.centerX().toFloat()
                                 val y = match.bounds.centerY().toFloat()
                                 if (dispatchTap(x, y)) {
+                                    AgentVerifiedMemoryStore(this@NaxAccessibilityService)
+                                        .rememberCandidate(
+                                            packageName = packageName,
+                                            state = sessionStore.state().name,
+                                            action = "SELECT_FILE",
+                                            target = item.fileName,
+                                            value = "x=" + x + ",y=" + y
+                                        )
                                     sessionStore.markPickerSelectionPending()
                                     testLog(
                                         "Local thumbnail match selected target video • score=" +
@@ -1204,6 +1427,16 @@ class NaxAccessibilityService : AccessibilityService() {
                 }
 
                 if (coordinateClicked) {
+                    if (!clicked) {
+                        AgentVerifiedMemoryStore(this).rememberCandidate(
+                            packageName = root.packageName?.toString().orEmpty(),
+                            state = sessionStore.state().name,
+                            action = action.action,
+                            target = action.targetText ?: ("x=" + action.x + ",y=" + action.y),
+                            value = action.value.orEmpty()
+                        )
+                    }
+
                     if (action.action == "SELECT_FILE" &&
                         sessionStore.state() == AutomationState.WAITING_FOR_PICKER
                     ) {
