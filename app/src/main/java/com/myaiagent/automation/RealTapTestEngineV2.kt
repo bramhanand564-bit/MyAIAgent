@@ -367,6 +367,27 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
             return
         }
 
+        // Safety gate: never dispatch a real touch while the target app/keyboard
+        // is not actually foreground. Previously a delayed gesture could land on
+        // the launcher/system UI after the task changed, which can look like an
+        // accidental Back/Home action. A stale gesture is now rejected locally.
+        val targetVisible = service.rootInActiveWindow?.packageName?.toString()
+            ?.let { it == store.targetPackage() } == true
+        val keyboardVisible = findKeyboardRoot() != null
+        if (!targetVisible && !keyboardVisible) {
+            store.log("GESTURE • $label blocked • target/keyboard not foreground")
+            done(false)
+            return
+        }
+
+        val width = service.resources.displayMetrics.widthPixels
+        val height = service.resources.displayMetrics.heightPixels
+        if (x < 1f || y < 1f || x >= width - 1f || y >= height - 1f) {
+            store.log("GESTURE • $label blocked • coordinates outside display")
+            done(false)
+            return
+        }
+
         val path = android.graphics.Path().apply { moveTo(x, y) }
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0L, 90L))
