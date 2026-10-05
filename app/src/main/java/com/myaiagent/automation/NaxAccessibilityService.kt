@@ -436,11 +436,6 @@ class NaxAccessibilityService : AccessibilityService() {
         if (!isAutomationPackage(packageName)) return
 
         val settings = VisionAgentSettings(this)
-        val configuredInterval = settings.observationIntervalSeconds * 1000L
-        if (agentLoop.intervalMs() != configuredInterval) {
-            agentLoop.updateInterval(configuredInterval)
-        }
-
         val state = sessionStore.state()
         val observations = AgentObservationStore(this)
         agentScreenshotInFlight = true
