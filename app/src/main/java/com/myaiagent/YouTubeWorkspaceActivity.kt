@@ -1,6 +1,7 @@
 package com.myaiagent
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -8,16 +9,20 @@ import androidx.appcompat.app.AppCompatActivity
 /**
  * Native Studio hand-off.
  *
- * We deliberately do not load studio.youtube.com here. The previous WebView
- * rendered the desktop Studio surface inside a phone viewport, which is not a
- * good mobile experience. The official Android YouTube Studio app is the
- * mobile surface and is the target for accessibility automation.
+ * The test/queue already owns the exact video URI. We first try to pass that
+ * URI directly into the official YouTube Studio app using Android's standard
+ * ACTION_SEND media hand-off. If Studio does not expose a compatible receiver,
+ * we fall back to the normal Studio launch and let the verified Accessibility
+ * flow handle its picker.
  */
 class YouTubeWorkspaceActivity : AppCompatActivity() {
 
     companion object {
         const val YOUTUBE_STUDIO_PACKAGE = "com.google.android.apps.youtube.creator"
         const val YOUTUBE_PACKAGE = "com.google.android.youtube"
+
+        const val EXTRA_VIDEO_URI = "preselected_video_uri"
+        const val EXTRA_VIDEO_NAME = "preselected_video_name"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -26,6 +31,47 @@ class YouTubeWorkspaceActivity : AppCompatActivity() {
     }
 
     private fun openNativeStudio() {
+        val uriString = intent.getStringExtra(EXTRA_VIDEO_URI)
+        val fileName = intent.getStringExtra(EXTRA_VIDEO_NAME).orEmpty()
+
+        if (!uriString.isNullOrBlank()) {
+            val uri = runCatching { Uri.parse(uriString) }.getOrNull()
+            if (uri != null && tryDirectVideoHandoff(uri, fileName)) {
+                return
+            }
+        }
+
+        openStudioNormally()
+    }
+
+    private fun tryDirectVideoHandoff(uri: Uri, fileName: String): Boolean {
+        val mediaIntent = Intent(Intent.ACTION_SEND).apply {
+            setPackage(YOUTUBE_STUDIO_PACKAGE)
+            type = contentResolver.getType(uri) ?: "video/*"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val receiver = packageManager.resolveActivity(mediaIntent, 0)
+        if (receiver == null) {
+            return false
+        }
+
+        return runCatching {
+            startActivity(mediaIntent)
+            Toast.makeText(
+                this,
+                if (fileName.isBlank()) "Sending selected video to YouTube Studio"
+                else "Sending $fileName to YouTube Studio",
+                Toast.LENGTH_SHORT
+            ).show()
+            finish()
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun openStudioNormally() {
         val studioIntent = packageManager.getLaunchIntentForPackage(YOUTUBE_STUDIO_PACKAGE)
         if (studioIntent != null) {
             studioIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -34,7 +80,6 @@ class YouTubeWorkspaceActivity : AppCompatActivity() {
             return
         }
 
-        // Keep a graceful fallback for devices that have only the main YouTube app.
         val youtubeIntent = packageManager.getLaunchIntentForPackage(YOUTUBE_PACKAGE)
         if (youtubeIntent != null) {
             youtubeIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
