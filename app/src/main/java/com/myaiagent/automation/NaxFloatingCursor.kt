@@ -104,7 +104,19 @@ class NaxFloatingCursor(private val context: Context) {
     fun setMessage(message: String) {
         handler.post {
             if (!attached) return@post
+            view.experimentMode = false
             view.message = message
+            view.invalidate()
+        }
+    }
+
+    fun setExperiment(title: String, lines: List<String>) {
+        handler.post {
+            ensureAttached()
+            view.visibility = View.VISIBLE
+            view.experimentMode = true
+            view.experimentTitle = title.take(22)
+            view.experimentLines = lines.map { it.take(34) }.take(4)
             view.invalidate()
         }
     }
@@ -125,8 +137,8 @@ class NaxFloatingCursor(private val context: Context) {
     }
 
     private fun targetLayout(x: Float, y: Float): Pair<Int, Int> {
-        val width = dp(176)
-        val height = dp(128)
+        val width = dp(220)
+        val height = dp(154)
         val maxX = (context.resources.displayMetrics.widthPixels - width).coerceAtLeast(0)
         val maxY = (context.resources.displayMetrics.heightPixels - height).coerceAtLeast(0)
 
@@ -183,8 +195,8 @@ class NaxFloatingCursor(private val context: Context) {
 
         val type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
         val params = WindowManager.LayoutParams(
-            dp(176),
-            dp(128),
+            dp(220),
+            dp(154),
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
@@ -229,6 +241,10 @@ class NaxFloatingCursor(private val context: Context) {
                 field = value.take(36)
                 invalidate()
             }
+
+        var experimentMode: Boolean = false
+        var experimentTitle: String = "🧪 EXPERIMENT"
+        var experimentLines: List<String> = emptyList()
 
         var hasTarget: Boolean = false
 
@@ -358,8 +374,9 @@ class NaxFloatingCursor(private val context: Context) {
             canvas.drawCircle(cx, robotY - 35f * d, 4.3f * d, paint)
 
             paint.color = Color.argb(238, 19, 21, 29)
+            val panelBottom = if (experimentMode) 149f * d else 123f * d
             canvas.drawRoundRect(
-                RectF(6f * d, 74f * d, width - 6f * d, 123f * d),
+                RectF(6f * d, 74f * d, width - 6f * d, panelBottom),
                 14f * d,
                 14f * d,
                 paint
@@ -369,23 +386,38 @@ class NaxFloatingCursor(private val context: Context) {
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1f * d
             canvas.drawRoundRect(
-                RectF(6.5f * d, 74.5f * d, width - 6.5f * d, 122.5f * d),
+                RectF(6.5f * d, 74.5f * d, width - 6.5f * d, (if (experimentMode) 148.5f else 122.5f) * d),
                 14f * d,
                 14f * d,
                 paint
             )
 
             paint.style = Paint.Style.FILL
-            paint.color = Color.WHITE
-            paint.textSize = 9.5f * d
-            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             paint.textAlign = Paint.Align.CENTER
-            canvas.drawText(message.take(34), width / 2f, 103f * d, paint)
 
-            paint.textSize = 7.2f * d
-            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-            paint.color = Color.argb(175, 220, 220, 230)
-            canvas.drawText("ACCESSIBILITY • VERIFIED FLOW", width / 2f, 117f * d, paint)
+            if (experimentMode) {
+                paint.color = Color.WHITE
+                paint.textSize = 8.2f * d
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                canvas.drawText(experimentTitle, width / 2f, 85f * d, paint)
+
+                paint.textSize = 7.2f * d
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                paint.color = Color.argb(225, 230, 230, 238)
+                experimentLines.forEachIndexed { index, line ->
+                    canvas.drawText(line, width / 2f, (101f + index * 11f) * d, paint)
+                }
+            } else {
+                paint.color = Color.WHITE
+                paint.textSize = 9.5f * d
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                canvas.drawText(message.take(34), width / 2f, 103f * d, paint)
+
+                paint.textSize = 7.2f * d
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                paint.color = Color.argb(175, 220, 220, 230)
+                canvas.drawText("ACCESSIBILITY • VERIFIED FLOW", width / 2f, 117f * d, paint)
+            }
         }
     }
 }
