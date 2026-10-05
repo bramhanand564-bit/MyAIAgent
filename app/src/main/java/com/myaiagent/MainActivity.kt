@@ -230,6 +230,21 @@ class MainActivity : AppCompatActivity() {
             setTextColor(Color.rgb(220,210,245))
             setOnClickListener { startActivity(Intent(this@MainActivity, WorkflowTestActivity::class.java)) }
         }, lp(-1, 52, 0, 0, 0, 0))
+        root.addView(MaterialButton(this).apply {
+            text = "⚙  Tap engine diagnostic"
+            textSize = 14f
+            isAllCaps = false
+            cornerRadius = dp(16)
+            minHeight = dp(48)
+            insetTop = 0
+            insetBottom = 0
+            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(36,255,255,255))
+            strokeWidth = dp(1)
+            strokeColor = Color.argb(70,255,255,255)
+            setTextColor(Color.rgb(205,208,220))
+            setOnClickListener { startActivity(Intent(this@MainActivity, TapDiagnosticActivity::class.java)) }
+        }, lp(-1, 48, 0, 8, 0, 0))
+
 
         root.addView(sectionTitle("PAGES").apply {
             setPadding(0, dp(22), 0, dp(9))
