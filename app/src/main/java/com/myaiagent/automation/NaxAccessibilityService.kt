@@ -1,6 +1,7 @@
 package com.myaiagent.automation
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Handler
