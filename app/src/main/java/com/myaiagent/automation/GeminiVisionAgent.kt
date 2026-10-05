@@ -74,40 +74,58 @@ Rules:
                 )
             ))
 
-        val connection = (URL(
-            "https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent"
-        ).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10000
-            readTimeout = 20000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("x-goog-api-key", apiKey)
+
+        val modelCandidates = if (model == VisionAgentSettings.REQUESTED_GEMINI_MODEL) {
+            listOf(model, VisionAgentSettings.GEMINI_FALLBACK_MODEL)
+        } else {
+            listOf(model)
+        }.filter { it.isNotBlank() }.distinct()
+
+        for (candidateModel in modelCandidates) {
+            val connection = (URL(
+                "https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:generateContent"
+            ).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10000
+                readTimeout = 20000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("x-goog-api-key", apiKey)
+            }
+
+            try {
+                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                val responseCode = connection.responseCode
+                val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+
+                if (responseCode !in 200..299) {
+                    // Only a model-not-found response is eligible for the configured fallback.
+                    if (responseCode == 404 && candidateModel == VisionAgentSettings.REQUESTED_GEMINI_MODEL) {
+                        continue
+                    }
+                    return null
+                }
+
+                val root = JSONObject(response)
+                val responseText = root
+                    .optJSONArray("candidates")
+                    ?.optJSONObject(0)
+                    ?.optJSONObject("content")
+                    ?.optJSONArray("parts")
+                    ?.optJSONObject(0)
+                    ?.optString("text")
+                    .orEmpty()
+
+                return parseDecision(responseText, response)
+            } catch (_: Exception) {
+                return null
+            } finally {
+                connection.disconnect()
+            }
         }
 
-        return try {
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-            val responseCode = connection.responseCode
-            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (responseCode !in 200..299) return null
-
-            val root = JSONObject(response)
-            val text = root
-                .optJSONArray("candidates")
-                ?.optJSONObject(0)
-                ?.optJSONObject("content")
-                ?.optJSONArray("parts")
-                ?.optJSONObject(0)
-                ?.optString("text")
-                .orEmpty()
-
-            parseDecision(text, response)
-        } catch (_: Exception) {
-            null
-        } finally {
-            connection.disconnect()
-        }
+        return null
     }
 
     private fun parseDecision(text: String, raw: String): VisionDecision? {
