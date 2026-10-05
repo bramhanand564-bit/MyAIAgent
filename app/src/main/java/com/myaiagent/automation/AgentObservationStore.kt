@@ -50,17 +50,21 @@ class AgentObservationStore(context: Context) {
         val start = (events.length() - 120).coerceAtLeast(0)
         for (i in start until events.length()) compact.put(events.get(i))
 
-        prefs.edit()
+        val editor = prefs.edit()
             .putString("events", compact.toString())
             .putLong("last_at", System.currentTimeMillis())
             .putString("last_package", packageName)
             .putString("last_state", state)
             .putString("last_hash", screenHash)
-            .putString("last_ai_screen", aiScreen)
-            .putString("last_ai_action", aiAction)
-            .putFloat("last_ai_confidence", aiConfidence)
-            .putString("last_ai_reason", aiReason)
-            .apply()
+
+        if (aiScreen.isNotBlank() || aiAction.isNotBlank() || aiReason.isNotBlank()) {
+            editor
+                .putString("last_ai_screen", aiScreen)
+                .putString("last_ai_action", aiAction)
+                .putFloat("last_ai_confidence", aiConfidence)
+                .putString("last_ai_reason", aiReason)
+        }
+        editor.apply()
     }
 
     fun lastHash(): String = prefs.getString("last_hash", "").orEmpty()
