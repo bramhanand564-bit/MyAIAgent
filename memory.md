@@ -317,3 +317,48 @@ After installing the latest successful main build:
 - Never use YouTube Data API for this upload workflow.
 - Keep all changes on main.
 - Prefer fixing the actual observed root cause over adding random retries.
+
+
+## AGENT CORE — October 5, 2026
+
+### Agent Goal
+- NAX is being evolved from a fixed YouTube automation state machine into a reusable observe → understand → act → verify → learn agent.
+- First milestone remains **one video → Run Test Now → complete YouTube workflow**. Scheduling is separate so development never waits for the scheduled time.
+- Long-term: the same agent core should later support other Android workflows beyond YouTube.
+
+### Observation Loop
+- Default screenshot observation interval: **6 seconds** (10 observations per minute).
+- Interval is configurable in AI Settings from 2–60 seconds.
+- The loop is active only while a real automation session is active.
+- Each tick captures the current supported automation screen.
+- Screen signatures detect whether the visible screen changed.
+- Gemini analysis is requested on meaningful screen changes with the existing 15-second pacing gate, so screenshots can remain frequent without forcing 10 paid AI calls every minute.
+- The loop records the latest package, state, screen signature and optional AI interpretation in AgentObservationStore.
+
+### Agent Brain
+- Primary user-selected model string: **gemini-3.1-flash**.
+- Current public Gemini catalog should be rechecked when deploying; when the requested model is not found, vision automatically falls back to stable **gemini-3.1-flash-lite**.
+- Gemini sees the current screenshot, current automation state, target filename, requested metadata and learned/selector context.
+- The observation brain reports the visible screen and suggested action but does not independently double-tap the UI while the verified Accessibility state machine is running.
+- Existing Gemini vision fallback remains the controlled action path after bounded state retries.
+
+### Verified Learning Rule
+- New AgentVerifiedMemoryStore is the authoritative learning memory.
+- Every UI action first becomes a **pending candidate**.
+- A candidate becomes learned only after the automation state machine moves to the next verified state.
+- Multiple pending actions are retained so title + description or other multi-action steps can all be learned together.
+- Failed actions, ambiguous visual matches and unverified taps are not promoted to learned memory.
+- Verified memory is fed back into future Gemini vision prompts as workflow knowledge.
+- Existing WorkflowMemoryStore remains selector/cache hints; those hints are never treated as proof of success.
+
+### Test-Now Requirement
+- WorkflowTestActivity already supports selecting exactly one video and starting a real test immediately.
+- Test runs do not use the daily schedule.
+- The same automation session, screenshot observer, Gemini brain, verification logic and memory system are used during the test.
+- Success is still gated by actual upload/publish verification; Processing alone is not success.
+
+### Reliability / Safety
+- Screenshot loop, Gemini reasoning and Accessibility action execution are separated to avoid conflicting taps.
+- Login, CAPTCHA, verification and security-check screens remain NEEDS_USER_ACTION and are never bypassed.
+- Exact target filename selection remains mandatory in picker workflows.
+- No YouTube Data API upload path is introduced.
