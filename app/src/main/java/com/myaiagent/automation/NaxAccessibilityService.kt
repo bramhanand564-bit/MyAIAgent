@@ -851,7 +851,8 @@ class NaxAccessibilityService : AccessibilityService() {
                                 bitmap,
                                 sessionStore.state(),
                                 item.title.ifBlank { item.fileName },
-                                item.visibility
+                                item.visibility,
+                                item.fileName
                             )
                             else -> GeminiVisionAgent(settings.apiKey, settings.model).analyze(
                                 bitmap,
