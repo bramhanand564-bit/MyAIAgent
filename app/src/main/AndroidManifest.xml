@@ -51,6 +51,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".TapDiagnosticActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".YouTubeWorkspaceActivity"
             android:exported="false" />
 
