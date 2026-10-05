@@ -26,47 +26,59 @@ class AgentVerifiedMemoryStore(context: Context) {
         value: String = "",
         expectedNextState: String = ""
     ) {
-        prefs.edit().putString(
-            "pending",
-            JSONObject().apply {
-                put("package", packageName)
-                put("state", state)
-                put("action", action)
-                put("target", target)
-                put("value", value)
-                put("expectedNextState", expectedNextState)
-                put("createdAt", System.currentTimeMillis())
-            }.toString()
-        ).apply()
+        val pending = runCatching {
+            JSONArray(prefs.getString("pending", "[]") ?: "[]")
+        }.getOrDefault(JSONArray())
+
+        pending.put(JSONObject().apply {
+            put("package", packageName)
+            put("state", state)
+            put("action", action)
+            put("target", target)
+            put("value", value)
+            put("expectedNextState", expectedNextState)
+            put("createdAt", System.currentTimeMillis())
+        })
+
+        val compact = JSONArray()
+        val start = (pending.length() - 20).coerceAtLeast(0)
+        for (i in start until pending.length()) compact.put(pending.get(i))
+        prefs.edit().putString("pending", compact.toString()).apply()
     }
 
     fun verifyTransition(fromState: AutomationState, toState: AutomationState) {
         if (fromState == toState) return
+
         val pending = runCatching {
-            JSONObject(prefs.getString("pending", "") ?: "")
-        }.getOrNull() ?: return
-
-        if (pending.optString("state") != fromState.name) return
-
-        val expected = pending.optString("expectedNextState")
-        if (expected.isNotBlank() && expected != toState.name) return
+            JSONArray(prefs.getString("pending", "[]") ?: "[]")
+        }.getOrDefault(JSONArray())
+        if (pending.length() == 0) return
 
         val entries = runCatching {
             JSONArray(prefs.getString("entries", "[]") ?: "[]")
         }.getOrDefault(JSONArray())
 
-        entries.put(JSONObject(pending).apply {
-            put("verified", true)
-            put("verifiedAt", System.currentTimeMillis())
-            put("verifiedNextState", toState.name)
-        })
+        val now = System.currentTimeMillis()
+        for (i in 0 until pending.length()) {
+            val candidate = pending.optJSONObject(i) ?: continue
+            if (candidate.optString("state") != fromState.name) continue
 
-        val compact = JSONArray()
-        val start = (entries.length() - 150).coerceAtLeast(0)
-        for (i in start until entries.length()) compact.put(entries.get(i))
+            val expected = candidate.optString("expectedNextState")
+            if (expected.isNotBlank() && expected != toState.name) continue
+
+            entries.put(JSONObject(candidate).apply {
+                put("verified", true)
+                put("verifiedAt", now)
+                put("verifiedNextState", toState.name)
+            })
+        }
+
+        val compactEntries = JSONArray()
+        val entryStart = (entries.length() - 150).coerceAtLeast(0)
+        for (i in entryStart until entries.length()) compactEntries.put(entries.get(i))
 
         prefs.edit()
-            .putString("entries", compact.toString())
+            .putString("entries", compactEntries.toString())
             .remove("pending")
             .apply()
     }
