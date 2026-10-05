@@ -240,7 +240,7 @@ class MainActivity : AppCompatActivity() {
             insetBottom = 0
             backgroundTintList = android.content.res.ColorStateList.valueOf(Color.argb(36,255,255,255))
             strokeWidth = dp(1)
-            strokeColor = Color.argb(70,255,255,255)
+            strokeColor = android.content.res.ColorStateList.valueOf(Color.argb(70,255,255,255))
             setTextColor(Color.rgb(205,208,220))
             setOnClickListener { startActivity(Intent(this@MainActivity, TapDiagnosticActivity::class.java)) }
         }, lp(-1, 48, 0, 8, 0, 0))
