@@ -13,6 +13,9 @@ class AutomationSessionStore(context: Context) {
         initialState: AutomationState = AutomationState.WAITING_FOR_APP,
         testMode: Boolean = false
     ) {
+        AgentVerifiedMemoryStore(appContext).clearPending()
+        AgentObservationStore(appContext).clear()
+
         prefs.edit()
             .putString("item_id", item.id)
             .putString("state", initialState.name)
@@ -124,6 +127,8 @@ class AutomationSessionStore(context: Context) {
     }
 
     fun clear() {
+        AgentVerifiedMemoryStore(appContext).clearPending()
+        AgentObservationStore(appContext).clear()
         prefs.edit().clear().apply()
         MindStore(appContext).clear()
     }
