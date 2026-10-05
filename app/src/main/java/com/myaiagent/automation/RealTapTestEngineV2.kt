@@ -92,7 +92,7 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
         }
 
         store.log("SCREEN • target app opened")
-        store.log("SCREEN READ • ${read(keyboardRoot)}")
+        store.log("SCREEN READ • ${read(root)}")
         store.log("NEXT TARGET • Search field")
         show("🧪 EXPERIMENT", listOf(
             "✓ App opened",
@@ -206,7 +206,7 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
         }
 
         if (index == 0 && !store.shiftDone()) {
-            val shift = findSpecialKey(root, "shift")
+            val shift = findSpecialKey(keyboardRoot, "shift")
             if (shift == null) {
                 show("🧪 EXPERIMENT", listOf(
                     "⌨️ Keyboard visible",
@@ -237,7 +237,7 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
         }
 
         val ch = phrase[index]
-        val key = findLetterKey(root, ch)
+        val key = findLetterKey(keyboardRoot, ch)
         if (key == null) {
             show("🧪 EXPERIMENT", listOf(
                 "⌨️ Keyboard readable",
