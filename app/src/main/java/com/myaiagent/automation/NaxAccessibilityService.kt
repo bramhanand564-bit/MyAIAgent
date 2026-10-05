@@ -48,52 +48,6 @@ class NaxAccessibilityService : AccessibilityService() {
         startWatchdog()
     }
 
-    private fun handleTapDiagnostic(): Boolean {
-        val diagnostic = TapDiagnosticStore(this)
-        if (!diagnostic.isActive()) return false
-        return runCatching {
-            val root = rootInActiveWindow ?: return@runCatching true
-            if (root.packageName?.toString().orEmpty() != packageName) return@runCatching true
-            when (diagnostic.step()) {
-            0 -> {
-                val target = findDiagnosticNode(root, "TAP TARGET")
-                if (target != null) {
-                    val accepted = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    diagnostic.log("NODE_CLICK requested • accepted=" + accepted)
-                    diagnostic.setStep(if (accepted) 1 else 99)
-                } else diagnostic.log("NODE_CLICK target not found")
-            }
-            1 -> if (findDiagnosticNode(root, "NODE TAP SUCCESS") != null) {
-                diagnostic.log("NODE_CLICK verified")
-                diagnostic.setStep(2)
-            }
-            2 -> {
-                val target = findDiagnosticNode(root, "GESTURE TARGET")
-                if (target != null) {
-                    val bounds = android.graphics.Rect()
-                    target.getBoundsInScreen(bounds)
-                    if (!bounds.isEmpty && bounds.width() >= 4 && bounds.height() >= 4) {
-                        val x = bounds.centerX().toFloat()
-                        val y = bounds.centerY().toFloat()
-                        val accepted = dispatchTap(x, y)
-                        diagnostic.log("GESTURE requested • accepted=" + accepted + " • x=" + x + " y=" + y)
-                        diagnostic.setStep(if (accepted) 3 else 99)
-                    } else diagnostic.log("GESTURE target has invalid bounds")
-                } else diagnostic.log("GESTURE target not found")
-            }
-            3 -> if (findDiagnosticNode(root, "GESTURE TAP SUCCESS") != null) {
-                diagnostic.log("GESTURE verified")
-                diagnostic.finish(true, "Both tap methods passed")
-            }
-            99 -> diagnostic.finish(false, "Tap diagnostic failed")
-            }
-            true
-        }.getOrElse { error ->
-            diagnostic.finish(false, "Diagnostic exception: " + (error.message ?: error.javaClass.simpleName))
-            true
-        }
-    }
-
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // The real tap test is fully isolated from YouTube/session automation.
         if (realTapTestEngine.onAccessibilityEvent(event)) return
