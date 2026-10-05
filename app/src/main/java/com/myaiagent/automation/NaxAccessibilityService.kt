@@ -130,6 +130,19 @@ class NaxAccessibilityService : AccessibilityService() {
                 }
 
                 testLog("Native YouTube Studio screen is active.")
+
+                // The Test Workflow already has the exact source URI. If the
+                // Workspace hand-off was accepted by Studio, skip Create/picker
+                // and start directly from the details screen once it is visible.
+                if (sessionStore.directMediaHandoffAttempted() &&
+                    looksLikeUploadDetailsScreen(root)
+                ) {
+                    testLog("Direct selected-video handoff verified • skipping Create and picker.")
+                    sessionStore.setState(AutomationState.FILL_DETAILS)
+                    driveState(item, root)
+                    return
+                }
+
                 sessionStore.setState(AutomationState.FIND_CREATE)
                 driveState(item, root)
             }
@@ -693,6 +706,22 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun isEmbedded(item: UploadItem): Boolean =
         item.automationMode == "EMBEDDED_WEB"
+
+    private fun looksLikeUploadDetailsScreen(root: AccessibilityNodeInfo): Boolean {
+        val titleLabels = listOf("Title", "Add a title", "Video title", "Enter a title", "Add title")
+        val actionLabels = listOf(
+            "Visibility",
+            "Who can see this video",
+            "Privacy",
+            "Next",
+            "Continue",
+            "Upload",
+            "Upload video",
+            "Publish"
+        )
+        return fieldExists(root, titleLabels) &&
+            containsAny(root, actionLabels)
+    }
 
     private fun fieldExists(root: AccessibilityNodeInfo, labels: List<String>): Boolean =
         findNode(root, labels)?.let {
