@@ -50,9 +50,10 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun handleTapDiagnostic(): Boolean {
         val diagnostic = TapDiagnosticStore(this)
         if (!diagnostic.isActive()) return false
-        val root = rootInActiveWindow ?: return true
-        if (root.packageName?.toString().orEmpty() != packageName) return true
-        when (diagnostic.step()) {
+        return runCatching {
+            val root = rootInActiveWindow ?: return@runCatching true
+            if (root.packageName?.toString().orEmpty() != packageName) return@runCatching true
+            when (diagnostic.step()) {
             0 -> {
                 val target = findDiagnosticNode(root, "TAP TARGET")
                 if (target != null) {
@@ -84,8 +85,12 @@ class NaxAccessibilityService : AccessibilityService() {
                 diagnostic.finish(true, "Both tap methods passed")
             }
             99 -> diagnostic.finish(false, "Tap diagnostic failed")
+            }
+            true
+        }.getOrElse { error ->
+            diagnostic.finish(false, "Diagnostic exception: " + (error.message ?: error.javaClass.simpleName))
+            true
         }
-        return true
     }
 
     private fun findDiagnosticNode(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
@@ -103,9 +108,13 @@ class NaxAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || !::sessionStore.isInitialized) return
+        if (event == null) return
 
+        // Diagnostics are independent from an upload session. They must work even
+        // when the automation session store has not been initialized yet.
         if (handleTapDiagnostic()) return
+
+        if (!::sessionStore.isInitialized) return
 
         val itemId = sessionStore.itemId() ?: return
         if (::floatingCursor.isInitialized && !floatingCursor.isShown()) {
@@ -1602,7 +1611,7 @@ class NaxAccessibilityService : AccessibilityService() {
     private fun dispatchTap(x: Float, y: Float): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
         if (::floatingCursor.isInitialized) {
-            floatingCursor.showAt(x, y, "👆 tapping here")
+            runCatching { floatingCursor.showAt(x, y, "👆 tapping here") }
         }
         val path = android.graphics.Path().apply { moveTo(x, y) }
         val gesture = android.accessibilityservice.GestureDescription.Builder()
@@ -1616,16 +1625,16 @@ class NaxAccessibilityService : AccessibilityService() {
             .build()
         val accepted = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                floatingCursor.setMessage("✓ checking result")
+                if (::floatingCursor.isInitialized) runCatching { floatingCursor.setMessage("✓ checking result") }
                 testLog("Gesture tap completed • x=$x y=$y")
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                floatingCursor.setMessage("× tap cancelled • retrying")
+                if (::floatingCursor.isInitialized) runCatching { floatingCursor.setMessage("× tap cancelled • retrying") }
                 testLog("Gesture tap cancelled • x=$x y=$y")
             }
         }, handler)
         if (!accepted) {
-            floatingCursor.setMessage("× tap rejected • retrying")
+            if (::floatingCursor.isInitialized) runCatching { floatingCursor.setMessage("× tap rejected • retrying") }
             testLog("Gesture tap rejected • x=$x y=$y")
         }
         return accepted
