@@ -31,6 +31,8 @@ class RealTapTestStore(context: Context) {
             .putString("targetPackage", targetPackage)
             .putLong("startedAt", System.currentTimeMillis())
             .putBoolean("success", false)
+            .putLong("manualPauseSince", 0L)
+            .putLong("manualPausedMs", 0L)
             .remove("message")
             .remove("events")
             .apply()
@@ -56,6 +58,37 @@ class RealTapTestStore(context: Context) {
 
     fun targetPackage() = prefs.getString("targetPackage", "com.android.chrome").orEmpty()
     fun startedAt() = prefs.getLong("startedAt", 0L)
+
+    fun manualPauseSince() = prefs.getLong("manualPauseSince", 0L)
+    fun isManualPaused() = manualPauseSince() > 0L
+    fun manualPause(reason: String) {
+        if (!isManualPaused()) {
+            prefs.edit()
+                .putLong("manualPauseSince", System.currentTimeMillis())
+                .apply()
+            log("PAUSE • manual action required • $reason")
+        }
+    }
+
+    fun clearManualPause() {
+        val since = manualPauseSince()
+        if (since > 0L) {
+            val now = System.currentTimeMillis()
+            val added = (now - since).coerceAtLeast(0L)
+            prefs.edit()
+                .putLong("manualPausedMs", prefs.getLong("manualPausedMs", 0L) + added)
+                .putLong("manualPauseSince", 0L)
+                .apply()
+            log("RESUME • manual interruption cleared")
+        }
+    }
+
+    fun activeElapsedMs(): Long {
+        val now = System.currentTimeMillis()
+        val pausedNow = if (manualPauseSince() > 0L) now - manualPauseSince() else 0L
+        return (now - startedAt() - prefs.getLong("manualPausedMs", 0L) - pausedNow)
+            .coerceAtLeast(0L)
+    }
 
     fun log(message: String) {
         val items = runCatching {
