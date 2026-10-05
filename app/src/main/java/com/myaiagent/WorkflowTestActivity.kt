@@ -211,8 +211,6 @@ class WorkflowTestActivity : AppCompatActivity() {
             return
         }
 
-        testStarted = true
-
         if (AutomationSessionStore(this).isActive()) {
             Toast.makeText(this, "Another automation run is active. Finish it first.", Toast.LENGTH_LONG).show()
             return
@@ -230,10 +228,10 @@ class WorkflowTestActivity : AppCompatActivity() {
         val added = queueStore.add(testItem, allowDuplicateUri = true)
         if (!added) {
             Toast.makeText(this, "Could not add the test video to the queue", Toast.LENGTH_LONG).show()
-            testStarted = false
             return
         }
         selectedItem = testItem
+        testStarted = true
 
         testStore.start(testItem)
         runButton.isEnabled = false
