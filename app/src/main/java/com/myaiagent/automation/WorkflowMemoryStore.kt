@@ -27,6 +27,15 @@ class WorkflowMemoryStore(context: Context) {
         node: AccessibilityNodeInfo,
         nextState: String? = null
     ) {
+        // This is only a candidate. AgentVerifiedMemoryStore promotes it to
+        // learned memory after a verified automation state transition.
+        AgentVerifiedMemoryStore(appContext).rememberCandidate(
+            packageName = packageName,
+            state = state,
+            action = "UI_TARGET",
+            target = logicalLabel
+        )
+
         val key = key(packageName, state, logicalLabel)
         val data = load()
         val existing = data.optJSONObject(key) ?: JSONObject()
