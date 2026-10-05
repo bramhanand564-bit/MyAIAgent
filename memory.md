@@ -393,3 +393,12 @@ After installing the latest successful main build:
 - Fixed missing agent-core imports in AiMindActivity.
 - Fixed AgentVerifiedMemoryStore JSON promotion to avoid invalid JSONObject constructor usage.
 - These fixes address the compile errors reported by Android Build run 380.
+
+
+### Video Evidence — 1000278620.mp4
+- Device recording shows the Google Photos media picker opening successfully.
+- The visible NAX cursor incorrectly remained on **STEP 2 • Verify Create** while the picker was already open.
+- Root cause: the automation state machine waited for an intermediate Create-menu verification even though the authorized picker had already become the active window.
+- Fix: when an active session detects a supported media picker early, normalize directly to **WAITING_FOR_PICKER** and continue the normal exact-file selection/verification flow.
+- Additional picker-media detection bug fixed: the candidate matching string was accidentally omitting the node's text value.
+- The flow must still select the exact queued video, verify selection, then press Open/Done; it must never select an arbitrary visible thumbnail.
