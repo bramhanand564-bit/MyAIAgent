@@ -26,9 +26,10 @@ class NaxAccessibilityService : AccessibilityService() {
     private var pickerVisualInFlight = false
     private var lastVisionRequestAt = 0L
     private val visionExecutor = Executors.newSingleThreadExecutor()
+    private val agentExecutor = Executors.newSingleThreadExecutor()
     private val agentLoop = AgentLoop()
-    private var agentScreenshotInFlight = false
-    private var agentAiInFlight = false
+    @Volatile private var agentScreenshotInFlight = false
+    @Volatile private var agentAiInFlight = false
 
     private val maxAttemptsPerState = 5
     private val sessionTimeoutMs = 10 * 60 * 1000L
@@ -85,6 +86,7 @@ class NaxAccessibilityService : AccessibilityService() {
         retryRunnable?.let(handler::removeCallbacks)
         watchdogRunnable?.let(handler::removeCallbacks)
         visionExecutor.shutdownNow()
+        agentExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -505,9 +507,10 @@ class NaxAccessibilityService : AccessibilityService() {
                     }
 
                     agentAiInFlight = true
+                    agentScreenshotInFlight = false
                     observations.markAiAt(now)
 
-                    visionExecutor.execute {
+                    agentExecutor.execute {
                         val memory = buildString {
                             val verified = AgentVerifiedMemoryStore(
                                 this@NaxAccessibilityService
@@ -529,25 +532,26 @@ class NaxAccessibilityService : AccessibilityService() {
                         val item = queueStore.load()
                             .firstOrNull { it.id == sessionStore.itemId() }
 
-                        val decision = if (item != null) {
-                            GeminiVisionAgent(
-                                settings.apiKey,
-                                settings.model
-                            ).analyze(
-                                bitmap = bitmap,
-                                currentState = state,
-                                itemTitle = item.title.ifBlank { item.fileName },
-                                visibility = item.visibility,
-                                targetFileName = item.fileName,
-                                memoryContext = memory
-                            )
-                        } else {
-                            null
-                        }
+                        val decision = runCatching {
+                            if (item == null) {
+                                null
+                            } else {
+                                GeminiVisionAgent(
+                                    settings.apiKey,
+                                    settings.model
+                                ).analyze(
+                                    bitmap = bitmap,
+                                    currentState = state,
+                                    itemTitle = item.title.ifBlank { item.fileName },
+                                    visibility = item.visibility,
+                                    targetFileName = item.fileName,
+                                    memoryContext = memory
+                                )
+                            }
+                        }.getOrNull()
 
                         handler.post {
                             agentAiInFlight = false
-                            agentScreenshotInFlight = false
 
                             if (decision == null) {
                                 bitmap.recycle()
