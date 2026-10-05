@@ -29,6 +29,7 @@ class NaxAccessibilityService : AccessibilityService() {
     private val agentExecutor = Executors.newSingleThreadExecutor()
     private val agentLoop = AgentLoop()
     private lateinit var floatingCursor: NaxFloatingCursor
+    private val realTapTestEngine = RealTapTestEngine(this)
     @Volatile private var agentScreenshotInFlight = false
     @Volatile private var agentAiInFlight = false
 
@@ -93,26 +94,9 @@ class NaxAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun findDiagnosticNode(root: AccessibilityNodeInfo, label: String): AccessibilityNodeInfo? {
-        val wanted = label.trim().lowercase()
-        val pending = ArrayDeque<AccessibilityNodeInfo>()
-        pending.add(root)
-        while (pending.isNotEmpty()) {
-            val node = pending.removeFirst()
-            val text = node.text?.toString()?.trim()?.lowercase().orEmpty()
-            val description = node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
-            if (text == wanted || description == wanted || text.contains(wanted) || description.contains(wanted)) return node
-            for (i in 0 until node.childCount) node.getChild(i)?.let(pending::addLast)
-        }
-        return null
-    }
-
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null) return
-
-        // Diagnostics are independent from an upload session. They must work even
-        // when the automation session store has not been initialized yet.
-        if (handleTapDiagnostic()) return
+        // The real tap test is fully isolated from YouTube/session automation.
+        if (realTapTestEngine.onAccessibilityEvent(event)) return
 
         if (!::sessionStore.isInitialized) return
 
