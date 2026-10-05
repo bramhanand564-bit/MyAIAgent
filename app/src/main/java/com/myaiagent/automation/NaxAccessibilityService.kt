@@ -23,6 +23,7 @@ class NaxAccessibilityService : AccessibilityService() {
     private var retryRunnable: Runnable? = null
     private var watchdogRunnable: Runnable? = null
     private var visionInFlight = false
+    private var pickerVisualInFlight = false
     private var lastVisionRequestAt = 0L
     private val visionExecutor = Executors.newSingleThreadExecutor()
 
@@ -166,6 +167,14 @@ class NaxAccessibilityService : AccessibilityService() {
                         sessionStore.markPickerSelectionPending()
                         testLog("Video row tapped in picker; waiting for selection confirmation: " + item.fileName)
                         scheduleRetry(item)
+                        return
+                    }
+
+                    // Google/Android Photo Picker often exposes only generic media
+                    // accessibility descriptions, not the original filename. Before blind
+                    // scrolling, match the exact queued video's thumbnail against the visible
+                    // picker grid and tap that cell.
+                    if (requestPickerVisualMatch(item, root)) {
                         return
                     }
 
@@ -452,6 +461,242 @@ class NaxAccessibilityService : AccessibilityService() {
             it.isEditable || it.className?.toString()?.contains("EditText") == true
         } == true
 
+    private fun requestPickerVisualMatch(item: UploadItem, root: AccessibilityNodeInfo): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || pickerVisualInFlight) return false
+
+        val packageName = root.packageName?.toString().orEmpty()
+        if (!isDocumentPicker(packageName)) return false
+
+        val candidateBounds = collectPickerMediaBounds(root)
+        if (candidateBounds.isEmpty()) return false
+
+        pickerVisualInFlight = true
+        testLog("Photo Picker target not exposed by filename • starting local thumbnail match for " + item.fileName)
+
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            visionExecutor,
+            object : TakeScreenshotCallback {
+                override fun onSuccess(screenshot: ScreenshotResult) {
+                    val bitmap = runCatching {
+                        Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
+                    }.getOrNull()
+
+                    runCatching { screenshot.hardwareBuffer.close() }
+
+                    if (bitmap == null) {
+                        pickerVisualInFlight = false
+                        handler.post { testLog("Photo Picker screenshot unavailable; returning to normal picker retry.") }
+                        return
+                    }
+
+                    visionExecutor.execute {
+                        val targetFrames = loadTargetVideoFrames(item.uri)
+                        val match = if (targetFrames.isNotEmpty()) {
+                            findBestPickerMatch(bitmap, candidateBounds, targetFrames)
+                        } else null
+
+                        targetFrames.forEach { frame ->
+                            if (!frame.isRecycled) frame.recycle()
+                        }
+                        if (!bitmap.isRecycled) bitmap.recycle()
+
+                        handler.post {
+                            pickerVisualInFlight = false
+                            if (match != null && match.score >= 0.70f) {
+                                val x = match.bounds.centerX().toFloat()
+                                val y = match.bounds.centerY().toFloat()
+                                if (dispatchTap(x, y)) {
+                                    sessionStore.markPickerSelectionPending()
+                                    testLog(
+                                        "Local thumbnail match selected target video • score=" +
+                                            String.format(Locale.US, "${match.score}") +
+                                            " • x=$x y=$y"
+                                    )
+                                    scheduleRetry(item)
+                                    return@post
+                                }
+                            }
+
+                            if (match != null) {
+                                testLog(
+                                    "Local thumbnail match was ambiguous/weak • score=" +
+                                        String.format(Locale.US, "${match.score}")
+                                )
+                            } else {
+                                testLog("Local thumbnail match found no reliable target in the visible picker grid.")
+                            }
+                        }
+                    }
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    pickerVisualInFlight = false
+                    handler.post {
+                        testLog("Photo Picker screenshot failed • code=$errorCode")
+                    }
+                }
+            }
+        )
+        return true
+    }
+
+    private data class PickerVisualMatch(
+        val bounds: android.graphics.Rect,
+        val score: Float
+    )
+
+    private fun collectPickerMediaBounds(root: AccessibilityNodeInfo): List<android.graphics.Rect> {
+        val result = mutableListOf<android.graphics.Rect>()
+        val pending = ArrayDeque<AccessibilityNodeInfo>()
+        pending.add(root)
+
+        while (pending.isNotEmpty()) {
+            val node = pending.removeFirst()
+            val text = node.text?.toString().orEmpty().lowercase(Locale.getDefault())
+            val desc = node.contentDescription?.toString().orEmpty().lowercase(Locale.getDefault())
+            val combined = "$" + "text $desc"
+            val looksLikeMedia = combined.contains("media") ||
+                combined.contains("video taken on") ||
+                combined.contains("photo taken on") ||
+                combined.contains("duration")
+
+            val bounds = android.graphics.Rect()
+            node.getBoundsInScreen(bounds)
+            val validBounds = !bounds.isEmpty &&
+                bounds.width() >= 48 &&
+                bounds.height() >= 48 &&
+                bounds.width() <= 700 &&
+                bounds.height() <= 700 &&
+                bounds.top > 120
+
+            if (looksLikeMedia && validBounds && (node.isClickable || desc.contains("media") || desc.contains("video"))) {
+                if (result.none { r -> r == bounds }) result.add(android.graphics.Rect(bounds))
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let(pending::addLast)
+            }
+        }
+
+        return result.distinctBy { r -> "${r.left},${r.top},${r.right},${r.bottom}" }.take(80)
+    }
+
+    private fun loadTargetVideoFrames(uriString: String): List<Bitmap> {
+        val uri = runCatching { android.net.Uri.parse(uriString) }.getOrNull() ?: return emptyList()
+        val retriever = android.media.MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(this, uri)
+            val durationUs = retriever.extractMetadata(
+                android.media.MediaMetadataRetriever.METADATA_KEY_DURATION
+            )?.toLongOrNull()?.times(1000L) ?: 0L
+
+            val positions = listOf(
+                0L,
+                (durationUs / 4L).coerceAtLeast(1L),
+                (durationUs / 2L).coerceAtLeast(1L)
+            ).distinct()
+
+            positions.mapNotNull { position ->
+                runCatching {
+                    retriever.getFrameAtTime(
+                        position,
+                        android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
+                }.getOrNull()
+            }
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun findBestPickerMatch(
+        screenshot: Bitmap,
+        candidates: List<android.graphics.Rect>,
+        targetFrames: List<Bitmap>
+    ): PickerVisualMatch? {
+        var best: PickerVisualMatch? = null
+
+        for (bounds in candidates) {
+            if (bounds.right > screenshot.width || bounds.bottom > screenshot.height) continue
+
+            val left = bounds.left.coerceAtLeast(0)
+            val top = bounds.top.coerceAtLeast(0)
+            val width = bounds.width().coerceAtMost(screenshot.width - left)
+            val height = bounds.height().coerceAtMost(screenshot.height - top)
+            if (width < 8 || height < 8) continue
+
+            val crop = runCatching {
+                Bitmap.createBitmap(screenshot, left, top, width, height)
+            }.getOrNull() ?: continue
+
+            val score = targetFrames.maxOfOrNull { frame ->
+                bitmapSimilarity(crop, frame)
+            } ?: 0f
+
+            crop.recycle()
+
+            if (best == null || score > best!!.score) {
+                best = PickerVisualMatch(android.graphics.Rect(bounds), score)
+            }
+        }
+
+        return best
+    }
+
+    private fun bitmapSimilarity(a: Bitmap, b: Bitmap): Float {
+        val size = 32
+        val aa = centerSquare(a)
+        val bb = centerSquare(b)
+        val ra = Bitmap.createScaledBitmap(aa, size, size, true)
+        val rb = Bitmap.createScaledBitmap(bb, size, size, true)
+
+        var total = 0L
+        var count = 0
+        val pa = IntArray(size * size)
+        val pb = IntArray(size * size)
+        ra.getPixels(pa, 0, size, 0, 0, size, size)
+        rb.getPixels(pb, 0, size, 0, 0, size, size)
+
+        for (i in pa.indices) {
+            val ca = pa[i]
+            val cb = pb[i]
+            val ar = (ca shr 16) and 0xff
+            val ag = (ca shr 8) and 0xff
+            val ab = ca and 0xff
+            val br = (cb shr 16) and 0xff
+            val bg = (cb shr 8) and 0xff
+            val bbv = cb and 0xff
+
+            val x = i % size
+            val y = i / size
+            if (x in 3 until size - 3 && y in 3 until size - 3) {
+                total += kotlin.math.abs(ar - br) +
+                    kotlin.math.abs(ag - bg) +
+                    kotlin.math.abs(ab - bbv)
+                count += 3 * 255
+            }
+        }
+
+        if (!ra.isRecycled) ra.recycle()
+        if (!rb.isRecycled) rb.recycle()
+        if (!aa.isRecycled && aa !== a) aa.recycle()
+        if (!bb.isRecycled && bb !== b) bb.recycle()
+
+        return 1f - (total.toFloat() / count.toFloat()).coerceIn(0f, 1f)
+    }
+
+    private fun centerSquare(source: Bitmap): Bitmap {
+        val side = minOf(source.width, source.height)
+        val left = (source.width - side) / 2
+        val top = (source.height - side) / 2
+        return if (left == 0 && top == 0 && side == source.width && side == source.height) {
+            source
+        } else {
+            Bitmap.createBitmap(source, left, top, side, side)
+        }
+    }
+
     private fun clickFileIfVisible(root: AccessibilityNodeInfo, fileName: String): Boolean {
         val base = fileName.substringBeforeLast('.')
         val node = findNode(root, listOf(fileName, base)) ?: return false
@@ -506,7 +751,25 @@ class NaxAccessibilityService : AccessibilityService() {
 
     private fun isFileSelectionConfirmed(root: AccessibilityNodeInfo, fileName: String): Boolean {
         val base = fileName.substringBeforeLast('.')
-        val node = findNode(root, listOf(fileName, base)) ?: return false
+        val node = findNode(root, listOf(fileName, base))
+
+        // Android Photo Picker does not have to expose the original filename.
+        // Its accessibility semantics expose a generic "Selected" state and
+        // a confirmation button after a media tile is selected.
+        if (node == null && isDocumentPicker(root.packageName?.toString().orEmpty())) {
+            val selected = containsAny(root, listOf("Selected"))
+            val action = findNode(root, listOf("Done", "Add", "Open", "Select"))
+            if (selected && action != null) {
+                var candidate: AccessibilityNodeInfo? = action
+                repeat(4) {
+                    if (candidate == null) return@repeat
+                    if (candidate!!.isEnabled && candidate!!.isClickable) return true
+                    candidate = candidate!!.parent
+                }
+            }
+        }
+
+        if (node == null) return false
 
         // Native picker implementations vary. Accept any explicit selected/checked state
         // on the file node or a nearby ancestor.
