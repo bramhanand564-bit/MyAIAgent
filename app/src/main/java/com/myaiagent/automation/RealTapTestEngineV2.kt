@@ -382,8 +382,12 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
 
         val width = service.resources.displayMetrics.widthPixels
         val height = service.resources.displayMetrics.heightPixels
-        if (x < 1f || y < 1f || x >= width - 1f || y >= height - 1f) {
-            store.log("GESTURE • $label blocked • coordinates outside display")
+        val density = service.resources.displayMetrics.density
+        // Keep injected taps away from Android's gesture/navigation edge. A bad or
+        // stale coordinate must fail the test rather than become a system Back/Home gesture.
+        val edge = (28f * density).toInt()
+        if (x < edge || y < edge || x >= width - edge || y >= height - edge) {
+            store.log("GESTURE • $label blocked • navigation-edge coordinate")
             done(false)
             return
         }
