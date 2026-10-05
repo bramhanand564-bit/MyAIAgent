@@ -66,7 +66,14 @@ class AgentVerifiedMemoryStore(context: Context) {
             val expected = candidate.optString("expectedNextState")
             if (expected.isNotBlank() && expected != toState.name) continue
 
-            entries.put(JSONObject(candidate).apply {
+            entries.put(JSONObject().apply {
+                put("package", candidate.optString("package"))
+                put("state", candidate.optString("state"))
+                put("action", candidate.optString("action"))
+                put("target", candidate.optString("target"))
+                put("value", candidate.optString("value"))
+                put("expectedNextState", candidate.optString("expectedNextState"))
+                put("createdAt", candidate.optLong("createdAt"))
                 put("verified", true)
                 put("verifiedAt", now)
                 put("verifiedNextState", toState.name)
