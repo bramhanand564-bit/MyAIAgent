@@ -128,8 +128,8 @@ class RealTapTestActivity : AppCompatActivity() {
         val target = candidates.firstNotNullOfOrNull { pkg ->
             runCatching {
                 packageManager.getLaunchIntentForPackage(pkg)?.apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    setPackage(pkg)
+                    // Keep the test controller in the same task. Chrome/Google is
+                    // foreground during the test; no NEW_TASK handoff is needed.
                 }
             }.getOrNull()?.let { pkg to it }
         }
