@@ -28,8 +28,8 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
     fun onAccessibilityEvent(event: AccessibilityEvent?): Boolean {
         if (!store.isActive() || stopped) return false
         try {
-            if (System.currentTimeMillis() - store.startedAt() > 60_000L) {
-                finish(false, "Test timed out")
+            if (store.activeElapsedMs() > 60_000L) {
+                finish(false, "Test timed out after 60s of active interaction")
                 return true
             }
 
@@ -40,6 +40,21 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
                 return true
             }
 
+            val interruption = UiInterruptionDetector.detect(root)
+            if (interruption.type != UiInterruptionDetector.Type.NONE) {
+                store.manualPause(interruption.label)
+                show("🔐 MANUAL ACTION", listOf(
+                    "⏸ Automation paused safely",
+                    "Detected: ${interruption.label}",
+                    "NAX will not bypass it",
+                    "Next: complete it manually"
+                ))
+                capture("manual interruption")
+                schedule(900L)
+                return true
+            } else if (store.isManualPaused()) {
+                store.clearManualPause()
+            }
             when (store.step()) {
                 RealTapTestStore.STEP_WAIT_APP -> waitForApp(root)
                 RealTapTestStore.STEP_FIND_SEARCH -> findSearch(root)
@@ -349,8 +364,8 @@ class RealTapTestEngineV2(private val service: AccessibilityService) {
         if (queryVisible) {
             capture("results verified")
             finish(true, "Real tap + keyboard test passed")
-        } else if (System.currentTimeMillis() - store.startedAt() > 45_000L) {
-            finish(false, "Search results could not be verified")
+        } else if (store.activeElapsedMs() > 45_000L) {
+            finish(false, "Search results could not be verified after 45s of active interaction")
         } else {
             schedule(900L)
         }
