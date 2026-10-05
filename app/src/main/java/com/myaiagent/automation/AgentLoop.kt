@@ -43,9 +43,6 @@ class AgentLoop(
         }
     }
 
-    fun intervalMs(): Long = intervalMs
-
-    fun isRunning(): Boolean = running
 
     fun stop() {
         running = false
