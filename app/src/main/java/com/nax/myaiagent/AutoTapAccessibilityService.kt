@@ -68,6 +68,8 @@ class AutoTapAccessibilityService : AccessibilityService() {
         val duration = p.getInt("duration", 0).coerceAtLeast(0)
         val maxTaps = p.getInt("maxTaps", 0).coerceAtLeast(0)
         val jitter = p.getInt("jitter", 0).coerceAtLeast(0)
+        val pressDuration = p.getInt("pressDuration", 1).coerceIn(1, 10000)
+        val intervalJitter = p.getInt("intervalJitter", 0).coerceAtLeast(0)
         running = true; tapCount = 0; startedAt = 0L
         publish("WAITING")
         handler.removeCallbacksAndMessages(null)
@@ -75,11 +77,11 @@ class AutoTapAccessibilityService : AccessibilityService() {
             if (!running) return@postDelayed
             startedAt = System.currentTimeMillis()
             publish("RUNNING")
-            scheduleNext(x, y, interval, duration, maxTaps, jitter)
+            scheduleNext(x, y, interval, duration, maxTaps, jitter, pressDuration, intervalJitter)
         }, delay * 1000L)
     }
 
-    private fun scheduleNext(x: Int, y: Int, interval: Long, duration: Int, maxTaps: Int, jitter: Int) {
+    private fun scheduleNext(x: Int, y: Int, interval: Long, duration: Int, maxTaps: Int, jitter: Int, pressDuration: Int, intervalJitter: Int) {
         if (!running) return
         if (duration > 0 && System.currentTimeMillis() - startedAt >= duration * 1000L) { stopTapping(); return }
         if (maxTaps > 0 && tapCount >= maxTaps) { stopTapping(); return }
@@ -90,7 +92,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
         val ty = (y + jy).coerceIn(0, dm.heightPixels - 1)
         val path = Path().apply { moveTo(tx.toFloat(), ty.toFloat()) }
         val gesture = GestureDescription.Builder().addStroke(
-            GestureDescription.StrokeDescription(path, 0, 1)
+            GestureDescription.StrokeDescription(path, 0, pressDuration.toLong().coerceAtLeast(1L))
         ).build()
         val ok = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) {
@@ -98,15 +100,16 @@ class AutoTapAccessibilityService : AccessibilityService() {
                 tapCount++
                 sendBroadcast(Intent(MainActivity.ACTION_TAP_COUNT).setPackage(packageName).putExtra("count",tapCount))
                 if (maxTaps > 0 && tapCount >= maxTaps) { stopTapping(); return }
-                handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval)
+                val nextDelay = (interval + if (intervalJitter > 0) Random.nextLong(-intervalJitter.toLong(), intervalJitter.toLong() + 1) else 0L).coerceAtLeast(50L)
+                handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter,pressDuration,intervalJitter) }, nextDelay)
             }
             override fun onCancelled(g: GestureDescription?) {
-                if (running) handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval)
+                if (running) handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter,pressDuration,intervalJitter) }, interval.coerceAtLeast(50L))
             }
         }, null)
         if (!ok) {
             publish("GESTURE FAILED")
-            handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval.coerceAtLeast(250L))
+            handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter,pressDuration,intervalJitter) }, interval.coerceAtLeast(250L))
         }
     }
 
