@@ -141,3 +141,17 @@ The repository is intentionally being reset to a memory-first state:
 - Hardened AccessibilityService manifest binding with system-bindable exported service configuration.
 - Hardened gesture duration constructor and explicit interrupt override implementation.
 - Build remains pending a fresh GitHub Actions run; do not mark APK as verified until the new run passes.
+
+### Build Verification — October 6, 2026
+- A-to-Z source/config scan was performed against the complete current main-branch tree.
+- GitHub Actions run #472 exposed four real Kotlin compile errors:
+  - missing `onAccessibilityEvent` implementation in `AutoTapAccessibilityService`
+  - stats fields were typed as `TextView` while `stat()` returned `LinearLayout`
+  - `SeekBar.max` assignment was shadowed by the `max` parameter
+  - interval slider used its offset progress as the actual millisecond value
+- Fixed all four issues.
+- Added elapsed-time telemetry from the AccessibilityService to the main UI.
+- Added safer receiver registration state tracking and display-dimension guards.
+- Refreshed the CI Java action to `actions/setup-java@v5`.
+- GitHub Actions run #475 completed successfully: Debug APK build succeeded and the APK artifact upload succeeded.
+- Latest verified main commit: `dd679fbc7a111cc34c1d6008c3ee6a5faa7cf1af`.
