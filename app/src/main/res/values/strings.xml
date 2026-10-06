@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">NAX Auto Tapper</string>
+    <string name="accessibility_description">NAX Auto Tapper performs repeated user-configured taps on the screen after the user enables the AccessibilityService.</string>
+</resources>
