@@ -155,3 +155,13 @@ The repository is intentionally being reset to a memory-first state:
 - Refreshed the CI Java action to `actions/setup-java@v5`.
 - GitHub Actions run #475 completed successfully: Debug APK build succeeded and the APK artifact upload succeeded.
 - Latest verified main commit: `dd679fbc7a111cc34c1d6008c3ee6a5faa7cf1af`.
+
+### Runtime Test Diagnosis — October 7, 2026
+- User test video showed NAX Auto Tapper Accessibility service enabled, status RUNNING, elapsed time increasing, but TAPS remained 0.
+- Root cause found in the A-to-Z code/config scan: the accessibility-service XML did not declare the `canPerformGestures` capability required by `dispatchGesture()`.
+- Additional reliability issue found: the default 1 ms gesture duration was too aggressive for a normal tap on some Android devices.
+- Fixed the service configuration with `android:canPerformGestures="true"`.
+- Normal tap now uses Android's tap timeout (with a safe minimum) instead of 1 ms; custom press durations remain supported.
+- Gesture-unavailable and gesture-cancelled paths now stop the session and expose a real failure state instead of silently retrying forever.
+- GitHub Actions run #478 passed: Debug APK build succeeded and APK artifact upload succeeded.
+- Latest functional code commit: `78bbd717b86c22217e342ebfb4707c076597baf4`.
