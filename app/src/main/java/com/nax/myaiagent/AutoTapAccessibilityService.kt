@@ -20,7 +20,6 @@ class AutoTapAccessibilityService : AccessibilityService() {
     private var running = false
     private var tapCount = 0
     private var startedAt = 0L
-    private var config = Runnable { }
     private var markerView: MarkerView? = null
     private var markerParams: WindowManager.LayoutParams? = null
     private val windowManager by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
@@ -92,7 +91,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
         val ty = (y + jy).coerceIn(0, dm.heightPixels - 1)
         val path = Path().apply { moveTo(tx.toFloat(), ty.toFloat()) }
         val gesture = GestureDescription.Builder().addStroke(
-            GestureDescription.StrokeDescription(path, 0, pressDuration.toLong().coerceAtLeast(1L))
+            GestureDescription.StrokeDescription(path, 0L, pressDuration.toLong().coerceAtLeast(1L))
         ).build()
         val ok = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) {
@@ -124,7 +123,9 @@ class AutoTapAccessibilityService : AccessibilityService() {
         sendBroadcast(Intent(MainActivity.ACTION_STATUS).setPackage(packageName).putExtra("value", value))
     }
 
-    override fun onInterrupt() = stopTapping()
+    override fun onInterrupt() {
+        stopTapping()
+    }
 
     private fun showMarker() {
         if (markerView != null || !android.provider.Settings.canDrawOverlays(this)) return
