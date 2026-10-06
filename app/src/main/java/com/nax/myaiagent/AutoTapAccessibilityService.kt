@@ -97,10 +97,11 @@ class AutoTapAccessibilityService : AccessibilityService() {
                 if (!running) return
                 tapCount++
                 sendBroadcast(Intent(MainActivity.ACTION_TAP_COUNT).setPackage(packageName).putExtra("count",tapCount))
+                if (maxTaps > 0 && tapCount >= maxTaps) { stopTapping(); return }
                 handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval)
             }
             override fun onCancelled(g: GestureDescription?) {
-                if (running) handler.postDelayed({ scheduleNext(x,y,interval,duration) }, interval)
+                if (running) handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval)
             }
         }, null)
         if (!ok) {
