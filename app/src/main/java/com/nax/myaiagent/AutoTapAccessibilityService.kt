@@ -13,6 +13,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.ViewConfiguration
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -97,7 +98,12 @@ class AutoTapAccessibilityService : AccessibilityService() {
         val duration = p.getInt("duration", 0).coerceAtLeast(0)
         val maxTaps = p.getInt("maxTaps", 0).coerceAtLeast(0)
         val jitter = p.getInt("jitter", 0).coerceAtLeast(0)
-        val pressDuration = p.getInt("pressDuration", 1).coerceIn(1, 10000)
+        val configuredPressDuration = p.getInt("pressDuration", 1).coerceIn(1, 10000)
+        val pressDuration = if (configuredPressDuration <= 1) {
+            ViewConfiguration.getTapTimeout().toLong().coerceAtLeast(40L)
+        } else {
+            configuredPressDuration.toLong()
+        }
         val intervalJitter = p.getInt("intervalJitter", 0).coerceAtLeast(0)
 
         running = true
@@ -172,7 +178,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
                 GestureDescription.StrokeDescription(
                     path,
                     0L,
-                    pressDuration.toLong().coerceAtLeast(1L)
+                    pressDuration.coerceAtLeast(1L)
                 )
             )
             .build()
@@ -218,15 +224,8 @@ class AutoTapAccessibilityService : AccessibilityService() {
 
                 override fun onCancelled(gesture: GestureDescription?) {
                     if (running) {
-                        handler.postDelayed(
-                            {
-                                scheduleNext(
-                                    x, y, interval, duration, maxTaps,
-                                    jitter, pressDuration, intervalJitter
-                                )
-                            },
-                            interval.coerceAtLeast(50L)
-                        )
+                        publish("GESTURE CANCELLED", System.currentTimeMillis() - startedAt)
+                        stopTapping()
                     }
                 }
             },
