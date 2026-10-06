@@ -135,3 +135,9 @@ The repository is intentionally being reset to a memory-first state:
 - Added Tap count limit: 0 means unlimited.
 - Added Press duration: 1 ms behaves as a normal tap; longer values provide a long-press style gesture.
 - Added Random interval: optional ±millisecond variation, clamped to a safe minimum interval.
+
+### Build Fix — October 2026
+- GitHub Actions screenshot showed Kotlin compilation failure before APK upload.
+- Hardened AccessibilityService manifest binding with system-bindable exported service configuration.
+- Hardened gesture duration constructor and explicit interrupt override implementation.
+- Build remains pending a fresh GitHub Actions run; do not mark APK as verified until the new run passes.
