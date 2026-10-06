@@ -14,7 +14,6 @@ import android.os.Handler
 import android.os.Looper
 import kotlin.math.roundToInt
 import kotlin.random.Random
-import kotlin.math.roundToInt
 
 class AutoTapAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
@@ -44,9 +43,18 @@ class AutoTapAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        registerReceiver(receiver, IntentFilter().apply {
-            addAction(MainActivity.ACTION_START); addAction(MainActivity.ACTION_STOP)
-        }, RECEIVER_NOT_EXPORTED)
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, IntentFilter().apply {
+                addAction(MainActivity.ACTION_START); addAction(MainActivity.ACTION_STOP)
+                addAction(ACTION_SHOW_MARKER); addAction(ACTION_HIDE_MARKER)
+            }, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, IntentFilter().apply {
+                addAction(MainActivity.ACTION_START); addAction(MainActivity.ACTION_STOP)
+                addAction(ACTION_SHOW_MARKER); addAction(ACTION_HIDE_MARKER)
+            })
+        }
         publish("READY")
     }
 
@@ -58,20 +66,29 @@ class AutoTapAccessibilityService : AccessibilityService() {
         val interval = p.getLong("interval", 500L).coerceAtLeast(50L)
         val delay = p.getInt("delay", 0).coerceAtLeast(0)
         val duration = p.getInt("duration", 0).coerceAtLeast(0)
-        running = true; tapCount = 0; startedAt = System.currentTimeMillis()
+        val maxTaps = p.getInt("maxTaps", 0).coerceAtLeast(0)
+        val jitter = p.getInt("jitter", 0).coerceAtLeast(0)
+        running = true; tapCount = 0; startedAt = 0L
         publish("WAITING")
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({
             if (!running) return@postDelayed
+            startedAt = System.currentTimeMillis()
             publish("RUNNING")
-            scheduleNext(x, y, interval, duration)
+            scheduleNext(x, y, interval, duration, maxTaps, jitter)
         }, delay * 1000L)
     }
 
-    private fun scheduleNext(x: Int, y: Int, interval: Long, duration: Int) {
+    private fun scheduleNext(x: Int, y: Int, interval: Long, duration: Int, maxTaps: Int, jitter: Int) {
         if (!running) return
         if (duration > 0 && System.currentTimeMillis() - startedAt >= duration * 1000L) { stopTapping(); return }
-        val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
+        if (maxTaps > 0 && tapCount >= maxTaps) { stopTapping(); return }
+        val dm = resources.displayMetrics
+        val jx = if (jitter > 0) Random.nextInt(-jitter, jitter + 1) else 0
+        val jy = if (jitter > 0) Random.nextInt(-jitter, jitter + 1) else 0
+        val tx = (x + jx).coerceIn(0, dm.widthPixels - 1)
+        val ty = (y + jy).coerceIn(0, dm.heightPixels - 1)
+        val path = Path().apply { moveTo(tx.toFloat(), ty.toFloat()) }
         val gesture = GestureDescription.Builder().addStroke(
             GestureDescription.StrokeDescription(path, 0, 1)
         ).build()
@@ -80,7 +97,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
                 if (!running) return
                 tapCount++
                 sendBroadcast(Intent(MainActivity.ACTION_TAP_COUNT).setPackage(packageName).putExtra("count",tapCount))
-                handler.postDelayed({ scheduleNext(x,y,interval,duration) }, interval)
+                handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval)
             }
             override fun onCancelled(g: GestureDescription?) {
                 if (running) handler.postDelayed({ scheduleNext(x,y,interval,duration) }, interval)
@@ -88,7 +105,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
         }, null)
         if (!ok) {
             publish("GESTURE FAILED")
-            handler.postDelayed({ scheduleNext(x,y,interval,duration) }, interval.coerceAtLeast(250L))
+            handler.postDelayed({ scheduleNext(x,y,interval,duration,maxTaps,jitter) }, interval.coerceAtLeast(250L))
         }
     }
 
@@ -125,7 +142,9 @@ class AutoTapAccessibilityService : AccessibilityService() {
                 else -> false
             }
         }}
-        markerView=view; markerParams=params; windowManager.addView(view,params)
+        markerView=view; markerParams=params
+        runCatching { windowManager.addView(view,params) }
+            .onFailure { markerView=null; markerParams=null; publish("OVERLAY FAILED") }
     }
 
     private fun hideMarker() { markerView?.let { runCatching { windowManager.removeView(it) } }; markerView=null; markerParams=null }
