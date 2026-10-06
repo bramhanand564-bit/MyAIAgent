@@ -126,3 +126,12 @@ The repository is intentionally being reset to a memory-first state:
 - Marker movement broadcasts the updated coordinates back to the main UI.
 - RESET stops tapping and hides the floating marker.
 - This provides a direct point-selection path for the real AccessibilityService tap engine.
+
+### Auto Tapper — Milestone 3
+- Fixed Android receiver compatibility for API 26+ and repaired floating-marker command registration.
+- Fixed tap-limit handling so the service stops immediately after the configured number of completed taps.
+- Fixed duration measurement so the configured duration begins when RUNNING starts, not during the start-delay period.
+- Added Random jitter: optional ±pixel variation around the base point.
+- Added Tap count limit: 0 means unlimited.
+- Added Press duration: 1 ms behaves as a normal tap; longer values provide a long-press style gesture.
+- Added Random interval: optional ±millisecond variation, clamped to a safe minimum interval.
