@@ -4,10 +4,17 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.*
 import android.graphics.Path
+import android.graphics.Color
+import android.graphics.PixelFormat
+import android.view.Gravity
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
 import android.os.Handler
 import android.os.Looper
 import kotlin.math.roundToInt
 import kotlin.random.Random
+import kotlin.math.roundToInt
 
 class AutoTapAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
@@ -15,13 +22,24 @@ class AutoTapAccessibilityService : AccessibilityService() {
     private var tapCount = 0
     private var startedAt = 0L
     private var config = Runnable { }
+    private var markerView: MarkerView? = null
+    private var markerParams: WindowManager.LayoutParams? = null
+    private val windowManager by lazy { getSystemService(WINDOW_SERVICE) as WindowManager }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 MainActivity.ACTION_START -> startTapping()
                 MainActivity.ACTION_STOP -> stopTapping()
+                ACTION_SHOW_MARKER -> showMarker()
+                ACTION_HIDE_MARKER -> hideMarker()
             }
         }
+    }
+
+    companion object {
+        const val ACTION_SHOW_MARKER = "com.nax.myaiagent.SHOW_MARKER"
+        const val ACTION_HIDE_MARKER = "com.nax.myaiagent.HIDE_MARKER"
+        const val ACTION_POINT_CHANGED = "com.nax.myaiagent.POINT_CHANGED"
     }
 
     override fun onServiceConnected() {
@@ -87,9 +105,38 @@ class AutoTapAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() = stopTapping()
 
+    private fun showMarker() {
+        if (markerView != null || !android.provider.Settings.canDrawOverlays(this)) return
+        val p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE)
+        val dm = resources.displayMetrics
+        val x = p.getInt("x", dm.widthPixels / 2)
+        val y = p.getInt("y", dm.heightPixels / 2)
+        val size = (44 * dm.density).roundToInt()
+        val params = WindowManager.LayoutParams(
+            size, size, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply { gravity = Gravity.TOP or Gravity.START; this.x = x - size / 2; this.y = y - size / 2 }
+        val view = MarkerView().also { it.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { it.downX=e.rawX; it.downY=e.rawY; it.startX=params.x; it.startY=params.y; true }
+                MotionEvent.ACTION_MOVE -> { params.x=it.startX+(e.rawX-it.downX).roundToInt(); params.y=it.startY+(e.rawY-it.downY).roundToInt(); windowManager.updateViewLayout(it,params); true }
+                MotionEvent.ACTION_UP -> { val cx=params.x+size/2; val cy=params.y+size/2; p.edit().putInt("x",cx).putInt("y",cy).apply(); sendBroadcast(Intent(ACTION_POINT_CHANGED).setPackage(packageName).putExtra("x",cx).putExtra("y",cy)); true }
+                else -> false
+            }
+        }}
+        markerView=view; markerParams=params; windowManager.addView(view,params)
+    }
+
+    private fun hideMarker() { markerView?.let { runCatching { windowManager.removeView(it) } }; markerView=null; markerParams=null }
+
     override fun onDestroy() {
-        stopTapping()
-        runCatching { unregisterReceiver(receiver) }
-        super.onDestroy()
+        stopTapping(); hideMarker(); runCatching { unregisterReceiver(receiver) }; super.onDestroy()
+    }
+
+    private inner class MarkerView : View(this) {
+        var downX=0f; var downY=0f; var startX=0; var startY=0
+        private val paint=android.graphics.Paint(1)
+        override fun onDraw(c:android.graphics.Canvas){ paint.style=android.graphics.Paint.Style.STROKE;paint.strokeWidth=4f;paint.color=Color.WHITE;c.drawCircle(width/2f,height/2f,14f,paint);paint.style=android.graphics.Paint.Style.FILL;paint.color=Color.rgb(0,122,255);c.drawCircle(width/2f,height/2f,7f,paint) }
     }
 }
