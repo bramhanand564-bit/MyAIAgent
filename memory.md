@@ -119,3 +119,10 @@ The repository is intentionally being reset to a memory-first state:
 - CI workflow added at `.github/workflows/build.yml` to build a debug APK and upload it as an artifact.
 - This module is user-authorized automation only. It must not bypass CAPTCHA, login/security verification, rate limits, or account protections.
 - Next Auto Tapper upgrades: draggable floating on-screen marker for external apps, multi-point sequences, long-press, per-point delays, repeat cycles, random jitter/interval, presets/history, package restriction, foreground-state verification, emergency stop.
+
+### Auto Tapper — Milestone 2
+- Added Android floating target marker support using user-granted overlay permission.
+- Marker is draggable over other apps and writes its exact screen X/Y position to the shared configuration.
+- Marker movement broadcasts the updated coordinates back to the main UI.
+- RESET stops tapping and hides the floating marker.
+- This provides a direct point-selection path for the real AccessibilityService tap engine.
