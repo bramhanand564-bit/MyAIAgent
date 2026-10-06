@@ -31,6 +31,8 @@ class MainActivity : Activity() {
     private lateinit var interval: SeekBar
     private lateinit var delay: SeekBar
     private lateinit var duration: SeekBar
+    private lateinit var maxTaps: SeekBar
+    private lateinit var jitter: SeekBar
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -53,16 +55,25 @@ class MainActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        registerReceiver(receiver, IntentFilter().apply {
+        registerReceiverCompat(receiver, IntentFilter().apply {
             addAction(ACTION_TAP_COUNT); addAction(ACTION_STATUS); addAction(AutoTapAccessibilityService.ACTION_POINT_CHANGED)
-        }, RECEIVER_NOT_EXPORTED)
+        })
         renderPoint()
         status.text = if (isAccessibilityEnabled()) "READY • ACCESSIBILITY ON" else "READY • ENABLE ACCESSIBILITY"
     }
 
     override fun onStop() {
-        unregisterReceiver(receiver)
+        runCatching { unregisterReceiver(receiver) }
         super.onStop()
+    }
+
+    private fun registerReceiverCompat(receiver: BroadcastReceiver, filter: IntentFilter) {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, filter)
+        }
     }
 
     private fun buildUi() {
@@ -116,6 +127,8 @@ class MainActivity : Activity() {
         interval = slider(content, "Interval", 50, 5000, 500) { "$it ms" }
         delay = slider(content, "Start delay", 0, 30, 1) { "$it s" }
         duration = slider(content, "Duration", 0, 300, 0) { if (it == 0) "0 = Unlimited" else "$it s" }
+        maxTaps = slider(content, "Tap count", 0, 10000, 0) { if (it == 0) "0 = Unlimited" else it.toString() }
+        jitter = slider(content, "Random jitter", 0, 30, 0) { if (it == 0) "Off" else "±$it px" }
 
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val start = action("START", blue)
@@ -170,7 +183,8 @@ class MainActivity : Activity() {
         val y = yInput.text.toString().toIntOrNull()?.coerceIn(0, dm.heightPixels) ?: 0
         getSharedPreferences(PREFS,0).edit()
             .putInt("x",x).putInt("y",y).putLong("interval",interval.progress.toLong())
-            .putInt("delay",delay.progress).putInt("duration",duration.progress).apply()
+            .putInt("delay",delay.progress).putInt("duration",duration.progress)
+            .putInt("maxTaps", maxTaps.progress).putInt("jitter", jitter.progress).apply()
         sendBroadcast(Intent(action).setPackage(packageName))
         status.text = if (isAccessibilityEnabled()) "STARTING…" else "ENABLE ACCESSIBILITY FIRST"
     }
@@ -178,7 +192,7 @@ class MainActivity : Activity() {
     private fun setDefaults() {
         val dm = resources.displayMetrics
         xInput.setText((dm.widthPixels/2).toString()); yInput.setText((dm.heightPixels/2).toString())
-        interval.progress = 500; delay.progress = 1; duration.progress = 0; renderPoint()
+        interval.progress = 500; delay.progress = 1; duration.progress = 0; maxTaps.progress = 0; jitter.progress = 0; renderPoint()
         taps.text="0"; elapsed.text="0s"
     }
 
