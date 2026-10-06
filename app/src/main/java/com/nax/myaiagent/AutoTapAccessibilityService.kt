@@ -99,7 +99,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
         val maxTaps = p.getInt("maxTaps", 0).coerceAtLeast(0)
         val jitter = p.getInt("jitter", 0).coerceAtLeast(0)
         val configuredPressDuration = p.getInt("pressDuration", 1).coerceIn(1, 10000)
-        val pressDuration = if (configuredPressDuration <= 1) {
+        val pressDuration: Long = if (configuredPressDuration <= 1) {
             ViewConfiguration.getTapTimeout().toLong().coerceAtLeast(40L)
         } else {
             configuredPressDuration.toLong()
@@ -133,7 +133,7 @@ class AutoTapAccessibilityService : AccessibilityService() {
         duration: Int,
         maxTaps: Int,
         jitter: Int,
-        pressDuration: Int,
+        pressDuration: Long,
         intervalJitter: Int
     ) {
         if (!running) return
