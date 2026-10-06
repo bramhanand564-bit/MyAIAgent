@@ -108,3 +108,14 @@ The repository is intentionally being reset to a memory-first state:
 - Never introduce YouTube Data API upload automation.
 - Keep project changes on main.
 - Prefer fixing the observed root cause over adding random retries.
+
+## Auto Tapper — Milestone 1 (October 2026)
+- Added Apple-inspired mobile UI prototype in `autotapper-ui.html`.
+- Added clean Android app foundation under `app/`.
+- Main controls: X/Y screen point, interval (50–5000 ms), start delay (0–30 s), duration (0 = unlimited), START, STOP, RESET, live tap counter.
+- Target preview lets the user choose a point; the app converts the normalized preview position to the physical display dimensions.
+- Real tapping engine uses Android `AccessibilityService.dispatchGesture()` after the user explicitly enables the service.
+- Service supports repeated taps, interval scheduling, duration cutoff, tap counting, STOP, and interruption cleanup.
+- CI workflow added at `.github/workflows/build.yml` to build a debug APK and upload it as an artifact.
+- This module is user-authorized automation only. It must not bypass CAPTCHA, login/security verification, rate limits, or account protections.
+- Next Auto Tapper upgrades: draggable floating on-screen marker for external apps, multi-point sequences, long-press, per-point delays, repeat cycles, random jitter/interval, presets/history, package restriction, foreground-state verification, emergency stop.
