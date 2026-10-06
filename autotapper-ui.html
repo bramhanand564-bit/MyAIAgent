@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAX Auto Tapper</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif;color:#111;background:#f5f5f7}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(180deg,#f8f8fa,#eef0f4)}
+.wrap{max-width:520px;margin:auto;padding:22px 18px 34px}.top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+h1{font-size:30px;letter-spacing:-1.2px;margin:0}.sub{color:#777;font-size:14px;margin-top:4px}
+.status{padding:8px 12px;border-radius:999px;background:#e9e9ed;font-size:12px;font-weight:700}.status.on{background:#d9f8e5;color:#137a42}
+.card{background:rgba(255,255,255,.86);border:1px solid #e4e4e8;border-radius:22px;padding:18px;margin:12px 0;box-shadow:0 8px 28px rgba(0,0,0,.05)}
+.stage{height:250px;border-radius:18px;background:#16171a;position:relative;overflow:hidden;touch-action:none}
+.grid{position:absolute;inset:0;background-image:linear-gradient(#fff1 1px,transparent 1px),linear-gradient(90deg,#fff1 1px,transparent 1px);background-size:25px 25px}
+.marker{width:28px;height:28px;border:3px solid white;border-radius:50%;position:absolute;transform:translate(-50%,-50%);box-shadow:0 0 0 8px #007aff55;transition:left .12s,top .12s}
+.marker:after{content:"";position:absolute;inset:7px;border-radius:50%;background:#007aff}
+.hint{position:absolute;left:14px;bottom:12px;color:#bbb;font-size:12px}
+.row{display:flex;gap:10px}.field{flex:1}.label{font-size:12px;color:#777;margin:0 0 7px 3px}.input{width:100%;border:0;outline:0;background:#f0f0f3;border-radius:14px;padding:13px;font-size:16px}
+.range{width:100%;accent-color:#007aff}.value{float:right;font-weight:700;color:#333}
+.actions{display:flex;gap:10px;margin-top:14px}.btn{flex:1;border:0;border-radius:15px;padding:14px;font-size:16px;font-weight:700}.start{background:#007aff;color:#fff}.stop{background:#e9e9ed;color:#111}.reset{background:#f2f2f4;color:#555}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{background:#f2f2f5;border-radius:16px;padding:13px}.num{font-size:22px;font-weight:750}.cap{font-size:11px;color:#777;margin-top:2px}
+.note{font-size:12px;line-height:1.45;color:#777;text-align:center;margin-top:16px}
+</style></head>
+<body><main class="wrap">
+<div class="top"><div><h1>Auto Tapper</h1><div class="sub">NAX • Simple & precise</div></div><div id="status" class="status">READY</div></div>
+<section class="card"><div class="label">TAP TARGET</div><div id="stage" class="stage"><div class="grid"></div><div id="marker" class="marker" style="left:50%;top:50%"></div><div class="hint">Tap anywhere to set the point</div></div></section>
+<section class="card">
+<div class="row"><div class="field"><div class="label">X</div><input id="x" class="input" type="number" value="50"></div><div class="field"><div class="label">Y</div><input id="y" class="input" type="number" value="50"></div></div>
+<div style="margin-top:16px"><div class="label">Interval <span id="ivv" class="value">500 ms</span></div><input id="iv" class="range" type="range" min="50" max="5000" step="50" value="500"></div>
+<div style="margin-top:16px"><div class="label">Start delay <span id="dv" class="value">1 s</span></div><input id="delay" class="range" type="range" min="0" max="30" value="1"></div>
+<div style="margin-top:16px"><div class="label">Duration <span id="durv" class="value">0 = Unlimited</span></div><input id="dur" class="range" type="range" min="0" max="300" value="0"></div>
+<div class="actions"><button id="start" class="btn start">START</button><button id="stop" class="btn stop">STOP</button><button id="reset" class="btn reset">RESET</button></div>
+</section>
+<section class="card"><div class="stats"><div class="stat"><div id="count" class="num">0</div><div class="cap">TAPS</div></div><div class="stat"><div id="elapsed" class="num">0s</div><div class="cap">ELAPSED</div></div><div class="stat"><div id="point" class="num">50,50</div><div class="cap">POINT</div></div></div></section>
+<div class="note">Prototype UI only. Real Android tapping will use user-authorized AccessibilityService controls and must not bypass CAPTCHA, login or security protections.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id),stage=$("stage"),marker=$("marker"),status=$("status");let timer=null,startTime=0,taps=0;
+function setPoint(px,py){marker.style.left=px+"%";marker.style.top=py+"%";$("x").value=Math.round(px);$("y").value=Math.round(py);$("point").textContent=Math.round(px)+","+Math.round(py)}
+stage.addEventListener("pointerdown",e=>{const r=stage.getBoundingClientRect();setPoint((e.clientX-r.left)/r.width*100,(e.clientY-r.top)/r.height*100)});
+$("iv").oninput=e=>$("ivv").textContent=e.target.value+" ms";
+$("delay").oninput=e=>$("dv").textContent=e.target.value+" s";
+$("dur").oninput=e=>$("durv").textContent=e.target.value==0?"0 = Unlimited":e.target.value+" s";
+$("x").onchange=e=>setPoint(Math.max(0,Math.min(100,+e.target.value||0)),+$("y").value||0);
+$("y").onchange=e=>setPoint(+$("x").value||0,Math.max(0,Math.min(100,+e.target.value||0)));
+$("start").onclick=()=>{if(timer)return;status.textContent="WAITING";status.className="status on";taps=0;$("count").textContent=0;startTime=Date.now();setTimeout(()=>{if(timer)return;status.textContent="RUNNING";timer=setInterval(()=>{taps++;$("count").textContent=taps;$("elapsed").textContent=Math.floor((Date.now()-startTime)/1000)+"s";const dur=+$("dur").value;if(dur&&Date.now()-startTime>=dur*1000)stop()},+$("iv").value)},+$("delay").value*1000)};
+function stop(){clearInterval(timer);timer=null;status.textContent="STOPPED";status.className="status";$("elapsed").textContent=Math.floor((Date.now()-startTime)/1000)+"s"}
+$("stop").onclick=stop;
+$("reset").onclick=()=>{stop();setPoint(50,50);$("iv").value=500;$("ivv").textContent="500 ms";$("delay").value=1;$("dv").textContent="1 s";$("dur").value=0;$("durv").textContent="0 = Unlimited";$("count").textContent=0;$("elapsed").textContent="0s";status.textContent="READY"};
+</script></body></html>
