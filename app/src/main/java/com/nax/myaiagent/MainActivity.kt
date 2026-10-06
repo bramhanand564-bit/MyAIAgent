@@ -36,6 +36,7 @@ class MainActivity : Activity() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
                 ACTION_TAP_COUNT -> taps.text = intent.getIntExtra("count", 0).toString()
+                AutoTapAccessibilityService.ACTION_POINT_CHANGED -> { xInput.setText(intent.getIntExtra("x",0).toString()); yInput.setText(intent.getIntExtra("y",0).toString()); renderPoint() }
                 ACTION_STATUS -> {
                     val value = intent.getStringExtra("value") ?: "READY"
                     status.text = value
@@ -53,7 +54,7 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         registerReceiver(receiver, IntentFilter().apply {
-            addAction(ACTION_TAP_COUNT); addAction(ACTION_STATUS)
+            addAction(ACTION_TAP_COUNT); addAction(ACTION_STATUS); addAction(AutoTapAccessibilityService.ACTION_POINT_CHANGED)
         }, RECEIVER_NOT_EXPORTED)
         renderPoint()
         status.text = if (isAccessibilityEnabled()) "READY • ACCESSIBILITY ON" else "READY • ENABLE ACCESSIBILITY"
@@ -134,6 +135,15 @@ class MainActivity : Activity() {
         }
         content.addView(card(stats, -2))
 
+        val markerBtn = action("SHOW FLOATING TARGET", Color.WHITE).apply {
+            setTextColor(blue)
+            setOnClickListener {
+                if (android.provider.Settings.canDrawOverlays(this@MainActivity)) sendBroadcast(Intent(AutoTapAccessibilityService.ACTION_SHOW_MARKER).setPackage(packageName))
+                else startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")))
+            }
+        }
+        content.addView(card(markerBtn, -2))
+
         val enable = action("OPEN ACCESSIBILITY SETTINGS", Color.WHITE).apply {
             setTextColor(blue)
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
@@ -148,7 +158,7 @@ class MainActivity : Activity() {
 
         start.setOnClickListener { sendConfig(ACTION_START) }
         stop.setOnClickListener { sendBroadcast(Intent(ACTION_STOP).setPackage(packageName)) }
-        reset.setOnClickListener { setDefaults(); sendBroadcast(Intent(ACTION_STOP).setPackage(packageName)) }
+        reset.setOnClickListener { setDefaults(); sendBroadcast(Intent(ACTION_STOP).setPackage(packageName)); sendBroadcast(Intent(AutoTapAccessibilityService.ACTION_HIDE_MARKER).setPackage(packageName)) }
 
         scroll.addView(content); root.addView(scroll); setContentView(root)
         setDefaults()
