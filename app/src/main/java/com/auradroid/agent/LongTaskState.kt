@@ -47,6 +47,19 @@ object LongTaskStore {
     private const val PREFS = "auradroid_long_tasks"
     private const val KEY_ACTIVE = "active_task"
 
+    fun begin(context: Context, goal: String): LongTaskState {
+        val prior = get(context)
+        val state = LongTaskState(
+            id = "${System.currentTimeMillis()}",
+            goal = goal,
+            status = LongTaskState.Status.RUNNING,
+            progress = 0,
+            currentStep = "Starting"
+        )
+        save(context, state)
+        return state
+    }
+
     fun get(context: Context): LongTaskState? = runCatching {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_ACTIVE, null)
         if (raw.isNullOrBlank()) null else LongTaskState.fromJson(JSONObject(raw))
