@@ -366,15 +366,23 @@ object GeminiBrain {
             CURRENT SCREEN UI ELEMENTS (Index | Text | ContentDesc | ViewId | Editable | Clickable | CenterXY):
             $screenSummary
             
+            CRITICAL TAP SAFETY RULES:
+            - Prefer CLICK_NODE for all buttons and controls. The screen summary contains node indices and their exact centers; select the node that semantically matches the intended action.
+            - Never guess coordinates, never reuse coordinates from a previous screen, and NEVER use the default center of the screen as a tap target.
+            - For WhatsApp messaging: after typing/pasting the requested message, inspect the CURRENT screen again. Find the actual Send button/icon using its text, content description, viewId and screenshot. Tap only that current Send control. Do NOT tap a previous chat message, video thumbnail, attachment, or any content in the conversation.
+            - If the Send control cannot be confidently identified, return WAIT and explain that the Send button is unclear; do not tap.
+            - Do not repeat a tap unless the next screen confirms the previous action did not occur.
+            - If required information is missing, ask for clarification rather than acting.
+            
             Available actions:
             - "CLICK_NODE": Click a specific UI node by its nodeIndex.
-            - "CLICK_XY": Tap exact screen coordinates (x, y) (especially useful if you see an unlabeled icon in the screenshot).
+            - "CLICK_XY": Tap coordinates ONLY when the intended target is visibly identified in the current screenshot AND there is no matching accessibility node. Never guess.
             - "TYPE": Type text into an editable field (specify nodeIndex and textToType).
             - "SCROLL": Scroll down to see more settings or options.
             - "BACK": Press Android Back button.
             - "OPEN_APP": Open an Android System Setting or App directly. Set appPackageOrSetting to one of:
                 "SETTINGS", "BATTERY", "WIFI", "DISPLAY", "STORAGE", "SOUND", "BLUETOOTH", "APPS", or a package name like "com.whatsapp", "com.android.chrome", "com.google.android.youtube".
-            - "WAIT": Wait 3 seconds if screen is loading.
+            - "WAIT": Wait 3 seconds if screen is loading or the correct target cannot be identified safely.
             - "DONE": Goal is completely finished.
             
             Return strictly valid JSON:
@@ -396,8 +404,8 @@ object GeminiBrain {
             AgentDecision(
                 action = obj.optString("action", "WAIT").uppercase(),
                 nodeIndex = obj.optInt("nodeIndex", -1),
-                x = obj.optDouble("x", 540.0).toFloat(),
-                y = obj.optDouble("y", 1000.0).toFloat(),
+                x = obj.optDouble("x", -1.0).toFloat(),
+                y = obj.optDouble("y", -1.0).toFloat(),
                 textToType = obj.optString("textToType", ""),
                 appPackageOrSetting = obj.optString("appPackageOrSetting", ""),
                 reason = obj.optString("reason", "Proceeding")
