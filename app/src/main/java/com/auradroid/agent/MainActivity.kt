@@ -391,6 +391,8 @@ class MainActivity : AppCompatActivity() {
             saveSettings()
             val h = etHour.text.toString().toIntOrNull()?.coerceIn(0, 23) ?: 18
             val m = etMinute.text.toString().toIntOrNull()?.coerceIn(0, 59) ?: 0
+            getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+                .edit().putBoolean("daily_schedule_enabled", true).apply()
             TaskSchedulerReceiver.scheduleDailyUpload(this, h, m)
             VideoQueueManager.appendLog(
                 this,
