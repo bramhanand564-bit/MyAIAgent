@@ -722,7 +722,7 @@ class AutoTouchService : AccessibilityService() {
                         userGoal.contains("three-dot", true) ||
                         userGoal.contains("more options", true) ||
                         userGoal.contains("overflow menu", true)
-                    val overflowNode = if (asksForOverflowMenu) {
+                    val overflowNode = if (asksForOverflowMenu && history.none { it.contains("clicked current visible menu control") }) {
                         nodes.filter { it.isClickable || it.node.isClickable }
                             .filter {
                                 val label = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}".lowercase()
