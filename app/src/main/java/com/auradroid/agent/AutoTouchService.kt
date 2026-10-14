@@ -715,7 +715,40 @@ class AutoTouchService : AccessibilityService() {
                         break
                     }
 
-                    executeDecision(decision, nodes)
+                    // Deterministic menu handling: if the user explicitly asks for the
+                    // three-dot/overflow menu, prefer the live accessibility node over AI XY guesses.
+                    val asksForOverflowMenu = userGoal.contains("three dot", true) ||
+                        userGoal.contains("3 dot", true) ||
+                        userGoal.contains("three-dot", true) ||
+                        userGoal.contains("more options", true) ||
+                        userGoal.contains("overflow menu", true)
+                    val overflowNode = if (asksForOverflowMenu) {
+                        nodes.filter { it.isClickable || it.node.isClickable }
+                            .filter {
+                                val label = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}".lowercase()
+                                (label.contains("more options") || label.contains("overflow") ||
+                                 label.contains("menu") || label.contains("more")) &&
+                                !label.contains("more messages")
+                            }
+                            .sortedBy {
+                                val label = "${it.text} ${it.contentDesc} ${it.viewId}".lowercase()
+                                when {
+                                    label.contains("more options") -> 0
+                                    label.contains("overflow") -> 1
+                                    label.contains("menu") -> 2
+                                    else -> 3
+                                }
+                            }.firstOrNull()
+                    } else null
+
+                    if (overflowNode != null) {
+                        VideoQueueManager.appendLog(this@AutoTouchService,
+                            "🎯 Using live overflow/menu control at (${overflowNode.centerX.toInt()}, ${overflowNode.centerY.toInt()})")
+                        animateAndPhysicalTapNode(overflowNode, "Tap menu")
+                        history.add("Safety override: clicked current visible menu control")
+                    } else {
+                        executeDecision(decision, nodes)
+                    }
                     delay(stepDelay)
                 }
             } catch (e: Exception) {
