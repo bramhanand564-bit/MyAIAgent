@@ -42,7 +42,10 @@ class AiOverlayHud(private val context: Context) {
     private var compactRow: LinearLayout? = null
     private var tvPodTitle: TextView? = null
     private var tvPodSubtitle: TextView? = null
+    private var compactTextContainer: LinearLayout? = null
+    private var stopBadgeView: TextView? = null
     private var botAvatarView: SoftWhiteCompanionAvatar? = null
+    private var isTerminalStatus = false
 
     // Stage 2 & Stage 3 Views (Mini Pop-out & Full Screen Live Workspace)
     private var expandedContainer: LinearLayout? = null
@@ -193,11 +196,14 @@ class AiOverlayHud(private val context: Context) {
     fun updateStatus(stepBadge: String, detailMessage: String, mood: String = "WORKING") {
         mainHandler.post {
             if (isPodVisible && !isAdded) show()
-            pointerCanvasView?.setMood(mood)
+            val normalizedMood = mood.uppercase()
+            isTerminalStatus = normalizedMood in setOf("DONE", "SUCCESS", "COMPLETED", "FAILED", "ERROR", "STOPPED")
+            pointerCanvasView?.setMood(normalizedMood)
             tvPodTitle?.text = stepBadge
             tvPodSubtitle?.text = detailMessage
             tvExpandedStepInfo?.text = "$stepBadge • $detailMessage"
-            botAvatarView?.setMood(mood)
+            botAvatarView?.setMood(normalizedMood)
+            applyCompactStatusStyle()
         }
     }
 
@@ -295,6 +301,7 @@ class AiOverlayHud(private val context: Context) {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(dpToPx(175), LinearLayout.LayoutParams.WRAP_CONTENT)
         }
+        compactTextContainer = textCol
 
         tvPodTitle = TextView(context).apply {
             text = "AuraDroid Companion"
@@ -335,6 +342,7 @@ class AiOverlayHud(private val context: Context) {
                 AutoTouchService.instance?.stopCurrentJob()
             }
         }
+        stopBadgeView = stopBadge
         compactRow?.addView(stopBadge)
         root.addView(compactRow)
 
@@ -464,6 +472,40 @@ class AiOverlayHud(private val context: Context) {
         return root
     }
 
+    /** Working: show status pill. Terminal: leave only the small Baymax head. */
+    private fun applyCompactStatusStyle() {
+        mainHandler.post {
+            val root = podRootLayout ?: return@post
+            val avatar = botAvatarView ?: return@post
+            val terminal = isTerminalStatus
+            compactTextContainer?.visibility = if (terminal) View.GONE else View.VISIBLE
+            stopBadgeView?.visibility = if (terminal) View.GONE else View.VISIBLE
+            (avatar.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                params.width = dpToPx(if (terminal) 44 else 38)
+                params.height = dpToPx(if (terminal) 44 else 38)
+                params.marginEnd = dpToPx(if (terminal) 0 else 10)
+                avatar.layoutParams = params
+            }
+            root.setPadding(
+                if (terminal) 0 else dpToPx(12),
+                if (terminal) 0 else dpToPx(8),
+                if (terminal) 0 else dpToPx(12),
+                if (terminal) 0 else dpToPx(8)
+            )
+            root.background = if (terminal) {
+                android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
+            } else {
+                GradientDrawable().apply {
+                    setColor(Color.parseColor("#F2181A20"))
+                    cornerRadius = dpToPx(24).toFloat()
+                    setStroke(dpToPx(1), Color.parseColor("#334155"))
+                }
+            }
+            if (terminal && currentStage != 1) setPodStage(1)
+            root.requestLayout()
+        }
+    }
+
     private fun dpToPx(dp: Int): Int {
         return TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
@@ -514,14 +556,19 @@ class AiOverlayHud(private val context: Context) {
             paint.color = Color.parseColor("#F8FAFC")
             canvas.drawRoundRect(headRect, h * 0.42f, h * 0.42f, paint)
 
-            // Subtle border
+            val moodColor = when (mood) {
+                "DONE", "SUCCESS", "COMPLETED" -> Color.parseColor("#22C55E")
+                "ERROR", "FAILED", "STOPPED" -> Color.parseColor("#EF4444")
+                "THINKING", "PLANNING", "ANALYZING" -> Color.parseColor("#3B82F6")
+                "WAITING", "PAUSED" -> Color.parseColor("#F59E0B")
+                "TYPING", "CLICKING", "WORKING", "RUNNING" -> Color.parseColor("#06B6D4")
+                else -> Color.parseColor("#A78BFA")
+            }
+
+            // Subtle status-colored border
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2f
-            paint.color = when (mood) {
-                "DONE" -> Color.parseColor("#10B981")
-                "THINKING" -> Color.parseColor("#3B82F6")
-                else -> Color.parseColor("#CBD5E1")
-            }
+            paint.color = moodColor
             canvas.drawRoundRect(headRect, h * 0.42f, h * 0.42f, paint)
 
             // Gentle Connector Line Between Eyes
@@ -533,10 +580,10 @@ class AiOverlayHud(private val context: Context) {
             paint.color = Color.parseColor("#CBD5E1")
             canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
 
-            // Natural Blinking Dark Eyes
+            // Natural blinking eyes use the current task-state color.
             val isBlinking = sin(phase * 0.85f) > 0.93f
             paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#0F172A")
+            paint.color = moodColor
 
             if (isBlinking) {
                 paint.style = Paint.Style.STROKE
