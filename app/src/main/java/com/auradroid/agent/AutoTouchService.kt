@@ -153,6 +153,8 @@ class AutoTouchService : AccessibilityService() {
     }
 
     fun stopCurrentJob() {
+        LongTaskStore.cancel(this)
+        LongTaskForegroundService.stop(this)
         isJobRunning = false
         activeJob?.cancel()
         releaseWakeLock()
