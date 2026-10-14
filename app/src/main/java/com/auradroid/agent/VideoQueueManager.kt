@@ -110,6 +110,22 @@ object VideoQueueManager {
         MainActivity.onLogUpdated?.invoke(updated)
     }
 
+    fun saveApprovedPlan(context: Context, goal: String, steps: String) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString("approved_plan_goal", goal)
+            .putString("approved_plan_steps", steps)
+            .apply()
+    }
+
+    fun getApprovedPlan(context: Context): Pair<String, String> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return Pair(
+            prefs.getString("approved_plan_goal", "") ?: "",
+            prefs.getString("approved_plan_steps", "") ?: ""
+        )
+    }
+
     fun clearLogs(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val msg = "[System] Logs cleared."
