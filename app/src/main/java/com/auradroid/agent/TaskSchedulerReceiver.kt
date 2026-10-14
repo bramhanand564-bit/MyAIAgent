@@ -11,6 +11,15 @@ class TaskSchedulerReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
         val prefs = context.getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+        if (intent?.action == Intent.ACTION_BOOT_COMPLETED) {
+            if (prefs.getBoolean("daily_schedule_enabled", false)) {
+                val savedHour = prefs.getInt("sched_hour", 18).coerceIn(0, 23)
+                val savedMinute = prefs.getInt("sched_min", 0).coerceIn(0, 59)
+                scheduleDailyUpload(context, savedHour, savedMinute)
+                VideoQueueManager.appendLog(context, "⏰ Daily pipeline schedule restored after device reboot.")
+            }
+            return
+        }
         val apiKey = prefs.getString("api_key", "") ?: ""
         val model = prefs.getString("model_name", "gemini-2.5-flash") ?: "gemini-2.5-flash"
         val folderPath = prefs.getString("folder_path", "/storage/emulated/0/Download/AutoVideos") ?: ""
