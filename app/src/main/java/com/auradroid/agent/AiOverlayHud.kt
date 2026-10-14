@@ -193,6 +193,7 @@ class AiOverlayHud(private val context: Context) {
     fun updateStatus(stepBadge: String, detailMessage: String, mood: String = "WORKING") {
         mainHandler.post {
             if (isPodVisible && !isAdded) show()
+            pointerCanvasView?.setMood(mood)
             tvPodTitle?.text = stepBadge
             tvPodSubtitle?.text = detailMessage
             tvExpandedStepInfo?.text = "$stepBadge • $detailMessage"
@@ -570,6 +571,11 @@ class AiOverlayHud(private val context: Context) {
         private var rippleProgress = 0f
         private var blinkPhase = 0f
         private var currentLabel = ""
+        private var mood = "WORKING"
+        private var handVisible = false
+        private var hideHandRunnable: Runnable? = null
+
+        fun setMood(newMood: String) { mood = newMood.uppercase(); invalidate() }
 
         private var moveAnimator: ValueAnimator? = null
         private var rippleAnimator: ValueAnimator? = null
@@ -592,6 +598,10 @@ class AiOverlayHud(private val context: Context) {
             targetX = destX
             targetY = destY
             currentLabel = label
+            handVisible = true
+            hideHandRunnable?.let { removeCallbacks(it) }
+            hideHandRunnable = Runnable { handVisible = false; currentLabel = ""; invalidate() }
+            postDelayed(hideHandRunnable!!, 1100L)
 
             moveAnimator?.cancel()
             moveAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -622,11 +632,12 @@ class AiOverlayHud(private val context: Context) {
             removeCallbacks(ticker)
             moveAnimator?.cancel()
             rippleAnimator?.cancel()
+            hideHandRunnable?.let { removeCallbacks(it) }
         }
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            if (currentLabel.isEmpty()) return
+            if (!handVisible && currentLabel.isEmpty()) return
 
             getLocationOnScreen(screenOffset)
             val ox = screenOffset[0].toFloat()
@@ -646,36 +657,63 @@ class AiOverlayHud(private val context: Context) {
                 canvas.drawCircle(drawTargetX, drawTargetY, 16f + rippleProgress * 70f, paint)
             }
 
-            // 2. Soft-White Companion Head Cursor
-            val headRect = RectF(cx - 28f, cy - 22f, cx + 28f, cy + 22f)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, 22f, 22f, paint)
-
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 2.5f
-            paint.color = Color.parseColor("#334155")
-            canvas.drawRoundRect(headRect, 22f, 22f, paint)
-
-            // Connector Line & Blinking Dark Eyes
-            paint.strokeWidth = 2.2f
-            paint.color = Color.parseColor("#CBD5E1")
-            canvas.drawLine(cx - 10f, cy, cx + 10f, cy, paint)
-
-            val blinking = sin(blinkPhase) > 0.92f
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#0F172A")
-            if (blinking) {
+            // 2. Baymax-inspired white glove hand while an action is executing.
+            if (handVisible) {
+                val hand = Path().apply {
+                    moveTo(cx - 15f, cy + 20f)
+                    lineTo(cx - 19f, cy + 4f)
+                    cubicTo(cx - 21f, cy - 2f, cx - 17f, cy - 6f, cx - 13f, cy - 3f)
+                    lineTo(cx - 9f, cy + 3f)
+                    lineTo(cx - 9f, cy - 22f)
+                    cubicTo(cx - 9f, cy - 29f, cx, cy - 29f, cx, cy - 22f)
+                    lineTo(cx, cy - 8f)
+                    lineTo(cx + 3f, cy - 25f)
+                    cubicTo(cx + 4f, cy - 31f, cx + 12f, cy - 29f, cx + 11f, cy - 22f)
+                    lineTo(cx + 10f, cy - 5f)
+                    lineTo(cx + 14f, cy - 19f)
+                    cubicTo(cx + 16f, cy - 25f, cx + 23f, cy - 22f, cx + 21f, cy - 15f)
+                    lineTo(cx + 18f, cy + 2f)
+                    cubicTo(cx + 17f, cy + 15f, cx + 10f, cy + 22f, cx + 2f, cy + 23f)
+                    cubicTo(cx - 6f, cy + 24f, cx - 12f, cy + 23f, cx - 15f, cy + 20f)
+                    close()
+                }
+                paint.style = Paint.Style.FILL
+                paint.color = Color.parseColor("#F8FAFC")
+                canvas.drawPath(hand, paint)
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 3f
-                canvas.drawLine(cx - 14f, cy, cx - 6f, cy, paint)
-                canvas.drawLine(cx + 6f, cy, cx + 14f, cy, paint)
+                paint.strokeWidth = 2.2f
+                paint.color = Color.parseColor("#94A3B8")
+                canvas.drawPath(hand, paint)
             } else {
-                canvas.drawCircle(cx - 10f, cy, 4.2f, paint)
-                canvas.drawCircle(cx + 10f, cy, 4.2f, paint)
+                // Idle state: a small round companion dot, never a large notch/pill.
+                paint.style = Paint.Style.FILL
+                paint.color = Color.parseColor("#F8FAFC")
+                canvas.drawCircle(cx, cy, 13f, paint)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 2f
+                paint.color = Color.parseColor("#64748B")
+                canvas.drawCircle(cx, cy, 13f, paint)
+            }
+            val eyeColor = when (mood) {
+                "DONE", "SUCCESS", "COMPLETED" -> Color.parseColor("#10B981")
+                "ERROR", "FAILED", "STOPPED" -> Color.parseColor("#EF4444")
+                "THINKING", "PLANNING", "ANALYZING" -> Color.parseColor("#3B82F6")
+                "WAITING", "PAUSED" -> Color.parseColor("#F59E0B")
+                "TYPING", "CLICKING", "WORKING", "RUNNING" -> Color.parseColor("#06B6D4")
+                else -> Color.parseColor("#64748B")
+            }
+            paint.style = Paint.Style.FILL
+            paint.color = eyeColor
+            if (handVisible) {
+                canvas.drawCircle(cx - 4f, cy + 8f, 2.4f, paint)
+                canvas.drawCircle(cx + 4f, cy + 8f, 2.4f, paint)
+            } else {
+                canvas.drawCircle(cx - 4f, cy, 2.2f, paint)
+                canvas.drawCircle(cx + 4f, cy, 2.2f, paint)
             }
 
-            // 3. Clean Matte Slate Action Tag
+            // 3. Compact action label only during the brief tap animation.
+            if (!handVisible || currentLabel.isEmpty()) return
             val textWidth = textPaint.measureText(currentLabel)
             val tagLeft = (cx + 34f).coerceAtMost(width - textWidth - 36f).coerceAtLeast(16f)
             val tagTop = (cy - 20f).coerceAtLeast(60f)
