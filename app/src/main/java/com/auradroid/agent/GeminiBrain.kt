@@ -368,6 +368,8 @@ object GeminiBrain {
             
             CRITICAL TAP SAFETY RULES:
             - Prefer CLICK_NODE for all buttons and controls. The screen summary contains node indices and their exact centers; select the node that semantically matches the intended action.
+            - COORDINATE CONTRACT: when a screenshot is attached, it is resized to exactly 480x960 pixels. For CLICK_XY, return coordinates in THIS image only: x must be 0..479, y must be 0..959, with (0,0) at the image's top-left. Do NOT return original phone pixels, dp values, or coordinates such as x=540/y=1200. The app converts valid image coordinates to phone screen coordinates.
+            - If the target is visible in the screenshot but no accessibility node matches it, estimate the target's CENTER within the 480x960 image. If the screenshot is missing or the target cannot be located confidently, return WAIT, not invented coordinates.
             - Never guess coordinates, never reuse coordinates from a previous screen, and NEVER use the default center of the screen as a tap target.
             - For WhatsApp messaging: after typing/pasting the requested message, inspect the CURRENT screen again. Find the actual Send button/icon using its text, content description, viewId and screenshot. Tap only that current Send control. Do NOT tap a previous chat message, video thumbnail, attachment, or any content in the conversation.
             - If the Send control cannot be confidently identified, return WAIT and explain that the Send button is unclear; do not tap.
@@ -389,8 +391,8 @@ object GeminiBrain {
             {
               "action": "CLICK_NODE",
               "nodeIndex": 3,
-              "x": 540,
-              "y": 1200,
+              "x": 320,
+              "y": 280,
               "textToType": "",
               "appPackageOrSetting": "",
               "reason": "Brief explanation of this step"
