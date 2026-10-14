@@ -920,16 +920,26 @@ class AutoTouchService : AccessibilityService() {
                 }
             }
             "CLICK_XY" -> {
-                val metrics = resources.displayMetrics
+                // Vision is always sent a normalized 480x960 screenshot. Convert the model's
+                // coordinates from that image space into real display coordinates before
+                // dispatching the gesture. Comparing image coordinates directly to device
+                // pixels caused taps to land above/below small toolbar controls on tall screens.
+                val imageWidth = 480f
+                val imageHeight = 960f
                 val validCoordinates = decision.x >= 0f && decision.y >= 0f &&
-                    decision.x < metrics.widthPixels && decision.y < metrics.heightPixels
+                    decision.x < imageWidth && decision.y < imageHeight
                 if (validCoordinates) {
-                    animateAndTapXY(decision.x, decision.y, "Tap XY")
+                    val (realW, realH) = getRealScreenDimensions()
+                    val screenX = decision.x * realW / imageWidth
+                    val screenY = decision.y * realH / imageHeight
+                    VideoQueueManager.appendLog(
+                        this,
+                        "🎯 Vision tap mapped (${decision.x.toInt()}, ${decision.y.toInt()}) → (${screenX.toInt()}, ${screenY.toInt()})"
+                    )
+                    animateAndTapXY(screenX, screenY, "Tap XY")
                 } else {
-                    // Missing model coordinates previously fell back to (540, 1000), which
-                    // could hit an unrelated chat message/video instead of the intended button.
-                    VideoQueueManager.appendLog(this, "⚠️ Coordinate tap cancelled: target coordinates are missing or outside the screen.")
-                    overlayHud?.updateStatus("Tap Cancelled", "No valid target coordinates; checking screen again", "THINKING")
+                    VideoQueueManager.appendLog(this, "⚠️ Coordinate tap cancelled: target coordinates are outside the 480×960 vision image.")
+                    overlayHud?.updateStatus("Tap Cancelled", "Target outside screenshot; checking screen again", "THINKING")
                 }
             }
             "TYPE" -> {
