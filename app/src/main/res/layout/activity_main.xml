@@ -1,0 +1,838 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121316"
+    android:orientation="vertical">
+
+    <!-- HEADER -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#181A20"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="18dp"
+        android:paddingVertical="14dp">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AuraDroid OS"
+                android:textColor="#F8FAFC"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvActiveSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Universal Autonomous AI Companion"
+                android:textColor="#94A3B8"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnToggleFloatingPod"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_marginEnd="8dp"
+            android:backgroundTint="#262932"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="12dp"
+            android:text="Pod: ON"
+            android:textAllCaps="false"
+            android:textColor="#F8FAFC"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvServiceBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#262932"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="7dp"
+            android:text="TOUCH: OFF"
+            android:textColor="#F87171"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#262932" />
+
+    <!-- 5-TAB CONTAINER -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- TAB 1: UNIVERSAL AI CHAT & PLANNER -->
+        <ScrollView
+            android:id="@+id/tabChatLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal">
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="💬 AI चैट और यूनिवर्सल प्लानर"
+                                android:textColor="#F8FAFC"
+                                android:textSize="17sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnClearChat"
+                                android:layout_width="wrap_content"
+                                android:layout_height="36dp"
+                                android:backgroundTint="#262932"
+                                android:insetTop="0dp"
+                                android:insetBottom="0dp"
+                                android:text="Clear"
+                                android:textAllCaps="false"
+                                android:textColor="#CBD5E1"
+                                android:textSize="12sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/tvChatHistory"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:background="#121316"
+                            android:lineSpacingExtra="5dp"
+                            android:minHeight="170dp"
+                            android:padding="14dp"
+                            android:text="🤖 Companion Bot:नमस्ते! मैं आपका Universal AI हूँ। आप मुझसे दुनिया का कोई भी काम करवा सकते हैं (जैसे वेबसाइट फॉर्म भरना, वीडियो बनाना, ऐप चलाना, सेटिंग्स ठीक करना या कुछ भी)।\n\nपहले मुझे यहाँ लिखकर या बोलकर अपना काम समझाएं!"
+                            android:textColor="#E2E8F0"
+                            android:textSize="15sp" />
+
+                        <EditText
+                            android:id="@+id/etChatInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="95dp"
+                            android:layout_marginTop="12dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:hint="अपना काम यहाँ बताएं..."
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnVoiceMic"
+                                android:layout_width="wrap_content"
+                                android:layout_height="50dp"
+                                android:layout_marginEnd="8dp"
+                                android:backgroundTint="#262932"
+                                android:text="🎙️ बोलें"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="15sp" />
+
+                            <Button
+                                android:id="@+id/btnSendChat"
+                                android:layout_width="0dp"
+                                android:layout_height="50dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#3B82F6"
+                                android:text="प्लान बनाएं"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Plan Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#334155"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📋 AI का तैयार किया हुआ प्लान"
+                            android:textColor="#F8FAFC"
+                            android:textSize="17sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvPlanSteps"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="#121316"
+                            android:lineSpacingExtra="5dp"
+                            android:padding="14dp"
+                            android:text="अभी कोई प्लान नहीं है। ऊपर चैट में काम समझाएं।"
+                            android:textColor="#CBD5E1"
+                            android:textSize="15sp" />
+
+                        <RadioGroup
+                            android:id="@+id/rgExecutionMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="vertical">
+
+                            <RadioButton
+                                android:id="@+id/rbModeBackgroundWeb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:checked="true"
+                                android:text="🌐 Background Web Pod (फोन फ्री रहेगा, पॉड में काम चलेगा)"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+
+                            <RadioButton
+                                android:id="@+id/rbModePhoneScreen"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="📱 Phone Screen Agent (असली ऐप्स और सेटिंग्स कंट्रोल करेगा)"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+                        </RadioGroup>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnExecutePlan"
+                                android:layout_width="0dp"
+                                android:layout_height="52dp"
+                                android:layout_marginEnd="8dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#10B981"
+                                android:text="▶ यह काम शुरू करें"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="15sp"
+                                android:textStyle="bold" />
+
+                            <Button
+                                android:id="@+id/btnStopAgent"
+                                android:layout_width="wrap_content"
+                                android:layout_height="52dp"
+                                android:backgroundTint="#EF4444"
+                                android:text="■ STOP"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- TAB 2: BACKGROUND WEB STUDIO -->
+        <LinearLayout
+            android:id="@+id/tabWebLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="14dp"
+            android:visibility="gone">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="10dp"
+                app:cardBackgroundColor="#181A20"
+                app:cardCornerRadius="14dp"
+                app:strokeColor="#262932"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🌐 Background Web Studio"
+                        android:textColor="#F8FAFC"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/etWebUrl"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="#22252E"
+                            android:hint="https://..."
+                            android:inputType="textUri"
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:text="https://gemini.google.com"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="14sp" />
+
+                        <Button
+                            android:id="@+id/btnWebGo"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#3B82F6"
+                            android:text="खोलें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/etWebTaskGoal"
+                            android:layout_width="0dp"
+                            android:layout_height="44dp"
+                            android:layout_weight="1"
+                            android:background="#22252E"
+                            android:hint="वेबसाइट पर क्या करना है?"
+                            android:paddingHorizontal="12dp"
+                            android:singleLine="true"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="14sp" />
+
+                        <Button
+                            android:id="@+id/btnRunWebAgent"
+                            android:layout_width="wrap_content"
+                            android:layout_height="44dp"
+                            android:layout_marginStart="6dp"
+                            android:backgroundTint="#10B981"
+                            android:text="▶ AI चलाएं"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <FrameLayout
+                android:id="@+id/webPreviewContainer"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:background="#0D0E11" />
+        </LinearLayout>
+
+        <!-- TAB 3: UNIVERSAL AUTOMATIONS & SCHEDULES -->
+        <ScrollView
+            android:id="@+id/tabPipelinesLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔄 Universal Automations &amp; Scheduler"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="वीडियो फोल्डर का रास्ता (Folder Path):"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etFolderPath"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:padding="14dp"
+                            android:text="/storage/emulated/0/Download/AutoVideos"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:id="@+id/tvQueueStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="#121316"
+                            android:padding="12dp"
+                            android:text="Total: 0 | Pending: 0 | Uploaded: 0"
+                            android:textColor="#10B981"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnScanFolder"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="📂 Scan Folder"
+                                android:textAllCaps="false"
+                                android:textColor="#F8FAFC"
+                                android:textSize="14sp" />
+
+                            <Button
+                                android:id="@+id/btnResetHistory"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="🔄 Reset History"
+                                android:textAllCaps="false"
+                                android:textColor="#F87171"
+                                android:textSize="14sp" />
+                        </LinearLayout>
+
+                        <Button
+                            android:id="@+id/btnRunYouTubeNow"
+                            android:layout_width="match_parent"
+                            android:layout_height="54dp"
+                            android:layout_marginTop="14dp"
+                            android:backgroundTint="#10B981"
+                            android:text="▶ YouTube पर वीडियो अपलोड करें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- TAB 4: PERSONAL MEMORY VAULT -->
+        <ScrollView
+            android:id="@+id/tabDoctorLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="🔐 Personal Memory Vault"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:text="यहाँ फॉर्म्स और वेबसाइट्स के लिए अपनी जानकारी सेव रखें:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etMemoryVault"
+                            android:layout_width="match_parent"
+                            android:layout_height="150dp"
+                            android:layout_marginTop="10dp"
+                            android:background="#22252E"
+                            android:gravity="top|start"
+                            android:hint="Name: \nEmail: \nGitHub URL: \nPreferences: "
+                            android:padding="12dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <Button
+                            android:id="@+id/btnSaveMemory"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:layout_marginTop="10dp"
+                            android:backgroundTint="#10B981"
+                            android:text="💾 मेमोरी सेव करें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- TAB 5: SETTINGS & LIVE LOGS -->
+        <ScrollView
+            android:id="@+id/tabSettingsLayout"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="⚙️ सिस्टम सेटिंग्स और परमिशन"
+                            android:textColor="#F8FAFC"
+                            android:textSize="18sp"
+                            android:textStyle="bold" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:orientation="horizontal">
+
+                            <Button
+                                android:id="@+id/btnEnableAccessibility"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="Enable Auto-Touch"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+
+                            <Button
+                                android:id="@+id/btnEnableStorage"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_marginStart="6dp"
+                                android:layout_weight="1"
+                                android:backgroundTint="#262932"
+                                android:text="Allow Folder"
+                                android:textAllCaps="false"
+                                android:textColor="#FFFFFF"
+                                android:textSize="14sp" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Gemini API Key:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etApiKey"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:hint="Paste Gemini API Key..."
+                            android:inputType="textPassword"
+                            android:padding="14dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="15sp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="AI Model Name:"
+                            android:textColor="#94A3B8"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/etModelName"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:background="#22252E"
+                            android:padding="14dp"
+                            android:text="gemini-2.5-flash"
+                            android:textColor="#F8FAFC"
+                            android:textSize="15sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbUseScreenVision"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:checked="true"
+                            android:text="👁️ Real Screenshot Vision"
+                            android:textColor="#F8FAFC"
+                            android:textSize="15sp" />
+
+                        <CheckBox
+                            android:id="@+id/cb24HourUnstoppable"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="🔋 24-Hour Non-Stop Mode"
+                            android:textColor="#F8FAFC"
+                            android:textSize="15sp" />
+
+                        <Button
+                            android:id="@+id/btnSaveSettings"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="12dp"
+                            android:backgroundTint="#3B82F6"
+                            android:text="💾 सेटिंग्स सेव करें"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- Logs Card -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardBackgroundColor="#181A20"
+                    app:cardCornerRadius="16dp"
+                    app:strokeColor="#262932"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="16dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="📊 लाइव एजेंट लॉग्स"
+                            android:textColor="#10B981"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvConsoleLog"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:background="#121316"
+                            android:fontFamily="monospace"
+                            android:minHeight="180dp"
+                            android:padding="12dp"
+                            android:text="[System] AuraDroid OS Ready."
+                            android:textColor="#E2E8F0"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#262932" />
+
+    <!-- BOTTOM 5-TAB NAVIGATION BAR -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="62dp"
+        android:background="#181A20"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="4dp">
+
+        <Button
+            android:id="@+id/navTabChat"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="💬\nChat"
+            android:textAllCaps="false"
+            android:textColor="#3B82F6"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/navTabWeb"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🌐\nWeb Pod"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/navTabPipelines"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🔄\nTasks"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/navTabDoctor"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🔐\nVault"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/navTabSettings"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="⚙️\nSettings"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+</LinearLayout>
