@@ -878,10 +878,27 @@ class AutoTouchService : AccessibilityService() {
             }
             "CLICK_NODE" -> {
                 val target = nodes.firstOrNull { it.index == decision.nodeIndex }
-                if (target != null) animateAndPhysicalTapNode(target, "Tap: ${target.text.ifEmpty { target.contentDesc }.take(14)}")
-                else animateAndTapXY(decision.x, decision.y, "Tap XY")
+                if (target != null) {
+                    animateAndPhysicalTapNode(target, "Tap: ${target.text.ifEmpty { target.contentDesc }.take(14)}")
+                } else {
+                    // A stale/invalid node index must never turn into a blind coordinate tap.
+                    VideoQueueManager.appendLog(this, "⚠️ Tap cancelled: requested UI node is no longer on screen. Re-reading screen.")
+                    overlayHud?.updateStatus("Tap Cancelled", "UI changed; checking screen again", "THINKING")
+                }
             }
-            "CLICK_XY" -> animateAndTapXY(decision.x, decision.y, "Tap XY")
+            "CLICK_XY" -> {
+                val metrics = resources.displayMetrics
+                val validCoordinates = decision.x >= 0f && decision.y >= 0f &&
+                    decision.x < metrics.widthPixels && decision.y < metrics.heightPixels
+                if (validCoordinates) {
+                    animateAndTapXY(decision.x, decision.y, "Tap XY")
+                } else {
+                    // Missing model coordinates previously fell back to (540, 1000), which
+                    // could hit an unrelated chat message/video instead of the intended button.
+                    VideoQueueManager.appendLog(this, "⚠️ Coordinate tap cancelled: target coordinates are missing or outside the screen.")
+                    overlayHud?.updateStatus("Tap Cancelled", "No valid target coordinates; checking screen again", "THINKING")
+                }
+            }
             "TYPE" -> {
                 val target = nodes.firstOrNull { it.index == decision.nodeIndex }
                     ?: nodes.firstOrNull { it.isEditable || it.supportsSetText }
