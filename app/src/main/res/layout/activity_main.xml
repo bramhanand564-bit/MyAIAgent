@@ -85,6 +85,12 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
         <Button
             android:id="@+id/btnSavePlanSkill"
             android:layout_width="match_parent"
@@ -92,11 +98,6 @@
             android:hint="Save Plan Skill"
             android:text="Save Plan Skill" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
@@ -432,6 +433,12 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
         <EditText
             android:id="@+id/etAiCommand"
             android:layout_width="match_parent"
@@ -463,11 +470,6 @@
             android:hint="Save Schedule"
             android:text="Save Schedule" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
@@ -576,6 +578,12 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
         <EditText
             android:id="@+id/etDoctorProblem"
             android:layout_width="match_parent"
@@ -607,11 +615,6 @@
             android:hint="Run Phone Doctor"
             android:text="Run Phone Doctor" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
@@ -679,6 +682,12 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
         <EditText
             android:id="@+id/etStepDelaySec"
             android:layout_width="match_parent"
@@ -692,11 +701,6 @@
             android:hint="Clear Logs"
             android:text="Clear Logs" />
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
