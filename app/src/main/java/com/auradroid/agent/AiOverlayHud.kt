@@ -637,8 +637,6 @@ class AiOverlayHud(private val context: Context) {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
-            if (!handVisible && currentLabel.isEmpty()) return
-
             getLocationOnScreen(screenOffset)
             val ox = screenOffset[0].toFloat()
             val oy = screenOffset[1].toFloat()
