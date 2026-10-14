@@ -104,7 +104,7 @@ class AutoTouchService : AccessibilityService() {
         isJobRunning = false
         releaseWakeLock()
         overlayHud?.setCursorOverlayVisible(false)
-        overlayHud?.updateStatus("Stopped", "Ready for next instruction", "DONE")
+        overlayHud?.updateStatus("Stopped", "Ready for next instruction", "STOPPED")
         VideoQueueManager.appendLog(this, "🛑 All active tasks stopped by user.")
     }
 
@@ -638,7 +638,7 @@ class AutoTouchService : AccessibilityService() {
                 }
 
             } catch (e: Exception) {
-                overlayHud?.updateStatus("Error", e.message ?: "Error", "DONE")
+                overlayHud?.updateStatus("Error", e.message ?: "Error", "ERROR")
                 VideoQueueManager.appendLog(this@AutoTouchService, "❌ Error: ${e.message}")
             } finally {
                 overlayHud?.setCursorOverlayVisible(false)
