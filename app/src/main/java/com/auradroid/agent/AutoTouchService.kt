@@ -987,11 +987,24 @@ class AutoTouchService : AccessibilityService() {
     }
 
     private suspend fun animateAndPhysicalTapNode(snapshot: UiNodeSnapshot, label: String) {
+        // Prefer one semantic accessibility click. The previous implementation dispatched
+        // a physical tap AND an accessibility click for the same target, which could
+        // activate controls twice (open a screen and immediately activate something inside it).
         overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
         delay(450)
-        performTapGesture(snapshot.centerX, snapshot.centerY)
-        delay(200)
-        clickNodeAndParents(snapshot.node)
+
+        val accessibilityClickSucceeded = try {
+            clickNodeAndParents(snapshot.node)
+        } catch (_: Exception) {
+            false
+        }
+
+        // Coordinates are a fallback for custom controls that do not expose a clickable
+        // accessibility node. Never send both click mechanisms for the same action.
+        if (!accessibilityClickSucceeded) {
+            performTapGesture(snapshot.centerX, snapshot.centerY)
+            delay(250)
+        }
     }
 
     private suspend fun animateAndTapXY(x: Float, y: Float, label: String) {
