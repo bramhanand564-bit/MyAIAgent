@@ -85,6 +85,12 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="visible">
+        <Button
+            android:id="@+id/btnSavePlanSkill"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Save Plan Skill"
+            android:text="Save Plan Skill" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -296,6 +302,30 @@
             android:orientation="vertical"
             android:padding="14dp"
             android:visibility="gone">
+        <Button
+            android:id="@+id/btnWebGemini"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Gemini"
+            android:text="Gemini" />
+        <Button
+            android:id="@+id/btnWebVideoAi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Video AI"
+            android:text="Video AI" />
+        <Button
+            android:id="@+id/btnWebYtStudio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="YouTube Studio"
+            android:text="YouTube Studio" />
+        <Button
+            android:id="@+id/btnWebGitHub"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="GitHub"
+            android:text="GitHub" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -402,6 +432,36 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="gone">
+        <EditText
+            android:id="@+id/etAiCommand"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="AI task command"
+            android:inputType="text" />
+        <CheckBox
+            android:id="@+id/cbPipelineAiVideoFirst"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Generate AI video first"
+            android:text="Generate AI video first" />
+        <EditText
+            android:id="@+id/etHour"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Hour (0-23)"
+            android:inputType="number" />
+        <EditText
+            android:id="@+id/etMinute"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Minute (0-59)"
+            android:inputType="number" />
+        <Button
+            android:id="@+id/btnSaveSchedule"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Save Schedule"
+            android:text="Save Schedule" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -516,6 +576,36 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="gone">
+        <EditText
+            android:id="@+id/etDoctorProblem"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Describe phone problem"
+            android:inputType="text" />
+        <Button
+            android:id="@+id/btnDocBattery"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Battery"
+            android:text="Battery" />
+        <Button
+            android:id="@+id/btnDocWifi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Wi-Fi"
+            android:text="Wi-Fi" />
+        <Button
+            android:id="@+id/btnDocStorage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Storage"
+            android:text="Storage" />
+        <Button
+            android:id="@+id/btnRunPhoneDoctor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Run Phone Doctor"
+            android:text="Run Phone Doctor" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -589,6 +679,18 @@
             android:layout_height="match_parent"
             android:fillViewport="true"
             android:visibility="gone">
+        <EditText
+            android:id="@+id/etStepDelaySec"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Step delay (seconds)"
+            android:inputType="number" />
+        <Button
+            android:id="@+id/btnClearLogs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Clear Logs"
+            android:text="Clear Logs" />
 
             <LinearLayout
                 android:layout_width="match_parent"
