@@ -529,6 +529,7 @@ class AutoTouchService : AccessibilityService() {
                             realH * 0.968f
                         )
 
+                        var uploadVerified = false
                         for (attempt in 1..3) {
                             val currentNodes = captureScreenNodes().filter {
                                 it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
@@ -582,6 +583,45 @@ class AutoTouchService : AccessibilityService() {
                             }
 
                             delay(3500)
+
+                            val postUploadNodes = captureScreenNodes().filter {
+                                it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                            }
+                            val postUploadText = postUploadNodes.joinToString(" ") {
+                                "${it.text} ${it.contentDesc} ${it.hintText}"
+                            }
+                            val returnedToFeed = postUploadNodes.any {
+                                it.text.equals("Subscriptions", true) ||
+                                it.contentDesc.contains("Subscriptions", true) ||
+                                it.text.equals("Home", true) ||
+                                it.contentDesc.equals("Home", true)
+                            } && !isAddDetailsScreenVisible(postUploadNodes)
+                            val successMessageVisible = listOf(
+                                "video uploaded", "upload complete", "successfully uploaded",
+                                "short is published", "video is published", "published"
+                            ).any { postUploadText.contains(it, ignoreCase = true) }
+
+                            if (returnedToFeed || successMessageVisible) {
+                                uploadVerified = true
+                                VideoQueueManager.appendLog(
+                                    this@AutoTouchService,
+                                    "✅ Upload completion signal detected; recording video as uploaded."
+                                )
+                                break
+                            }
+                        }
+
+                        if (!uploadVerified) {
+                            overlayHud?.updateStatus(
+                                "⚠️ Upload Not Verified",
+                                "Video kept in queue. Check YouTube Studio before retrying.",
+                                "DONE"
+                            )
+                            VideoQueueManager.appendLog(
+                                this@AutoTouchService,
+                                "⚠️ Upload could not be verified. Keeping '${nextVideo.name}' pending to avoid false success."
+                            )
+                            return@launch
                         }
 
                         VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
