@@ -2,6 +2,12 @@ package com.auradroid.agent
 
 import android.content.Context
 import org.json.JSONObject
+import androidx.work.BackoffPolicy
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 /**
  * Durable lifecycle record for long-running user tasks.
@@ -104,5 +110,22 @@ object LongTaskStore {
 
     fun checkpoint(context: Context, step: String, progress: Int, checkpoint: String) = update(context) {
         it.copy(currentStep = step, progress = progress.coerceIn(0, 100), checkpoint = checkpoint)
+    }
+
+    fun scheduleRetry(context: Context, useWeb: Boolean, url: String, folderPath: String) {
+        val data = Data.Builder()
+            .putBoolean("use_web", useWeb)
+            .putString("url", url)
+            .putString("folder_path", folderPath)
+            .build()
+        val request = OneTimeWorkRequestBuilder<LongTaskRetryWorker>()
+            .setInputData(data)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "auradroid-long-task-retry",
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
     }
 }
