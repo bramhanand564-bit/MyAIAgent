@@ -217,6 +217,7 @@ class AutoTouchService : AccessibilityService() {
                 it.copy(status = LongTaskState.Status.RUNNING, lastError = "")
             else it
         }
+        LongTaskForegroundService.start(this)
         overlayHud?.setCursorOverlayVisible(true)
         overlayHud?.updateStatus("Task Resuming", "Continuing from the next safe step.", "WORKING")
         postKeepAliveNotification("Task resumed")

@@ -80,6 +80,7 @@ class AiOverlayHud(private val context: Context) {
     private var isPodVisible = true
     private var isSideBarExpanded = false
     private var currentStage = 1 // 1 = Floating Bot, 2 = Mini Window, 3 = Full Screen
+    private var lastTaskNotificationAtMs = 0L
 
     private val autoCollapseSideBarRunnable = Runnable {
         if (!AutoTouchService.isJobRunning && currentStage == 1) {
@@ -466,6 +467,12 @@ class AiOverlayHud(private val context: Context) {
                         checkpoint = "$stepBadge • $detailMessage".take(1200),
                         lastError = ""
                     ))
+                    // Refresh the persistent notification occasionally, not on every animation/status tick.
+                    val now = System.currentTimeMillis()
+                    if (now - lastTaskNotificationAtMs >= 5000L) {
+                        lastTaskNotificationAtMs = now
+                        LongTaskForegroundService.start(context)
+                    }
                 }
             }
         }
