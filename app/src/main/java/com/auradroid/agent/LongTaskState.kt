@@ -54,7 +54,8 @@ object LongTaskStore {
             goal = goal,
             status = LongTaskState.Status.RUNNING,
             progress = 0,
-            currentStep = "Starting"
+            currentStep = "Starting",
+            retryCount = if (prior?.goal == goal) prior.retryCount else 0
         )
         save(context, state)
         return state
