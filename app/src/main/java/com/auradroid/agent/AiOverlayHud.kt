@@ -53,7 +53,7 @@ class AiOverlayHud(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var pointerCanvasView: CuteBaymaxHandCursorCanvas? = null
+    private var pointerCanvasView: CuteRobotHandCursorCanvas? = null
     private var podRootLayout: LinearLayout? = null
     private var podLayoutParams: WindowManager.LayoutParams? = null
 
@@ -731,15 +731,13 @@ class AiOverlayHud(private val context: Context) {
 
         private val animator = object : Runnable {
             override fun run() {
-                phase += 0.17f
+                phase += 0.075f
                 invalidate()
                 postDelayed(this, 40)
             }
         }
 
-        init {
-            post(animator)
-        }
+        init { post(animator) }
 
         fun setMood(newMood: String) {
             mood = newMood.uppercase()
@@ -756,175 +754,146 @@ class AiOverlayHud(private val context: Context) {
             val w = width.toFloat()
             val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
-            val bobY = sin(phase * 0.65f) * 2.2f
 
-            // Crystal-water / soft jelly aura: restrained, layered and low-cost.
-            // Keep it behind the companion so the face remains crisp and readable.
-            val cx = w * 0.5f
-            val cy = h * 0.49f + bobY
-            val auraRx = w * 0.47f
-            val auraRy = h * 0.45f
+            val s = minOf(w / 120f, h / 120f)
+            canvas.save()
+            canvas.translate((w - 120f * s) * 0.5f, (h - 120f * s) * 0.5f)
+            canvas.scale(s, s)
+            val bob = sin(phase * 0.65f) * 1.8f
+            val cx = 60f
+            val cy = 60f + bob
+            val cyan = Color.parseColor("#22D3EE")
+            val brightCyan = Color.parseColor("#67E8F9")
+            val shell = Color.parseColor("#F7FCFF")
+            val dark = Color.parseColor("#071522")
+            val accent = when (mood) {
+                "ERROR", "SAD", "FAILED" -> Color.parseColor("#FB7185")
+                "THINKING", "PROCESSING" -> Color.parseColor("#60A5FA")
+                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#34D399")
+                "WAITING" -> Color.parseColor("#FBBF24")
+                else -> cyan
+            }
+
+            // Liquid crystal aura behind the robot.
             paint.style = Paint.Style.FILL
-            paint.shader = RadialGradient(
-                cx, cy, maxOf(w, h) * 0.56f,
-                intArrayOf(Color.argb(48, 103, 232, 249), Color.argb(20, 59, 130, 246), Color.TRANSPARENT),
-                floatArrayOf(0f, 0.58f, 1f),
-                Shader.TileMode.CLAMP
-            )
-            canvas.drawOval(RectF(cx - auraRx, cy - auraRy, cx + auraRx, cy + auraRy), paint)
+            paint.shader = RadialGradient(cx, cy, 58f,
+                intArrayOf(Color.argb(95, 34, 211, 238), Color.argb(28, 34, 211, 238), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.66f, 1f), Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, 58f, paint)
             paint.shader = null
 
-            // Three offset liquid rings create a slow, glassy water-flow impression.
+            // Thin flowing rings and a few water-glass droplets.
             paint.style = Paint.Style.STROKE
-            paint.strokeCap = Paint.Cap.ROUND
             for (i in 0..2) {
-                val drift = phase * 0.34f + i * 2.094f
-                val swell = 1f + sin(drift) * 0.025f
-                val alpha = (72 - i * 17).coerceIn(20, 72)
-                paint.strokeWidth = if (i == 0) 2.2f else 1.35f
-                paint.color = Color.argb(alpha, 125, 239, 255)
-                val ring = RectF(
-                    cx - auraRx * swell + cos(drift) * 2.5f,
-                    cy - auraRy * swell + sin(drift) * 2.5f,
-                    cx + auraRx * swell + cos(drift) * 2.5f,
-                    cy + auraRy * swell + sin(drift) * 2.5f
-                )
-                canvas.drawOval(ring, paint)
+                val p = phase * 0.28f + i * 2.094f
+                paint.strokeWidth = if (i == 0) 1.8f else 1.0f
+                paint.color = Color.argb(105 - i * 24, 103, 232, 249)
+                canvas.drawOval(RectF(9f - sin(p) * 1.5f, 10f + cos(p) * 1.5f,
+                    111f + sin(p) * 1.5f, 110f + cos(p) * 1.5f), paint)
+            }
+            paint.style = Paint.Style.FILL
+            for (i in 0..3) {
+                val p = phase * 0.45f + i * 1.57f
+                val dx = cx + cos(p) * 51f
+                val dy = cy + sin(p * 0.8f) * 46f
+                paint.color = Color.argb(150, 186, 247, 255)
+                canvas.drawCircle(dx, dy, 1.8f + (sin(p) + 1f) * 0.7f, paint)
             }
 
-            // Tiny suspended droplets drift around the silhouette, like clear jelly bubbles.
-            paint.style = Paint.Style.FILL
-            for (i in 0..4) {
-                val orbit = phase * 0.42f + i * 1.257f
-                val bx = cx + cos(orbit) * auraRx * 0.91f
-                val by = cy + sin(orbit * 0.83f) * auraRy * 0.88f
-                val radius = 1.8f + (sin(orbit * 1.7f) + 1f) * 1.1f
-                paint.color = Color.argb(95, 190, 250, 255)
-                canvas.drawCircle(bx, by, radius, paint)
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 0.9f
-                paint.color = Color.argb(155, 225, 252, 255)
-                canvas.drawCircle(bx, by, radius, paint)
-                paint.style = Paint.Style.FILL
-            }
-
-            // Slightly smaller outer shell; facial features keep their original dimensions.
-            val shellInsetX = w * 0.085f
-            val shellInsetY = h * 0.075f
-            val headRect = RectF(shellInsetX, 4f + shellInsetY + bobY, w - shellInsetX, h - 4f - shellInsetY + bobY)
-            paint.style = Paint.Style.FILL
-            paint.color = Color.argb(65, 0, 0, 0)
-            canvas.drawRoundRect(
-                RectF(headRect.left + 1f, headRect.top + 3f, headRect.right + 1f, headRect.bottom + 3f),
-                headRect.height() * 0.48f, headRect.height() * 0.48f, paint
-            )
-
-            // 1. Soft marshmallow head: reduce only the outside round body, not the eyes.
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, headRect.height() * 0.48f, headRect.height() * 0.48f, paint)
-
-            val accentColor = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#EF4444")
-                "THINKING", "PROCESSING" -> Color.parseColor("#2563EB")
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#10B981")
-                "WAITING" -> Color.parseColor("#F59E0B")
-                else -> Color.parseColor("#10B981")
-            }
-
+            // Rounded ceramic helmet with a subtle shaded edge.
+            paint.color = Color.argb(60, 0, 0, 0)
+            canvas.drawRoundRect(RectF(18f, 16f + bob, 104f, 104f + bob), 34f, 34f, paint)
+            paint.shader = LinearGradient(20f, 16f + bob, 100f, 104f + bob,
+                intArrayOf(Color.WHITE, shell, Color.parseColor("#B8DDE8")),
+                null, Shader.TileMode.CLAMP)
+            paint.color = Color.WHITE
+            canvas.drawRoundRect(RectF(17f, 13f + bob, 103f, 101f + bob), 33f, 33f, paint)
+            paint.shader = null
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3f
-            paint.color = accentColor
-            canvas.drawRoundRect(headRect, headRect.height() * 0.48f, headRect.height() * 0.48f, paint)
+            paint.strokeWidth = 1.6f
+            paint.color = Color.parseColor("#A5F3FC")
+            canvas.drawRoundRect(RectF(17f, 13f + bob, 103f, 101f + bob), 33f, 33f, paint)
 
-            val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * (w * 0.05f) else 0f
-            val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * (h * 0.03f) else 0f
-
-            val eyeY = h * 0.44f + bobY + lookOffsetY
-            val leftEyeX = w * 0.32f + lookOffsetX
-            val rightEyeX = w * 0.68f + lookOffsetX
-
-            // 2. Subtle Baymax-style Connector Line Between the 4x Eyes
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 3.2f
-            paint.color = Color.parseColor("#CBD5E1")
-            canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, paint)
-
-            // 3. 4x HUGE Pure Solid Color-Changing Eyes (NO White Reflection Dots!)
-            val isBlinking = sin(phase * 0.82f) > 0.93f
-            val eyeColor = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#DC2626") // Pure Red
-                "THINKING", "PROCESSING" -> Color.parseColor("#1D4ED8") // Pure Deep Blue
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#059669") // Pure Emerald
-                "WAITING" -> Color.parseColor("#D97706") // Pure Amber
-                else -> Color.parseColor("#0F172A") // Pure Deep Black/Charcoal
+            // Side ear modules: unmistakably a compact futuristic robot, not a plain pill.
+            for (side in 0..1) {
+                val ex = if (side == 0) 17f else 103f
+                paint.style = Paint.Style.FILL
+                paint.color = Color.parseColor("#D9F5FC")
+                canvas.drawRoundRect(RectF(ex - 5f, 42f + bob, ex + 5f, 74f + bob), 5f, 5f, paint)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 2.2f
+                paint.color = accent
+                canvas.drawRoundRect(RectF(ex - 5f, 42f + bob, ex + 5f, 74f + bob), 5f, 5f, paint)
+                paint.style = Paint.Style.FILL
+                paint.shader = RadialGradient(ex, 58f + bob, 8f,
+                    intArrayOf(Color.WHITE, accent, Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
+                canvas.drawCircle(ex, 58f + bob, 6.8f, paint)
+                paint.shader = null
             }
 
-            paint.color = eyeColor
+            // Glossy dark visor.
+            paint.style = Paint.Style.FILL
+            paint.color = Color.parseColor("#071522")
+            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 75f + bob), 17f, 17f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.1f
+            paint.color = Color.parseColor("#164E63")
+            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 75f + bob), 17f, 17f, paint)
 
-            // 4x Eye Dimensions proportional to the head size
-            val rx = w * 0.135f
-            val ry = h * 0.165f
-
-            if (mood == "DONE" || mood == "HAPPY") {
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 5.5f
-                paint.strokeCap = Paint.Cap.ROUND
-                canvas.drawArc(RectF(leftEyeX - rx, eyeY - ry * 0.8f, leftEyeX + rx, eyeY + ry * 0.8f), 190f, 160f, false, paint)
-                canvas.drawArc(RectF(rightEyeX - rx, eyeY - ry * 0.8f, rightEyeX + rx, eyeY + ry * 0.8f), 190f, 160f, false, paint)
-            } else if (isBlinking) {
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 5.2f
-                paint.strokeCap = Paint.Cap.ROUND
-                canvas.drawLine(leftEyeX - rx, eyeY, leftEyeX + rx, eyeY, paint)
-                canvas.drawLine(rightEyeX - rx, eyeY, rightEyeX + rx, eyeY, paint)
-            } else {
-                // 100% Pure Solid 4x Huge Oval Eyes — Zero White Reflection!
+            val lookX = if (mood == "THINKING" || mood == "PROCESSING") sin(phase * 1.4f) * 1.8f else 0f
+            val blink = sin(phase * 0.72f) > 0.985f
+            val eyeY = 54f + bob
+            for (eyeX in listOf(43f + lookX, 77f + lookX)) {
                 paint.style = Paint.Style.FILL
-                canvas.drawOval(RectF(leftEyeX - rx, eyeY - ry, leftEyeX + rx, eyeY + ry), paint)
-                canvas.drawOval(RectF(rightEyeX - rx, eyeY - ry, rightEyeX + rx, eyeY + ry), paint)
-
-                if (mood == "ERROR" || mood == "SAD") {
+                paint.color = Color.argb(45, 34, 211, 238)
+                canvas.drawCircle(eyeX, eyeY, 11.5f, paint)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 1.8f
+                paint.color = accent
+                canvas.drawCircle(eyeX, eyeY, 9.4f, paint)
+                paint.style = Paint.Style.FILL
+                paint.shader = RadialGradient(eyeX - 1f, eyeY - 1f, 9f,
+                    intArrayOf(Color.WHITE, brightCyan, accent), null, Shader.TileMode.CLAMP)
+                if (blink) {
+                    paint.shader = null
                     paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.5f
-                    paint.color = Color.parseColor("#DC2626")
-                    canvas.drawLine(leftEyeX - rx, eyeY - ry - 2f, leftEyeX + rx * 0.8f, eyeY - ry - 6f, paint)
-                    canvas.drawLine(rightEyeX - rx * 0.8f, eyeY - ry - 6f, rightEyeX + rx, eyeY - ry - 2f, paint)
+                    paint.strokeWidth = 2.8f
+                    canvas.drawLine(eyeX - 6f, eyeY, eyeX + 6f, eyeY, paint)
+                } else {
+                    canvas.drawCircle(eyeX, eyeY, 6.3f, paint)
                 }
+                paint.shader = null
             }
 
-            // 4. Cute Expressive Smile / Mouth Below the 4x Eyes
-            val mouthCenterX = w * 0.50f + lookOffsetX * 0.4f
-            val mouthTopY = h * 0.72f + bobY
-            paint.color = eyeColor
+            // Small expressive smile; mouth remains smaller than the eyes.
+            paint.style = Paint.Style.STROKE
             paint.strokeCap = Paint.Cap.ROUND
-
+            paint.strokeWidth = 2.3f
+            paint.color = accent
             when (mood) {
-                "ERROR", "SAD", "FAILED" -> {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.8f
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.105f, mouthTopY, mouthCenterX + w * 0.105f, mouthTopY + h * 0.10f), 200f, 140f, false, paint)
-                }
-                "THINKING", "PROCESSING" -> {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.5f
-                    val r = (w * 0.06f) + sin(phase * 2.2f) * 1.2f
-                    canvas.drawCircle(mouthCenterX, mouthTopY + h * 0.04f, r, paint)
-                }
-                "DONE", "HAPPY", "SUCCESS" -> {
-                    paint.style = Paint.Style.FILL
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.12f, mouthTopY - 3f, mouthCenterX + w * 0.12f, mouthTopY + h * 0.11f), 0f, 180f, true, paint)
-                }
-                else -> {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 3.8f
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.105f, mouthTopY - 3f, mouthCenterX + w * 0.105f, mouthTopY + h * 0.09f), 15f, 150f, false, paint)
-                }
+                "ERROR", "SAD", "FAILED" ->
+                    canvas.drawArc(RectF(53f, 62f + bob, 67f, 71f + bob), 205f, 130f, false, paint)
+                "THINKING", "PROCESSING" ->
+                    canvas.drawCircle(60f, 66f + bob, 2.4f + sin(phase * 2f) * 0.5f, paint)
+                else -> canvas.drawArc(RectF(53f, 61f + bob, 67f, 70f + bob), 20f, 140f, false, paint)
             }
+
+            // Tiny chest/core indicator and two articulated shoulder hints.
+            paint.style = Paint.Style.FILL
+            paint.color = Color.parseColor("#DFFBFF")
+            canvas.drawCircle(60f, 88f + bob, 5.5f, paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.7f
+            paint.color = accent
+            canvas.drawCircle(60f, 88f + bob, 5.5f + sin(phase) * 0.7f, paint)
+            canvas.drawArc(RectF(28f, 80f + bob, 43f, 99f + bob), 210f, 115f, false, paint)
+            canvas.drawArc(RectF(77f, 80f + bob, 92f, 99f + bob), 215f, 115f, false, paint)
+
+            canvas.restore()
         }
     }
 
-    private class CuteBaymaxHandCursorCanvas(context: Context) : View(context) {
+private class CuteBaymaxHandCursorCanvas(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#F8FAFC")
@@ -1042,8 +1011,8 @@ class AiOverlayHud(private val context: Context) {
             paint.color = Color.argb(55, 0, 0, 0)
             canvas.drawRoundRect(RectF(-22f, 20f, 34f, 74f), 26f, 26f, paint)
 
-            val handFillColor = Color.parseColor("#F8FAFC")
-            val handStrokeColor = Color.parseColor("#334155")
+            val handFillColor = Color.parseColor("#F5FCFF")
+            val handStrokeColor = Color.parseColor("#0E7490")
 
             val thumbRect = RectF(-34f, 28f, -6f, 52f)
             paint.style = Paint.Style.FILL
@@ -1112,7 +1081,7 @@ class AiOverlayHud(private val context: Context) {
             val tagRect = RectF(tagLeft, tagTop, tagLeft + textWidth + 24f, tagTop + 40f)
 
             paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#E6181A20")
+            paint.color = Color.parseColor("#E6081724")
             canvas.drawRoundRect(tagRect, 14f, 14f, paint)
 
             paint.style = Paint.Style.STROKE
