@@ -162,9 +162,11 @@ class AiOverlayHud(private val context: Context) {
                         ) ?: false
                         if (!launched) {
                             pendingFileChooserCallback = null
-                            filePathCallback.onReceiveValue(null)
+                            runCatching { filePathCallback.onReceiveValue(null) }
+                            // We handled the request by cancelling it; return true to prevent a second callback.
+                            return true
                         }
-                        return launched
+                        return true
                     }
                 }
 
@@ -266,12 +268,14 @@ class AiOverlayHud(private val context: Context) {
         mainHandler.post {
             val callback = pendingFileChooserCallback
             pendingFileChooserCallback = null
-            val selectedUris = if (resultCode == Activity.RESULT_OK && data != null) {
-                WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-            } else {
-                null
-            }
-            callback?.onReceiveValue(selectedUris)
+            val selectedUris = runCatching {
+                if (resultCode == Activity.RESULT_OK && data != null) {
+                    WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+                } else {
+                    null
+                }
+            }.getOrNull()
+            runCatching { callback?.onReceiveValue(selectedUris) }
         }
     }
 
