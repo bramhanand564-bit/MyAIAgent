@@ -1083,7 +1083,7 @@ class AutoTouchService : AccessibilityService() {
                 releaseWakeLock()
                 isJobRunning = false
                 val finalState = LongTaskStore.get(this@AutoTouchService)
-                if (finalState?.goal == userGoal && finalState.status == LongTaskState.Status.RUNNING) {
+                if (finalState != null && finalState.goal == "Video upload task: $userPrompt" && finalState.status == LongTaskState.Status.RUNNING) {
                     LongTaskStore.complete(this@AutoTouchService)
                     LongTaskForegroundService.stop(this@AutoTouchService)
                 }
