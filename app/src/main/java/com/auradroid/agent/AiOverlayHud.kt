@@ -758,6 +758,56 @@ class AiOverlayHud(private val context: Context) {
             if (w <= 0f || h <= 0f) return
             val bobY = sin(phase * 0.65f) * 2.2f
 
+            // Crystal-water / soft jelly aura: restrained, layered and low-cost.
+            // Keep it behind the companion so the face remains crisp and readable.
+            val cx = w * 0.5f
+            val cy = h * 0.49f + bobY
+            val auraRx = w * 0.47f
+            val auraRy = h * 0.45f
+            paint.style = Paint.Style.FILL
+            paint.shader = RadialGradient(
+                cx, cy, maxOf(w, h) * 0.56f,
+                intArrayOf(Color.argb(48, 103, 232, 249), Color.argb(20, 59, 130, 246), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.58f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawOval(RectF(cx - auraRx, cy - auraRy, cx + auraRx, cy + auraRy), paint)
+            paint.shader = null
+
+            // Three offset liquid rings create a slow, glassy water-flow impression.
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            for (i in 0..2) {
+                val drift = phase * 0.34f + i * 2.094f
+                val swell = 1f + sin(drift) * 0.025f
+                val alpha = (72 - i * 17).coerceIn(20, 72)
+                paint.strokeWidth = if (i == 0) 2.2f else 1.35f
+                paint.color = Color.argb(alpha, 125, 239, 255)
+                val ring = RectF(
+                    cx - auraRx * swell + cos(drift) * 2.5f,
+                    cy - auraRy * swell + sin(drift) * 2.5f,
+                    cx + auraRx * swell + cos(drift) * 2.5f,
+                    cy + auraRy * swell + sin(drift) * 2.5f
+                )
+                canvas.drawOval(ring, paint)
+            }
+
+            // Tiny suspended droplets drift around the silhouette, like clear jelly bubbles.
+            paint.style = Paint.Style.FILL
+            for (i in 0..4) {
+                val orbit = phase * 0.42f + i * 1.257f
+                val bx = cx + cos(orbit) * auraRx * 0.91f
+                val by = cy + sin(orbit * 0.83f) * auraRy * 0.88f
+                val radius = 1.8f + (sin(orbit * 1.7f) + 1f) * 1.1f
+                paint.color = Color.argb(95, 190, 250, 255)
+                canvas.drawCircle(bx, by, radius, paint)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 0.9f
+                paint.color = Color.argb(155, 225, 252, 255)
+                canvas.drawCircle(bx, by, radius, paint)
+                paint.style = Paint.Style.FILL
+            }
+
             // Soft Drop Shadow
             paint.style = Paint.Style.FILL
             paint.color = Color.argb(80, 0, 0, 0)
