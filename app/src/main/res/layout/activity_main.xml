@@ -131,7 +131,7 @@
                         android:id="@+id/tvHomeStatus"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/home_status_pill"
+                        android:background="#173D45"
                         android:paddingHorizontal="10dp"
                         android:paddingVertical="7dp"
                         android:text="● READY"
@@ -152,7 +152,7 @@
                     <FrameLayout
                         android:layout_width="match_parent"
                         android:layout_height="390dp"
-                        android:background="@drawable/home_hero_background">
+                        android:background="#0B1724">
 
                         <com.auradroid.agent.FutureCompanionHomeView
                             android:id="@+id/homeRobotStage"
