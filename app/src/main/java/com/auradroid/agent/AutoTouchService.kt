@@ -166,6 +166,10 @@ class AutoTouchService : AccessibilityService() {
     }
 
     fun resumeCurrentJob() {
+        if (activeJob?.isActive != true) {
+            VideoQueueManager.appendLog(this, "⚠️ Paused task process is no longer active. Use Retry to restart the saved goal safely.")
+            return
+        }
         val state = LongTaskStore.resume(this)
         if (state != null && state.status == LongTaskState.Status.RUNNING) {
             overlayHud?.updateStatus("Resuming", state.currentStep, "WORKING")
@@ -194,7 +198,7 @@ class AutoTouchService : AccessibilityService() {
         else startUniversalAiTask(apiKey, model, state.goal)
     }
 
-    private suspend fun awaitTaskPermissionAndPause(step: Int, goal: String): Boolean {
+    private suspend fun awaitTaskPermissionAndPause(step: Int, maxSteps: Int, goal: String): Boolean {
         while (currentCoroutineContext().isActive) {
             val state = LongTaskStore.get(this) ?: return false
             if (state.status == LongTaskState.Status.CANCELLED) return false
@@ -209,7 +213,7 @@ class AutoTouchService : AccessibilityService() {
                 return false
             }
             if (state.status == LongTaskState.Status.RUNNING) {
-                LongTaskStore.checkpoint(this, "Step $step", ((step * 100) / maxOf(step + 1, 40)), "step:$step")
+                LongTaskStore.checkpoint(this, "Step $step", ((step * 100) / maxSteps.coerceAtLeast(1)), "step:$step")
                 if (wakeLock?.isHeld == false) acquireWakeLock()
                 return true
             }
@@ -410,7 +414,7 @@ class AutoTouchService : AccessibilityService() {
                 val history = mutableListOf<String>()
 
                 for (step in 1..maxSteps) {
-                    if (!isActive || !awaitTaskPermissionAndPause(step, userGoal)) break
+                    if (!isActive || !awaitTaskPermissionAndPause(step, maxSteps, userGoal)) break
 
                     // Check if a newly downloaded .mp4 video file has arrived in AutoVideos / Downloads!
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
@@ -943,7 +947,7 @@ class AutoTouchService : AccessibilityService() {
                 val (realW, realH) = getRealScreenDimensions()
 
                 for (step in 1..25) {
-                    if (!isActive || !awaitTaskPermissionAndPause(step, "YouTube upload")) break
+                    if (!isActive || !awaitTaskPermissionAndPause(step, 25, "YouTube upload")) break
                     if (!isActive) break
                     val nodes = captureScreenNodes()
                     val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
