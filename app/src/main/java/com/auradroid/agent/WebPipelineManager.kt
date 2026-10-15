@@ -124,6 +124,7 @@ object WebPipelineManager {
             val history = mutableListOf<String>()
 
             for (step in 1..maxSteps) {
+                service.awaitIfPaused()
                 val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
                 if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
                     VideoQueueManager.appendLog(service, "🎬 Newly Downloaded Video Ready: ${newlyDownloaded.name}! Launching YouTube...")
@@ -403,6 +404,7 @@ object WebPipelineManager {
             val (realW, realH) = service.getRealScreenDimensions()
 
             for (step in 1..25) {
+                service.awaitIfPaused()
                 val nodes = PhoneAgentManager.captureScreenNodes(service)
                 val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
 
@@ -486,6 +488,7 @@ object WebPipelineManager {
                     val exactUploadYPoints = listOf(realH * 0.964f, realH * 0.958f, realH * 0.968f)
 
                     for (attempt in 1..3) {
+                        service.awaitIfPaused()
                         val currentNodes = PhoneAgentManager.captureScreenNodes(service).filter {
                             it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
                         }

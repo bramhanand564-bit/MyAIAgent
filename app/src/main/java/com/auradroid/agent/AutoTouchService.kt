@@ -10,11 +10,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Path
-import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import android.provider.Settings
 import android.util.Base64
 import android.util.DisplayMetrics
 import android.view.Display
@@ -22,15 +20,10 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import android.webkit.WebView
 import androidx.core.app.NotificationCompat
-import androidx.core.content.FileProvider
 import kotlinx.coroutines.*
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import java.io.File
 import kotlin.coroutines.resume
-import kotlin.math.hypot
 
 data class UiNodeSnapshot(
     val index: Int,
@@ -61,6 +54,7 @@ class AutoTouchService : AccessibilityService() {
     private val crashGuard = CoroutineExceptionHandler { _, throwable ->
         if (throwable is CancellationException) return@CoroutineExceptionHandler
         VideoQueueManager.appendLog(this, "⚠️ Handled Error: ${throwable.message}")
+        VideoQueueManager.recordLearnedLesson(this, "Avoid error: ${throwable.message}", "GLOBAL")
         isJobRunning = false
         overlayHud?.setCursorOverlayVisible(false)
         overlayHud?.updateStatus("Error", throwable.message ?: "Stopped", "ERROR")
@@ -69,6 +63,9 @@ class AutoTouchService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob() + crashGuard)
     private var activeJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    @Volatile private var pauseRequested = false
+    @Volatile private var isTaskLaunching = false
+    private var lastTaskReplay: (() -> Unit)? = null
     var overlayHud: AiOverlayHud? = null
         private set
 
@@ -81,27 +78,19 @@ class AutoTouchService : AccessibilityService() {
         overlayHud?.show()
         overlayHud?.setCursorOverlayVisible(false)
         overlayHud?.updateStatus("Ready", "Tap 🌐 for Browser", "IDLE")
-        VideoQueueManager.appendLog(this, "✅ Universal Companion Connected (24/7 Protected)!")
+        VideoQueueManager.appendLog(this, "✅ Modular Companion Connected (Auto-Model & Verification Active)!")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-
     override fun onInterrupt() {}
 
     override fun onUnbind(intent: Intent?): Boolean {
         recordServiceState(false)
-        val state = LongTaskStore.get(this)
-        if (state?.status == LongTaskState.Status.RUNNING) LongTaskStore.pause(this)
-        activeJob?.cancel()
-        LongTaskForegroundService.stop(this)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         recordServiceState(false)
-        val state = LongTaskStore.get(this)
-        if (state?.status == LongTaskState.Status.RUNNING) LongTaskStore.pause(this)
-        activeJob?.cancel()
         releaseWakeLock()
         overlayHud?.hide()
         super.onDestroy()
@@ -119,7 +108,7 @@ class AutoTouchService : AccessibilityService() {
         } catch (_: Exception) {}
     }
 
-    private fun postKeepAliveNotification(statusText: String) {
+    fun postKeepAliveNotification(statusText: String) {
         try {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -132,7 +121,7 @@ class AutoTouchService : AccessibilityService() {
             }
             val notif = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher)
-                .setContentTitle("AuraDroid OS • 24/7 Active")
+                .setContentTitle("AuraDroid OS • Verified AI Agent")
                 .setContentText(statusText)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -159,83 +148,131 @@ class AutoTouchService : AccessibilityService() {
         } catch (_: Exception) {}
     }
 
+    private fun launchManagedTask(goal: String, replay: () -> Unit, block: suspend () -> Unit) {
+        if (isJobRunning || isTaskLaunching) {
+            VideoQueueManager.appendLog(this, "⚠️ A task is already running; new task was not started.")
+            return
+        }
+        isTaskLaunching = true
+        pauseRequested = false
+        lastTaskReplay = replay
+        LongTaskStore.begin(this, goal)
+        LongTaskForegroundService.start(this)
+
+        activeJob = serviceScope.launch {
+            acquireWakeLock()
+            try {
+                block()
+                val state = LongTaskStore.get(this@AutoTouchService)
+                if (state?.status == LongTaskState.Status.RUNNING ||
+                    state?.status == LongTaskState.Status.QUEUED) {
+                    LongTaskStore.complete(this@AutoTouchService)
+                }
+            } catch (e: CancellationException) {
+                val state = LongTaskStore.get(this@AutoTouchService)
+                if (state != null && state.status !in listOf(
+                        LongTaskState.Status.PAUSED,
+                        LongTaskState.Status.CANCELLED,
+                        LongTaskState.Status.COMPLETED,
+                        LongTaskState.Status.FAILED
+                    )) {
+                    LongTaskStore.cancel(this@AutoTouchService)
+                }
+                throw e
+            } catch (e: Exception) {
+                LongTaskStore.fail(this@AutoTouchService, e.message ?: "Task failed")
+                throw e
+            } finally {
+                isJobRunning = false
+                isTaskLaunching = false
+                pauseRequested = false
+                releaseWakeLock()
+                LongTaskForegroundService.stop(this@AutoTouchService)
+            }
+        }
+    }
+
+    /** Pause at the next safe automation step; in-flight UI/API calls are allowed to finish. */
     fun pauseCurrentJob() {
+        if (!isTaskLaunching && !isJobRunning) {
+            VideoQueueManager.appendLog(this, "ℹ️ No active task to pause.")
+            return
+        }
+        pauseRequested = true
         LongTaskStore.pause(this)
-        overlayHud?.updateStatus("Paused", "Task checkpoint saved", "WAITING")
-        VideoQueueManager.appendLog(this, "⏸ Task paused; progress checkpoint saved.")
+        overlayHud?.setCursorOverlayVisible(false)
+        overlayHud?.updateStatus("Task Paused", "Paused at a safe step. Tap Resume to continue.", "PAUSED")
+        postKeepAliveNotification("Task paused")
+        VideoQueueManager.appendLog(this, "⏸️ Task pause requested; waiting for the current safe step.")
     }
 
     fun resumeCurrentJob() {
-        if (activeJob?.isActive != true) {
-            VideoQueueManager.appendLog(this, "⚠️ Paused task process is no longer active. Use Retry to restart the saved goal safely.")
+        if (!pauseRequested) {
+            VideoQueueManager.appendLog(this, "ℹ️ Task is not paused.")
             return
         }
-        val state = LongTaskStore.resume(this)
-        if (state != null && state.status == LongTaskState.Status.RUNNING) {
-            overlayHud?.updateStatus("Resuming", state.currentStep, "WORKING")
-            VideoQueueManager.appendLog(this, "▶ Resume requested from saved checkpoint: ${state.checkpoint}")
-        } else {
-            VideoQueueManager.appendLog(this, "⚠️ No paused task to resume.")
+        pauseRequested = false
+        LongTaskStore.update(this) {
+            if (it.status == LongTaskState.Status.PAUSED || it.status == LongTaskState.Status.QUEUED)
+                it.copy(status = LongTaskState.Status.RUNNING, lastError = "")
+            else it
+        }
+        overlayHud?.setCursorOverlayVisible(true)
+        overlayHud?.updateStatus("Task Resuming", "Continuing from the next safe step.", "WORKING")
+        postKeepAliveNotification("Task resumed")
+        VideoQueueManager.appendLog(this, "▶️ Task resumed.")
+    }
+
+    suspend fun awaitIfPaused() {
+        while (pauseRequested && (isJobRunning || isTaskLaunching)) {
+            kotlinx.coroutines.delay(180L)
         }
     }
 
     fun retryCurrentTask(apiKey: String, model: String, useWeb: Boolean, url: String, folderPath: String) {
-        val state = LongTaskStore.get(this)
-        if (state == null || state.status !in listOf(LongTaskState.Status.FAILED, LongTaskState.Status.CANCELLED)) {
-            VideoQueueManager.appendLog(this, "⚠️ Retry is available only after a failed or cancelled task.")
+        val previousJob = activeJob
+        val replay = lastTaskReplay
+        val savedGoal = LongTaskStore.get(this)?.goal.orEmpty()
+        if (replay == null && savedGoal.isBlank()) {
+            VideoQueueManager.appendLog(this, "⚠️ No saved task is available to retry.")
+            overlayHud?.updateStatus("Retry Unavailable", "Start a task before using Retry.", "ERROR")
             return
         }
-        if (apiKey.isBlank() || state.goal.isBlank()) {
-            VideoQueueManager.appendLog(this, "⚠️ Retry needs a saved goal and API key.")
-            return
-        }
-        if (state.retryCount >= LongTaskRetryWorker.MAX_RETRIES) {
-            VideoQueueManager.appendLog(this, "⚠️ Retry limit reached (3). Start a new task manually.")
-            return
-        }
-        LongTaskStore.save(this, state.copy(status = LongTaskState.Status.QUEUED))
-        LongTaskStore.scheduleRetry(this, useWeb, url, folderPath)
-        VideoQueueManager.appendLog(this, "↻ Retry queued with WorkManager (bounded exponential backoff).")
-    }
 
-    private suspend fun awaitTaskPermissionAndPause(step: Int, maxSteps: Int, goal: String): Boolean {
-        while (currentCoroutineContext().isActive) {
-            val state = LongTaskStore.get(this) ?: return false
-            if (state.status == LongTaskState.Status.CANCELLED) return false
-            if (state.status == LongTaskState.Status.PAUSED) {
-                releaseWakeLock()
-                overlayHud?.setCursorOverlayVisible(false)
-                delay(300)
-                continue
+        pauseRequested = false
+        isJobRunning = false
+        LongTaskStore.cancel(this)
+        LongTaskForegroundService.stop(this)
+        serviceScope.launch {
+            try {
+                previousJob?.cancelAndJoin()
+            } catch (_: CancellationException) {}
+            kotlinx.coroutines.delay(250L)
+            if (replay != null) {
+                replay()
+            } else if (useWeb) {
+                startBackgroundWebTask(apiKey, model, url, savedGoal, folderPath)
+            } else {
+                startUniversalAiTask(apiKey, model, savedGoal)
             }
-            if (!Settings.canDrawOverlays(this) && overlayHud != null) {
-                LongTaskStore.fail(this, "Overlay permission revoked")
-                return false
-            }
-            if (state.status == LongTaskState.Status.RUNNING) {
-                LongTaskStore.checkpoint(this, "Step $step", ((step * 100) / maxSteps.coerceAtLeast(1)), "step:$step")
-                if (wakeLock?.isHeld == false) acquireWakeLock()
-                return true
-            }
-            delay(300)
         }
-        return false
     }
 
     fun stopCurrentJob() {
-        LongTaskStore.cancel(this)
-        LongTaskForegroundService.stop(this)
+        pauseRequested = false
         isJobRunning = false
+        LongTaskStore.cancel(this)
         activeJob?.cancel()
         releaseWakeLock()
         overlayHud?.setCursorOverlayVisible(false)
-        overlayHud?.updateStatus("Stopped", "Task stopped by user", "DONE")
+        overlayHud?.updateStatus("Task Stopped", "Task stopped by user.", "STOPPED")
+        LongTaskForegroundService.stop(this)
         postKeepAliveNotification("Ready for next instruction")
         VideoQueueManager.appendLog(this, "🛑 All active tasks stopped by user.")
     }
 
     @Suppress("DEPRECATION")
-    private fun getRealScreenDimensions(): Pair<Float, Float> {
+    fun getRealScreenDimensions(): Pair<Float, Float> {
         val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val bounds = wm.currentWindowMetrics.bounds
@@ -247,7 +284,7 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    private suspend fun captureScreenshotBase64(): String? {
+    suspend fun captureScreenshotBase64(): String? {
         if (!VideoQueueManager.isScreenVisionEnabled(this)) return null
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return suspendCancellableCoroutine { cont ->
@@ -270,7 +307,7 @@ class AutoTouchService : AccessibilityService() {
                                     val scaled = Bitmap.createScaledBitmap(softBitmap, 540, 1200, true)
                                     softBitmap.recycle()
                                     val baos = ByteArrayOutputStream()
-                                    scaled.compress(Bitmap.CompressFormat.JPEG, 60, baos)
+                                    scaled.compress(Bitmap.CompressFormat.JPEG, 62, baos)
                                     scaled.recycle()
                                     val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
                                     if (cont.isActive) cont.resume(b64)
@@ -294,7 +331,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     // ========================================================================
-    // ENGINE 1: GOOGLE FLOW (1000 CREDITS) 8s VIDEO ➔ YOUTUBE DAILY PIPELINE
+    // MODULAR PIPELINE LAUNCHERS
     // ========================================================================
     fun startGoogleFlowToYouTubePipeline(
         apiKey: String,
@@ -304,62 +341,16 @@ class AutoTouchService : AccessibilityService() {
         dailyVideoCount: Int,
         folderPath: String
     ) {
-        if (isJobRunning) {
-            VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
-            return
-        }
-
-        LongTaskStore.begin(this, "Google Flow to YouTube: $topicIdea")
-        LongTaskForegroundService.start(this)
-        activeJob = serviceScope.launch {
-            isJobRunning = true
-            acquireWakeLock()
-            overlayHud?.show()
-            overlayHud?.setCursorOverlayVisible(false)
-
-            try {
-                overlayHud?.updateStatus(
-                    "Flow 8s (Credit Lock: 1)",
-                    "Creating policy-safe 8s prompt...",
-                    "THINKING"
-                )
-                val freshPrompt = GeminiBrain.generateDailyFlowPrompt(apiKey, model, topicIdea)
-                VideoQueueManager.appendLog(this@AutoTouchService, "🎬 Safe Flow 8s Prompt: $freshPrompt")
-
-                val goal = """
-                    We are on Google Flow ($flowUrl).
-                    1. If on landing page, click '+ New project'.
-                    2. Ensure mode is set to 'Video • 720p • 8s • x1' (NOT Nano Banana Image mode).
-                    3. Type this exact 8-second video prompt ONCE into 'What do you want to create?': "$freshPrompt"
-                    4. Wait while the 1 video renders from 0% to 100%, then open the finished video card, download it (DOWNLOAD_VIDEO) and CHAIN_YOUTUBE.
-                """.trimIndent()
-
-                isJobRunning = false
-                startBackgroundWebTask(
-                    apiKey = apiKey,
-                    model = model,
-                    initialUrl = flowUrl,
-                    userGoal = goal,
-                    folderPath = folderPath,
-                    chainYouTubeAfterDownload = true,
-                    forceChainYouTube = true,
-                    exactFlowPrompt = freshPrompt
-                )
-            } catch (e: CancellationException) {
-                if (LongTaskStore.get(this@AutoTouchService)?.status != LongTaskState.Status.CANCELLED) {
-                    LongTaskStore.pause(this@AutoTouchService)
-                }
-            } catch (e: Exception) {
-                isJobRunning = false
-                overlayHud?.updateStatus("Flow Error", e.message ?: "Error", "ERROR")
-                VideoQueueManager.appendLog(this@AutoTouchService, "❌ Flow Pipeline Error: ${e.message}")
-            }
+        launchManagedTask(
+            goal = "Google Flow to YouTube: $topicIdea",
+            replay = { startGoogleFlowToYouTubePipeline(apiKey, model, flowUrl, topicIdea, dailyVideoCount, folderPath) }
+        ) {
+            WebPipelineManager.runGoogleFlowPipeline(
+                this@AutoTouchService, apiKey, model, flowUrl, topicIdea, dailyVideoCount, folderPath
+            )
         }
     }
 
-    // ========================================================================
-    // ENGINE 2: BACKGROUND WEB STUDIO AGENT (With 1-Video Credit Lock!)
-    // ========================================================================
     fun startBackgroundWebTask(
         apiKey: String,
         model: String,
@@ -370,523 +361,17 @@ class AutoTouchService : AccessibilityService() {
         forceChainYouTube: Boolean = false,
         exactFlowPrompt: String = ""
     ) {
-        if (isJobRunning) {
-            VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
-            return
-        }
-
-        val shouldChainYt = chainYouTubeAfterDownload || forceChainYouTube
-
-        LongTaskStore.begin(this, userGoal)
-        LongTaskForegroundService.start(this)
-        activeJob = serviceScope.launch {
-            isJobRunning = true
-            acquireWakeLock()
-            postKeepAliveNotification("Running Background Web Agent...")
-            overlayHud?.show()
-            overlayHud?.setCursorOverlayVisible(false)
-
-            val startTimeMs = System.currentTimeMillis()
-            val webView = overlayHud?.getOrCreateSharedWebView()
-            val memoryVault = VideoQueueManager.getMemoryVault(this@AutoTouchService)
-            val unstoppable = VideoQueueManager.is24HourUnstoppableEnabled(this@AutoTouchService)
-            val stepDelay = VideoQueueManager.getStepDelayMs(this@AutoTouchService)
-            val maxSteps = if (unstoppable) 2000 else 60
-
-            // STRICT SINGLE-VIDEO CREDIT LOCK: Once true, agent CANNOT type or submit another prompt!
-            var flowPromptSubmitted = false
-            var downloadAttempts = 0
-
-            try {
-                val currentLoadedUrl = webView?.url ?: ""
-                val alreadyOnSameDomain = currentLoadedUrl.contains("labs.google/fx", true) &&
-                        initialUrl.contains("labs.google/fx", true)
-
-                if (initialUrl.isNotBlank() && initialUrl.startsWith("http") && !alreadyOnSameDomain &&
-                    !currentLoadedUrl.startsWith(initialUrl.take(22), true)
-                ) {
-                    overlayHud?.updateStatus("Web Pod • Opening", initialUrl, "WORKING")
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🌐 Opening in Browser: $initialUrl")
-                    webView?.loadUrl(initialUrl)
-                    delay(5000)
-                }
-
-                val history = mutableListOf<String>()
-
-                for (step in 1..maxSteps) {
-                    if (!isActive || !awaitTaskPermissionAndPause(step, maxSteps, userGoal)) break
-
-                    // Check if a newly downloaded .mp4 video file has arrived in AutoVideos / Downloads!
-                    val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                    if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
-                        VideoQueueManager.appendLog(
-                            this@AutoTouchService,
-                            "🎬 Downloaded 8s Video Ready: ${newlyDownloaded.name}! Launching YouTube Auto-Upload..."
-                        )
-                        isJobRunning = false
-                        startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
-                        return@launch
-                    }
-
-                    val currentUrl = webView?.url ?: initialUrl
-
-                    // If we are on Google Flow and haven't submitted the prompt yet, auto-switch Nano Banana -> Video 8s x1!
-                    if (!flowPromptSubmitted && currentUrl.contains("labs.google/fx", true)) {
-                        val modeFix = ensureGoogleFlowVideo8sMode(webView)
-                        if (modeFix.startsWith("SWITCHED")) {
-                            VideoQueueManager.appendLog(this@AutoTouchService, "⚙️ Auto-Configured Google Flow Mode: $modeFix")
-                            delay(1800)
-                        }
-                    }
-
-                    val domSnapshot = extractWebDomAndDrawBadges(webView)
-                    delay(180)
-
-                    val webCanvasScreenshotB64 = if (VideoQueueManager.isScreenVisionEnabled(this@AutoTouchService)) {
-                        overlayHud?.captureWebViewScreenshotBase64()
-                    } else null
-
-                    clearWebVisualBadges(webView)
-
-                    // HARD CREDIT LOCK: If prompt was already submitted, DO NOT let Gemini click Create/Type again!
-                    if (flowPromptSubmitted) {
-                        val isStillRendering = Regex("\\b([1-9]?[0-9])%\\b").find(domSnapshot)
-                        if (isStillRendering != null) {
-                            val pct = isStillRendering.value
-                            overlayHud?.updateStatus("Flow Rendering ($pct)", "Waiting for 8s video to finish...", "WAITING")
-                            VideoQueueManager.appendLog(this@AutoTouchService, "⏳ Video rendering at $pct (Credit Lock Active)...")
-                            delay(6000)
-                            continue
-                        } else {
-                            // Rendering % is gone (100% finished)! Open the video card & download it!
-                            downloadAttempts++
-                            overlayHud?.updateStatus("Flow 100% • Download", "Opening video card & saving MP4 (#$downloadAttempts)...", "WORKING")
-                            val dlStatus = triggerVideoDownloadInWebView(webView, "")
-                            VideoQueueManager.appendLog(this@AutoTouchService, "📥 Auto-Download Status (#$downloadAttempts): $dlStatus")
-                            delay(5000)
-
-                            val downloadedNow = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                            if (downloadedNow != null) {
-                                VideoQueueManager.appendLog(this@AutoTouchService, "✅ Video Saved: ${downloadedNow.name}!")
-                                isJobRunning = false
-                                startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
-                                return@launch
-                            }
-                            if (downloadAttempts >= 5) {
-                                VideoQueueManager.appendLog(this@AutoTouchService, "⚠️ Download took too long, checking folder queue...")
-                                isJobRunning = false
-                                startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
-                                return@launch
-                            }
-                            continue
-                        }
-                    }
-
-                    overlayHud?.updateStatus("Web • Step $step", "Vision inspecting page...", "THINKING")
-                    val decision = GeminiBrain.decideNextWebAction(
-                        apiKey = apiKey,
-                        model = model,
-                        goal = userGoal,
-                        pageUrl = currentUrl,
-                        pageTextAndElements = domSnapshot,
-                        history = history,
-                        memoryVault = memoryVault,
-                        screenshotBase64 = webCanvasScreenshotB64
-                    )
-
-                    val mood = if (decision.action == "WAIT") "WAITING" else "WORKING"
-                    overlayHud?.updateStatus("Web • ${decision.action}", decision.reason, mood)
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🌐 Web Step $step [${decision.action}]: ${decision.reason}")
-
-                    when (decision.action) {
-                        "CLICK_EL" -> {
-                            val clickRes = performWebJsClick(webView, decision.elementIndex)
-                            history.add("Step $step: CLICK_EL(${decision.elementIndex}) -> $clickRes - ${decision.reason}")
-                            if (clickRes.contains("arrow_forward", true) || clickRes.contains("Create", true)) {
-                                flowPromptSubmitted = true
-                                VideoQueueManager.appendLog(this@AutoTouchService, "🔒 1-Video Credit Lock Activated!")
-                            }
-                        }
-                        "TYPE_EL" -> {
-                            val promptToUse = exactFlowPrompt.ifBlank { decision.textToType }
-                            ensureGoogleFlowVideo8sMode(webView)
-                            delay(800)
-                            val typeRes = performWebJsTypeAndSubmit(webView, decision.elementIndex, promptToUse)
-                            VideoQueueManager.appendLog(this@AutoTouchService, "✍️ Web Type Result: $typeRes")
-                            history.add("Step $step: TYPE_EL(${decision.elementIndex}) -> $typeRes")
-                            if (typeRes.startsWith("SUBMITTED_OK") || typeRes.contains("TYPED_LEN:")) {
-                                flowPromptSubmitted = true
-                                VideoQueueManager.appendLog(this@AutoTouchService, "🔒 Prompt Submitted Once! 1-Video Credit Lock Activated.")
-                                delay(4000)
-                            }
-                        }
-                        "SCROLL" -> {
-                            webView?.evaluateJavascript("window.scrollBy(0, 550);", null)
-                            history.add("Step $step: SCROLL")
-                        }
-                        "LOAD_URL" -> {
-                            if (decision.url.startsWith("http")) {
-                                webView?.loadUrl(decision.url)
-                                delay(4000)
-                            }
-                            history.add("Step $step: LOAD_URL ${decision.url}")
-                        }
-                        "DOWNLOAD_VIDEO", "DOWNLOAD_URL" -> {
-                            val dlRes = triggerVideoDownloadInWebView(webView, decision.url)
-                            VideoQueueManager.appendLog(this@AutoTouchService, "📥 Download Trigger: $dlRes")
-                            delay(4500)
-                            history.add("Step $step: DOWNLOAD_VIDEO ($dlRes)")
-                        }
-                        "WAIT" -> {
-                            if (domSnapshot.contains("HAS_VIDEO_ELEMENT: YES")) {
-                                triggerVideoDownloadInWebView(webView, "")
-                            }
-                            delay(6000)
-                            history.add("Step $step: WAIT - ${decision.reason}")
-                        }
-                        "CHAIN_YOUTUBE" -> {
-                            triggerVideoDownloadInWebView(webView, "")
-                            delay(4000)
-                            isJobRunning = false
-                            startYouTubeAutoUpload(apiKey, model, folderPath, userGoal)
-                            return@launch
-                        }
-                        "DONE" -> {
-                            isJobRunning = false
-                            overlayHud?.updateStatus("✅ Web Task Done", decision.reason, "DONE")
-                            LongTaskStore.complete(this@AutoTouchService)
-                            LongTaskForegroundService.stop(this@AutoTouchService)
-                            VideoQueueManager.appendLog(this@AutoTouchService, "✅ Web Task Completed: ${decision.reason}")
-                            return@launch
-                        }
-                    }
-
-                    delay(stepDelay)
-                }
-            } catch (e: CancellationException) {
-                if (LongTaskStore.get(this@AutoTouchService)?.status != LongTaskState.Status.CANCELLED) {
-                    LongTaskStore.pause(this@AutoTouchService)
-                }
-            } catch (e: Exception) {
-                LongTaskStore.fail(this@AutoTouchService, e.message ?: "Web task failed")
-                isJobRunning = false
-                overlayHud?.updateStatus("Web Error", e.message ?: "Failed", "ERROR")
-                VideoQueueManager.appendLog(this@AutoTouchService, "❌ Web Agent Error: ${e.message}")
-            } finally {
-                clearWebVisualBadges(webView)
-                releaseWakeLock()
-                isJobRunning = false
-                val finalState = LongTaskStore.get(this@AutoTouchService)
-                if (finalState != null && finalState.status == LongTaskState.Status.RUNNING) {
-                    LongTaskStore.complete(this@AutoTouchService)
-                    LongTaskForegroundService.stop(this@AutoTouchService)
-                }
-            }
+        launchManagedTask(
+            goal = userGoal,
+            replay = { startBackgroundWebTask(apiKey, model, initialUrl, userGoal, folderPath, chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt) }
+        ) {
+            WebPipelineManager.runBackgroundWebTask(
+                this@AutoTouchService, apiKey, model, initialUrl, userGoal, folderPath,
+                chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt
+            )
         }
     }
 
-    /**
-     * Automatically checks if Google Flow is stuck in "Nano Banana" (Image) or "x2/x4" mode,
-     * and switches it to "Video • 9:16 • 8s • x1" automatically!
-     */
-    private suspend fun ensureGoogleFlowVideo8sMode(webView: WebView?): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) {
-            cont.resume("NO_WEBVIEW")
-            return@suspendCancellableCoroutine
-        }
-        val js = """
-            (function() {
-                var allBtns = document.querySelectorAll('button, [role="button"], div');
-                var modePill = null;
-                for (var i = 0; i < allBtns.length; i++) {
-                    var t = (allBtns[i].innerText || '').trim();
-                    if ((t.indexOf('Nano Banana') !== -1 || t.indexOf('Image') !== -1 || t.indexOf('x2') !== -1 || t.indexOf('x4') !== -1) && allBtns[i].getBoundingClientRect().top > 250) {
-                        modePill = allBtns[i];
-                        break;
-                    }
-                }
-                if (modePill) {
-                    modePill.click();
-                    setTimeout(function() {
-                        var opts = document.querySelectorAll('button, [role="tab"], [role="button"], span, div');
-                        for (var j = 0; j < opts.length; j++) {
-                            var ot = (opts[j].innerText || '').trim();
-                            if (ot === 'Video' || ot === '9:16' || ot === '8s' || ot === 'x1') {
-                                opts[j].click();
-                            }
-                        }
-                    }, 350);
-                    return 'SWITCHED_TO_VIDEO_8S_X1';
-                }
-                return 'ALREADY_VIDEO_MODE';
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "OK")
-        }
-    }
-
-    /**
-     * Smart Google Flow Video Opener & Downloader:
-     * 1. If a <video> player is already open on screen, downloads its MP4 or clicks the 3-dot Download button.
-     * 2. If we are on the Google Flow project grid where the video finished rendering (100%), it clicks the newest
-     *    completed video thumbnail card to open the player first!
-     */
-    private suspend fun triggerVideoDownloadInWebView(webView: WebView?, directUrl: String): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) {
-            cont.resume("NO_WEBVIEW")
-            return@suspendCancellableCoroutine
-        }
-        if (directUrl.startsWith("http")) {
-            webView.loadUrl(directUrl)
-            cont.resume("DIRECT_URL_LOADED")
-            return@suspendCancellableCoroutine
-        }
-        val js = """
-            (function() {
-                // 1. Check if a direct Download button or menu item is visible
-                var dlBtn = document.querySelector('a[download], button[aria-label*="Download" i], button[title*="Download" i], [role="menuitem"]');
-                if (dlBtn && (dlBtn.innerText || dlBtn.getAttribute('aria-label') || '').toLowerCase().indexOf('download') !== -1) {
-                    dlBtn.click();
-                    return 'CLICKED_DOWNLOAD_BTN';
-                }
-
-                // 2. Check if a <video> element with a valid src is currently loaded
-                var vids = document.querySelectorAll('video');
-                for (var i = vids.length - 1; i >= 0; i--) {
-                    var src = vids[i].currentSrc || vids[i].src;
-                    if (src && src.startsWith('blob:')) {
-                        fetch(src).then(r => r.blob()).then(b => {
-                            var reader = new FileReader();
-                            reader.onloadend = function() {
-                                AuraBlobBridge.saveBase64Video(reader.result, 'flow_8s_' + Date.now() + '.mp4');
-                            };
-                            reader.readAsDataURL(b);
-                        });
-                        return 'BLOB_FETCHED';
-                    } else if (src && src.startsWith('http')) {
-                        var a = document.createElement('a');
-                        a.href = src;
-                        a.download = 'flow_8s_' + Date.now() + '.mp4';
-                        document.body.appendChild(a);
-                        a.click();
-                        return 'HTTP_VIDEO_DOWNLOADED';
-                    }
-                }
-
-                // 3. If no <video> is loaded yet, we are on the Google Flow thumbnail grid!
-                // Find the newest completed video card (which does NOT say "Failed" and does NOT have "%") and click it to open the player!
-                var cards = document.querySelectorAll('a[href*="/edit/"], [role="button"], button, img');
-                for (var c = 0; c < cards.length; c++) {
-                    var el = cards[c];
-                    var rect = el.getBoundingClientRect();
-                    var txt = (el.innerText || el.getAttribute('aria-label') || '').trim();
-                    if (rect.top > 110 && rect.top < 650 && rect.width > 60 && rect.height > 60) {
-                        if (txt.indexOf('Failed') === -1 && txt.indexOf('%') === -1) {
-                            el.click();
-                            return 'OPENED_VIDEO_CARD';
-                        }
-                    }
-                }
-                return 'WAITING_FOR_VIDEO_PLAYER';
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "DONE")
-        }
-    }
-
-    private suspend fun extractWebDomAndDrawBadges(webView: WebView?): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) {
-            cont.resume("Empty WebView")
-            return@suspendCancellableCoroutine
-        }
-        val js = """
-            (function() {
-                var oldBadges = document.querySelectorAll('.aura-vision-badge');
-                for (var b = 0; b < oldBadges.length; b++) oldBadges[b].remove();
-
-                function queryAllDeep(root) {
-                    var res = [];
-                    var nodes = root.querySelectorAll('a, button, input, textarea, select, [role="button"], [role="textbox"], [contenteditable="true"], video');
-                    for (var i = 0; i < nodes.length; i++) res.push(nodes[i]);
-                    var all = root.querySelectorAll('*');
-                    for (var j = 0; j < all.length; j++) {
-                        if (all[j].shadowRoot) {
-                            res = res.concat(queryAllDeep(all[j].shadowRoot));
-                        }
-                    }
-                    return res;
-                }
-                var items = queryAllDeep(document);
-                var out = [];
-                var hasVideo = document.querySelectorAll('video').length > 0 ? 'YES' : 'NO';
-                for (var i = 0; i < items.length && out.length < 75; i++) {
-                    var el = items[i];
-                    var rect = el.getBoundingClientRect();
-                    if (rect.width > 5 && rect.height > 5 && rect.bottom > 0 && rect.top < window.innerHeight) {
-                        el.setAttribute('data-aura-idx', i);
-                        var tag = el.tagName.toLowerCase();
-                        var placeholder = el.placeholder || el.getAttribute('placeholder') || el.getAttribute('data-placeholder') || '';
-                        var aria = el.getAttribute('aria-label') || '';
-                        var val = (el.value !== undefined ? el.value : (el.isContentEditable ? el.innerText : '')) || '';
-                        var txt = (el.innerText || placeholder || aria || el.src || '').trim().replace(/\s+/g, ' ').substring(0, 65);
-                        var valInfo = (tag === 'textarea' || tag === 'input' || el.isContentEditable || el.getAttribute('role') === 'textbox')
-                            ? ' | CURRENT_VALUE="' + val.trim().substring(0, 45) + '" | PLACEHOLDER="' + placeholder + '"'
-                            : '';
-                        out.push('[' + i + '] <' + tag + '> ' + txt + valInfo);
-
-                        try {
-                            var badge = document.createElement('div');
-                            badge.className = 'aura-vision-badge';
-                            badge.innerText = '[' + i + ']';
-                            badge.style.cssText = 'position:fixed;left:' + Math.max(2, Math.min(window.innerWidth - 34, rect.left)) + 'px;top:' + Math.max(2, Math.min(window.innerHeight - 20, rect.top)) + 'px;background:#FACC15;color:#000000;border:1.5px solid #DC2626;border-radius:4px;padding:0px 3px;font-size:10px;font-weight:bold;z-index:2147483647;pointer-events:none;line-height:12px;';
-                            document.body.appendChild(badge);
-                        } catch (e) {}
-                    }
-                }
-                var bodyText = (document.body ? document.body.innerText : '').substring(0, 1400).replace(/\s+/g, ' ');
-                return 'HAS_VIDEO_ELEMENT: ' + hasVideo + '\nPAGE_TEXT: ' + bodyText + '\nELEMENTS:\n' + out.join('\n');
-            })();
-        """.trimIndent()
-
-        webView.evaluateJavascript(js) { result ->
-            if (cont.isActive) {
-                cont.resume(result?.trim('"')?.replace("\\n", "\n") ?: "No DOM")
-            }
-        }
-    }
-
-    private fun clearWebVisualBadges(webView: WebView?) {
-        val js = """
-            (function() {
-                var oldBadges = document.querySelectorAll('.aura-vision-badge');
-                for (var b = 0; b < oldBadges.length; b++) oldBadges[b].remove();
-            })();
-        """.trimIndent()
-        webView?.evaluateJavascript(js, null)
-    }
-
-    private suspend fun performWebJsClick(webView: WebView?, index: Int): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) {
-            cont.resume("No WebView")
-            return@suspendCancellableCoroutine
-        }
-        val js = """
-            (function() {
-                var el = document.querySelector('[data-aura-idx="$index"]');
-                if (!el) return 'NOT_FOUND';
-                var clickable = el.closest('button, [role="button"], a') || el;
-                clickable.scrollIntoView({block:'center'});
-                var opts = { bubbles: true, cancelable: true, view: window };
-                clickable.dispatchEvent(new PointerEvent('pointerdown', opts));
-                clickable.dispatchEvent(new MouseEvent('mousedown', opts));
-                clickable.dispatchEvent(new PointerEvent('pointerup', opts));
-                clickable.dispatchEvent(new MouseEvent('mouseup', opts));
-                clickable.click();
-                return 'CLICKED:' + (clickable.innerText || clickable.getAttribute('aria-label') || clickable.tagName).substring(0, 25);
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res ?: "DONE")
-        }
-    }
-
-    private suspend fun performWebJsTypeAndSubmit(
-        webView: WebView?,
-        index: Int,
-        text: String
-    ): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) {
-            cont.resume("No WebView")
-            return@suspendCancellableCoroutine
-        }
-        val safeText = JSONObject.quote(text)
-        val js = """
-            (function() {
-                var target = document.querySelector('[data-aura-idx="$index"]');
-                
-                var allCandidates = document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"], input[type="text"], input:not([type])');
-                var flowPromptBox = null;
-                for (var i = 0; i < allCandidates.length; i++) {
-                    var c = allCandidates[i];
-                    var ph = (c.placeholder || c.getAttribute('placeholder') || c.getAttribute('aria-label') || c.innerText || '').toLowerCase();
-                    if (ph.indexOf('what do you want to create') !== -1 || ph.indexOf('create') !== -1 || ph.indexOf('prompt') !== -1 || c.tagName.toLowerCase() === 'textarea' || c.isContentEditable) {
-                        var rect = c.getBoundingClientRect();
-                        if (rect.top > 180 && rect.width > 100) {
-                            flowPromptBox = c;
-                            break;
-                        }
-                    }
-                }
-                if (flowPromptBox) {
-                    target = flowPromptBox;
-                } else if (!target) {
-                    target = allCandidates[allCandidates.length - 1];
-                }
-                if (!target) return 'NO_INPUT_FOUND';
-
-                target.scrollIntoView({block: 'center'});
-                target.click();
-                target.focus();
-
-                // Clear any old text first so we never duplicate prompts
-                try {
-                    if (target.select) target.select();
-                    else document.execCommand('selectAll', false, null);
-                    document.execCommand('insertText', false, $safeText);
-                } catch (e) {}
-
-                var currentVal = (target.value !== undefined ? target.value : target.innerText) || '';
-                if (currentVal.trim().length < 5) {
-                    try {
-                        var proto = target.tagName.toLowerCase() === 'textarea'
-                            ? window.HTMLTextAreaElement.prototype
-                            : window.HTMLInputElement.prototype;
-                        var nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value') ? Object.getOwnPropertyDescriptor(proto, 'value').set : null;
-                        if (nativeSetter) {
-                            nativeSetter.call(target, $safeText);
-                        } else if (target.isContentEditable) {
-                            target.innerText = $safeText;
-                        } else {
-                            target.value = $safeText;
-                        }
-                        target.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: $safeText }));
-                        target.dispatchEvent(new Event('change', { bubbles: true }));
-                    } catch (e2) {}
-                }
-
-                // Click arrow_forward ONCE after 500ms
-                setTimeout(function() {
-                    var btns = document.querySelectorAll('button, [role="button"]');
-                    for (var b = 0; b < btns.length; b++) {
-                        var bTxt = (btns[b].innerText || btns[b].getAttribute('aria-label') || '').trim();
-                        if (bTxt.indexOf('arrow_forward') !== -1 || bTxt.toLowerCase() === 'create' || bTxt.toLowerCase() === 'generate') {
-                            if (!btns[b].disabled) {
-                                var opts = { bubbles: true, cancelable: true, view: window };
-                                btns[b].dispatchEvent(new PointerEvent('pointerdown', opts));
-                                btns[b].dispatchEvent(new MouseEvent('mousedown', opts));
-                                btns[b].dispatchEvent(new PointerEvent('pointerup', opts));
-                                btns[b].dispatchEvent(new MouseEvent('mouseup', opts));
-                                btns[b].click();
-                                break;
-                            }
-                        }
-                    }
-                }, 500);
-
-                var finalVal = (target.value !== undefined ? target.value : target.innerText) || '';
-                return 'SUBMITTED_OK_TYPED_LEN:' + finalVal.length;
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "TYPED")
-        }
-    }
-
-    // ========================================================================
-    // ENGINE 3: TESTED & WORKING YOUTUBE SHORTS AUTO-UPLOADER
-    // ========================================================================
     fun startYouTubeAutoUpload(
         apiKey: String,
         model: String,
@@ -894,538 +379,39 @@ class AutoTouchService : AccessibilityService() {
         userPrompt: String,
         createAiVideoIfEmpty: Boolean = false
     ) {
-        if (isJobRunning) {
-            VideoQueueManager.appendLog(this, "⚠️ A task is already running!")
-            return
-        }
-
-        LongTaskStore.begin(this, "Video upload task: $userPrompt")
-        LongTaskForegroundService.start(this)
-        activeJob = serviceScope.launch {
-            isJobRunning = true
-            acquireWakeLock()
-            postKeepAliveNotification("Uploading Video to YouTube...")
-            overlayHud?.show()
-            overlayHud?.setCursorOverlayVisible(true)
-            try {
-                overlayHud?.updateStatus("Step 1/5 • Folder", "Scanning folder for video...", "WORKING")
-                val nextVideo = VideoQueueManager.getNextPendingVideo(this@AutoTouchService, folderPath)
-                if (nextVideo == null) {
-                    if (createAiVideoIfEmpty) {
-                        isJobRunning = false
-                        startGoogleFlowToYouTubePipeline(
-                            apiKey = apiKey,
-                            model = model,
-                            flowUrl = VideoQueueManager.getPinnedFlowUrl(this@AutoTouchService),
-                            topicIdea = userPrompt,
-                            dailyVideoCount = 1,
-                            folderPath = folderPath
-                        )
-                        return@launch
-                    }
-                    isJobRunning = false
-                    overlayHud?.setCursorOverlayVisible(false)
-                    overlayHud?.updateStatus("Queue Empty", "Tap 'Reset History' or make video!", "ERROR")
-                    VideoQueueManager.appendLog(this@AutoTouchService, "⚠️ No pending video in folder!")
-                    return@launch
-                }
-
-                overlayHud?.updateStatus("Step 2/5 • Gemini", "Generating viral Title...", "THINKING")
-                val metadata = GeminiBrain.generateYouTubeMetadata(
-                    apiKey = apiKey,
-                    model = model,
-                    fileName = nextVideo.name,
-                    userInstruction = userPrompt
-                )
-
-                copyToClipboard(metadata.title)
-                overlayHud?.updateStatus("Step 3/5 • YouTube", "Opening YouTube Upload...", "WORKING")
-                launchYouTubeWithVideo(nextVideo)
-                delay(5500)
-
-                var nextClickCount = 0
-                var titleFilled = false
-                var descFilled = false
-                val (realW, realH) = getRealScreenDimensions()
-
-                for (step in 1..25) {
-                    if (!isActive || !awaitTaskPermissionAndPause(step, 25, "YouTube upload")) break
-                    if (!isActive) break
-                    val nodes = captureScreenNodes()
-                    val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-
-                    if (appNodes.isEmpty() && nextClickCount < 2) {
-                        delay(2000)
-                        continue
-                    }
-
-                    val nextBtn = appNodes.firstOrNull {
-                        it.text.equals("Next", true) ||
-                        it.contentDesc.equals("Next", true) ||
-                        it.text.equals("Done", true) ||
-                        it.contentDesc.equals("Done", true)
-                    }
-
-                    val isOnAddDetailsScreen = isAddDetailsScreenVisible(appNodes) || (nextClickCount >= 2 && nextBtn == null)
-
-                    if (!isOnAddDetailsScreen && !titleFilled && nextBtn != null) {
-                        nextClickCount++
-                        overlayHud?.updateStatus("Step 3/5 • Editor ($nextClickCount)", "Tapping 'Next'...", "WORKING")
-                        animateAndPhysicalTapNode(nextBtn, "Tap: Next")
-                        delay(4000)
-                        continue
-                    }
-
-                    if (!titleFilled && (isOnAddDetailsScreen || nextClickCount >= 2)) {
-                        copyToClipboard(metadata.title)
-                        val captionNode = appNodes.firstOrNull {
-                            val combined = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
-                            combined.contains("Caption your Short", true) ||
-                            combined.contains("Create a title", true) ||
-                            combined.contains("caption", true)
-                        } ?: appNodes.firstOrNull { it.isEditable || it.supportsSetText }
-
-                        val capX = captionNode?.centerX ?: (realW * 0.52f)
-                        val capY = captionNode?.centerY ?: (realH * 0.138f)
-
-                        overlayHud?.updateStatus("Step 4/5 • Caption", "Focusing Caption Box...", "WORKING")
-                        animateAndTapXY(capX, capY, "Tap: Caption")
-                        delay(2200)
-
-                        overlayHud?.updateStatus("Step 4/5 • Typing", "Pasting AI Title...", "WORKING")
-                        insertCaptionSingleClean(metadata.title, capX, capY)
-
-                        titleFilled = true
-                        delay(1800)
-                        performGlobalAction(GLOBAL_ACTION_BACK)
-                        delay(2800)
-                        continue
-                    }
-
-                    if (titleFilled && !descFilled) {
-                        val addDescNode = appNodes.firstOrNull {
-                            "${it.text} ${it.contentDesc} ${it.hintText}".contains("Add description", true)
-                        }
-                        if (addDescNode != null) {
-                            animateAndPhysicalTapNode(addDescNode, "Tap: Description")
-                            delay(2000)
-                            insertCaptionSingleClean(metadata.description, realW * 0.5f, realH * 0.25f)
-                            descFilled = true
-                            delay(1800)
-                            performGlobalAction(GLOBAL_ACTION_BACK)
-                            delay(2200)
-                            continue
-                        } else {
-                            descFilled = true
-                        }
-                    }
-
-                    if (titleFilled) {
-                        if (isKeyboardOpen()) {
-                            performGlobalAction(GLOBAL_ACTION_BACK)
-                            delay(2500)
-                        }
-
-                        val exactUploadX = realW * 0.50f
-                        val exactUploadYPoints = listOf(realH * 0.964f, realH * 0.958f, realH * 0.968f)
-
-                        for (attempt in 1..3) {
-                            val currentNodes = captureScreenNodes().filter {
-                                it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
-                            }
-                            val onMainYouTubeFeed = currentNodes.any {
-                                it.text.equals("Subscriptions", true) || it.text.equals("Home", true)
-                            } && !isAddDetailsScreenVisible(currentNodes)
-
-                            if (onMainYouTubeFeed && attempt > 1) break
-
-                            val uploadBtnNode = currentNodes.firstOrNull {
-                                val c = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
-                                it.centerY > realH * 0.88f && (
-                                    c.contains("Upload Short", true) ||
-                                    it.text.equals("Upload", true) ||
-                                    c.contains("upload_bottom_button", true)
-                                )
-                            }
-
-                            val tapX = uploadBtnNode?.centerX ?: exactUploadX
-                            val tapY = if (uploadBtnNode != null && uploadBtnNode.centerY >= realH * 0.94f) {
-                                uploadBtnNode.centerY
-                            } else {
-                                exactUploadYPoints[(attempt - 1) % exactUploadYPoints.size]
-                            }
-
-                            overlayHud?.updateStatus("Step 5/5 • Upload", "Tapping 'Upload Short' (#$attempt)...", "WORKING")
-                            animateAndTapXY(tapX, tapY, "Tap: Upload Short")
-                            delay(600)
-                            if (uploadBtnNode != null) clickNodeAndParents(uploadBtnNode.node)
-                            delay(3500)
-                        }
-
-                        VideoQueueManager.markVideoUploaded(this@AutoTouchService, nextVideo)
-                        isJobRunning = false
-                        overlayHud?.setCursorOverlayVisible(false)
-                        overlayHud?.updateStatus("🎉 Upload Success!", "'${nextVideo.name.take(18)}' Published!", "DONE")
-                        postKeepAliveNotification("Last upload: ${nextVideo.name}")
-                        break
-                    }
-                    delay(2000)
-                }
-            } catch (e: CancellationException) {
-                // Normal user stop
-            } catch (e: Exception) {
-                isJobRunning = false
-                overlayHud?.setCursorOverlayVisible(false)
-                overlayHud?.updateStatus("Upload Error", e.message ?: "Error", "ERROR")
-                VideoQueueManager.appendLog(this@AutoTouchService, "❌ Error: ${e.message}")
-            } finally {
-                overlayHud?.setCursorOverlayVisible(false)
-                releaseWakeLock()
-                isJobRunning = false
-                val finalState = LongTaskStore.get(this@AutoTouchService)
-                if (finalState != null && finalState.goal == "Video upload task: $userPrompt" && finalState.status == LongTaskState.Status.RUNNING) {
-                    LongTaskStore.complete(this@AutoTouchService)
-                    LongTaskForegroundService.stop(this@AutoTouchService)
-                }
-            }
+        launchManagedTask(
+            goal = "YouTube upload: $userPrompt",
+            replay = { startYouTubeAutoUpload(apiKey, model, folderPath, userPrompt, createAiVideoIfEmpty) }
+        ) {
+            WebPipelineManager.runYouTubeAutoUpload(
+                this@AutoTouchService, apiKey, model, folderPath, userPrompt, createAiVideoIfEmpty
+            )
         }
     }
 
-    // ========================================================================
-    // ENGINE 4: UNIVERSAL PHONE AGENT + WHATSAPP AUTO-SEND FIX
-    // ========================================================================
     fun startUniversalAiTask(
         apiKey: String,
         model: String,
         userGoal: String,
         initialSettingAction: String? = null
     ) {
-        if (isJobRunning) {
-            VideoQueueManager.appendLog(this, "⚠️ Agent is already busy!")
-            return
-        }
-
-        LongTaskStore.begin(this, userGoal)
-        LongTaskForegroundService.start(this)
-        activeJob = serviceScope.launch {
-            isJobRunning = true
-            acquireWakeLock()
-            postKeepAliveNotification("Phone Agent Active: ${userGoal.take(30)}")
-            overlayHud?.show()
-            overlayHud?.setCursorOverlayVisible(true)
-
-            val (realW, realH) = getRealScreenDimensions()
-            val memoryVault = VideoQueueManager.getMemoryVault(this@AutoTouchService)
-            val unstoppable = VideoQueueManager.is24HourUnstoppableEnabled(this@AutoTouchService)
-            val stepDelay = VideoQueueManager.getStepDelayMs(this@AutoTouchService)
-
-            val goalLower = userGoal.lowercase()
-            val isContinuousMonitor = goalLower.contains("monitor") ||
-                    goalLower.contains("wait") ||
-                    goalLower.contains("karte raho") ||
-                    goalLower.contains("karte rahana") ||
-                    goalLower.contains("lagatar") ||
-                    goalLower.contains("baat chet") ||
-                    goalLower.contains("reply")
-
-            val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
-
-            try {
-                if (!initialSettingAction.isNullOrBlank()) {
-                    openSystemSettingOrApp(initialSettingAction)
-                    delay(2500)
-                }
-
-                overlayHud?.updateStatus("Universal Agent", "Goal: ${userGoal.take(26)}...", "THINKING")
-                VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Starting Universal Phone Agent: $userGoal")
-                val history = mutableListOf<String>()
-                var lastTapX = -1f
-                var lastTapY = -1f
-                var repeatTapCount = 0
-
-                for (step in 1..maxSteps) {
-                    if (!isActive || !awaitTaskPermissionAndPause(step, maxSteps, userGoal)) break
-                    val nodes = captureScreenNodes()
-
-                    // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
-                    // If a reply is already typed inside the message input box AND the Send button is visible on screen,
-                    // tap the Send button immediately so messages NEVER get stuck unsent in the input box!
-                    val unsentInputNode = nodes.firstOrNull {
-                        it.isEditable && it.text.isNotBlank() &&
-                        !it.text.equals("Message", true) &&
-                        !it.text.equals("Type a message", true) &&
-                        !it.text.equals("Search...", true)
-                    }
-                    val sendBtnNode = nodes.firstOrNull {
-                        it.contentDesc.equals("Send", true) ||
-                        it.contentDesc.equals("भेजें", true) ||
-                        it.viewId.equals("send", true) ||
-                        it.viewId.contains("send_btn", true)
-                    }
-                    if (unsentInputNode != null && sendBtnNode != null) {
-                        overlayHud?.setCursorOverlayVisible(true)
-                        overlayHud?.updateStatus("Step $step • Sending", "Tapping Send button...", "WORKING")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "📨 Auto-Sending typed message via Send button at (${sendBtnNode.centerX.toInt()}, ${sendBtnNode.centerY.toInt()})!")
-                        animateAndPhysicalTapNode(sendBtnNode, "Tap: Send")
-                        history.add("Step $step: Auto-Tapped Send button for '${unsentInputNode.text.take(20)}'")
-                        delay(2500)
-                        continue
-                    }
-
-                    val screenDump = nodes.joinToString("\n") {
-                        "[${it.index}] text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
-                    }
-
-                    val screenshotB64 = captureScreenshotBase64()
-
-                    overlayHud?.updateStatus("Step $step • Thinking", "Reading screen & vision...", "THINKING")
-                    var decision = GeminiBrain.decideNextUiAction(
-                        apiKey = apiKey,
-                        model = model,
-                        goal = userGoal,
-                        screenSummary = screenDump.take(6500),
-                        history = history,
-                        memoryVault = memoryVault,
-                        screenshotBase64 = screenshotB64,
-                        screenWidth = realW.toInt(),
-                        screenHeight = realH.toInt(),
-                        isContinuousMonitorMode = isContinuousMonitor
-                    )
-
-                    if (isContinuousMonitor && decision.action.equals("DONE", true)) {
-                        decision = decision.copy(
-                            action = "WAIT",
-                            reason = "Monitoring chat for new incoming reply..."
-                        )
-                    }
-
-                    val stepMood = when (decision.action) {
-                        "DONE" -> "DONE"
-                        "WAIT" -> "WAITING"
-                        else -> "WORKING"
-                    }
-                    overlayHud?.updateStatus("Step $step • ${decision.action}", decision.reason, stepMood)
-                    VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Step $step [${decision.action}]: ${decision.reason}")
-
-                    if (decision.action.equals("DONE", true)) {
-                        LongTaskStore.complete(this@AutoTouchService)
-                        LongTaskForegroundService.stop(this@AutoTouchService)
-                        isJobRunning = false
-                        overlayHud?.setCursorOverlayVisible(false)
-                        overlayHud?.updateStatus("🎉 Task Complete!", decision.reason, "DONE")
-                        VideoQueueManager.appendLog(this@AutoTouchService, "✅ Task Completed: ${decision.reason}")
-                        break
-                    }
-
-                    if (decision.action.equals("WAIT", true)) {
-                        overlayHud?.setCursorOverlayVisible(false)
-                        delay(4500)
-                        history.add("Step $step: WAIT - ${decision.reason}")
-                        continue
-                    }
-
-                    overlayHud?.setCursorOverlayVisible(true)
-                    val executedSummary = executeSmartDecision(
-                        decision = decision,
-                        nodes = nodes,
-                        realW = realW,
-                        realH = realH,
-                        lastX = lastTapX,
-                        lastY = lastTapY,
-                        repeatCount = repeatTapCount
-                    ) { tapX, tapY ->
-                        if (hypot(tapX - lastTapX, tapY - lastTapY) < 25f) {
-                            repeatTapCount++
-                        } else {
-                            repeatTapCount = 0
-                        }
-                        lastTapX = tapX
-                        lastTapY = tapY
-                    }
-
-                    history.add("Step $step: ${decision.action} ($executedSummary) - ${decision.reason}")
-                    delay(stepDelay)
-                }
-            } catch (e: CancellationException) {
-                // Clean user stop
-            } catch (e: Exception) {
-                LongTaskStore.fail(this@AutoTouchService, e.message ?: "Phone task failed")
-                isJobRunning = false
-                overlayHud?.setCursorOverlayVisible(false)
-                overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
-                VideoQueueManager.appendLog(this@AutoTouchService, "❌ Agent Error: ${e.message}")
-            } finally {
-                overlayHud?.setCursorOverlayVisible(false)
-                releaseWakeLock()
-                isJobRunning = false
-            }
+        launchManagedTask(
+            goal = userGoal,
+            replay = { startUniversalAiTask(apiKey, model, userGoal, initialSettingAction) }
+        ) {
+            PhoneAgentManager.runUniversalAiTask(
+                this@AutoTouchService, apiKey, model, userGoal, initialSettingAction
+            )
         }
     }
 
-    private suspend fun executeSmartDecision(
-        decision: AgentDecision,
-        nodes: List<UiNodeSnapshot>,
-        realW: Float,
-        realH: Float,
-        lastX: Float,
-        lastY: Float,
-        repeatCount: Int,
-        onTapRecorded: (Float, Float) -> Unit
-    ): String {
-        val reasonLower = decision.reason.lowercase()
-
-        when (decision.action.uppercase()) {
-            "OPEN_APP" -> {
-                if (decision.appPackageOrSetting.isNotBlank()) {
-                    openSystemSettingOrApp(decision.appPackageOrSetting)
-                    return "Opened ${decision.appPackageOrSetting}"
-                }
-            }
-            "CLICK_NODE", "CLICK_XY" -> {
-                // 1. Semantic Check: If AI wants to click Send in WhatsApp/Chat, snap directly to Send node!
-                if (reasonLower.contains("send") || reasonLower.contains("reply")) {
-                    val sendNode = nodes.firstOrNull {
-                        it.contentDesc.equals("Send", true) ||
-                        it.contentDesc.equals("भेजें", true) ||
-                        it.viewId.equals("send", true)
-                    }
-                    if (sendNode != null) {
-                        onTapRecorded(sendNode.centerX, sendNode.centerY)
-                        animateAndPhysicalTapNode(sendNode, "Tap: Send")
-                        return "Tapped Send Node (${sendNode.centerX.toInt()},${sendNode.centerY.toInt()})"
-                    }
-                }
-
-                // 2. Semantic Check for 3-Dot Menu
-                val wantsThreeDotMenu = reasonLower.contains("three-dot") ||
-                        reasonLower.contains("3-dot") ||
-                        reasonLower.contains("three dot") ||
-                        reasonLower.contains("more options") ||
-                        reasonLower.contains("menu")
-
-                if (wantsThreeDotMenu) {
-                    val threeDotNode = nodes.firstOrNull {
-                        it.contentDesc.contains("More options", true) ||
-                        it.contentDesc.contains("अधिक विकल्प", true) ||
-                        it.viewId.contains("menuitem_overflow", true) ||
-                        it.viewId.contains("action_more", true)
-                    } ?: nodes.filter {
-                        it.centerX > realW * 0.78f && it.centerY in (realH * 0.05f)..(realH * 0.13f)
-                    }.maxByOrNull { it.centerX }
-
-                    if (threeDotNode != null) {
-                        onTapRecorded(threeDotNode.centerX, threeDotNode.centerY)
-                        animateAndPhysicalTapNode(threeDotNode, "Tap: 3-Dot Menu")
-                        return "Tapped 3-Dot Node (${threeDotNode.centerX.toInt()},${threeDotNode.centerY.toInt()})"
-                    }
-                }
-
-                if (decision.action.equals("CLICK_NODE", true)) {
-                    val targetNode = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    if (targetNode != null) {
-                        val label = targetNode.text.ifEmpty { targetNode.contentDesc }.take(15).ifEmpty { "Button" }
-                        onTapRecorded(targetNode.centerX, targetNode.centerY)
-                        animateAndPhysicalTapNode(targetNode, "Tap: $label")
-                        return "Tapped Node #${targetNode.index} ($label)"
-                    }
-                }
-
-                var rawX = decision.x
-                var rawY = decision.y
-                val statusBarLimitY = realH * 0.052f
-
-                if (rawY in 10f..statusBarLimitY && rawX <= 1000f) {
-                    rawX = (rawX / 1000f) * realW
-                    rawY = ((rawY / 1000f) * realH).coerceAtLeast(statusBarLimitY + 35f)
-                } else if (rawY < statusBarLimitY) {
-                    rawY = (statusBarLimitY + 55f)
-                }
-
-                val nearestNode = nodes.filter {
-                    it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
-                }.minByOrNull {
-                    hypot(it.centerX - rawX, it.centerY - rawY)
-                }
-
-                if (nearestNode != null && hypot(nearestNode.centerX - rawX, nearestNode.centerY - rawY) <= 145f) {
-                    val label = nearestNode.text.ifEmpty { nearestNode.contentDesc }.take(14).ifEmpty { "Tap" }
-                    onTapRecorded(nearestNode.centerX, nearestNode.centerY)
-                    animateAndPhysicalTapNode(nearestNode, "Tap: $label")
-                    return "Magnet-Tapped '$label'"
-                }
-
-                if (repeatCount >= 2 && nearestNode != null) {
-                    onTapRecorded(nearestNode.centerX, nearestNode.centerY)
-                    animateAndPhysicalTapNode(nearestNode, "Retry Tap")
-                    return "Anti-Stuck Node Tap"
-                }
-
-                onTapRecorded(rawX, rawY)
-                animateAndTapXY(rawX, rawY, "Tap: (${rawX.toInt()},${rawY.toInt()})")
-                return "Tapped XY (${rawX.toInt()},${rawY.toInt()})"
-            }
-            "TYPE" -> {
-                val target = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    ?: nodes.firstOrNull { it.isEditable || it.supportsSetText }
-                val tx = target?.centerX ?: (realW * 0.45f)
-                val ty = target?.centerY ?: (realH * 0.94f)
-                animateAndTapXY(tx, ty, "Focus Input")
-                delay(1200)
-                insertCaptionSingleClean(decision.textToType, tx, ty)
-                delay(900)
-
-                // Immediately check if a Send button (like in WhatsApp) is now visible, and tap it automatically!
-                val freshNodes = captureScreenNodes()
-                val sendBtn = freshNodes.firstOrNull {
-                    it.contentDesc.equals("Send", true) ||
-                    it.contentDesc.equals("भेजें", true) ||
-                    it.viewId.equals("send", true)
-                }
-                if (sendBtn != null) {
-                    animateAndPhysicalTapNode(sendBtn, "Tap: Send")
-                    return "Typed & Sent '${decision.textToType.take(18)}'"
-                }
-
-                return "Typed '${decision.textToType.take(18)}'"
-            }
-            "SCROLL" -> {
-                performScrollDownGesture()
-                return "Scrolled Down"
-            }
-            "BACK" -> {
-                performGlobalAction(GLOBAL_ACTION_BACK)
-                return "Pressed Back"
-            }
-        }
-        return "Waited"
-    }
-
-    private fun openSystemSettingOrApp(target: String) {
-        val cleanTarget = target.trim()
-        val actionIntent = when (cleanTarget.uppercase()) {
-            "SETTINGS" -> Intent(Settings.ACTION_SETTINGS)
-            "BATTERY" -> Intent(Intent.ACTION_MAIN).setClassName("com.android.settings", "com.android.settings.Settings\$PowerUsageSummaryActivity")
-            "WIFI" -> Intent(Settings.ACTION_WIFI_SETTINGS)
-            "DISPLAY" -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
-            "STORAGE" -> Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
-            "SOUND" -> Intent(Settings.ACTION_SOUND_SETTINGS)
-            "BLUETOOTH" -> Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
-            "APPS" -> Intent(Settings.ACTION_APPLICATION_SETTINGS)
-            "WHATSAPP" -> packageManager.getLaunchIntentForPackage("com.whatsapp")
-                ?: packageManager.getLaunchIntentForPackage("com.whatsapp.w4b")
-            else -> packageManager.getLaunchIntentForPackage(cleanTarget)
-        } ?: Intent(Settings.ACTION_SETTINGS)
-
-        try {
-            actionIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(actionIntent)
-        } catch (_: Exception) {
-            val fallback = Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(fallback)
-        }
-    }
-
-    private suspend fun insertCaptionSingleClean(text: String, boxX: Float, boxY: Float): Boolean {
+    // ========================================================================
+    // SHARED TEXT ENTRY, CLIPBOARD & GESTURE HELPERS
+    // ========================================================================
+    // ========================================================================
+    // SHARED TEXT ENTRY, CLIPBOARD & GESTURE HELPERS
+    // ========================================================================
+    suspend fun insertCaptionSingleClean(text: String, boxX: Float, boxY: Float): Boolean {
         copyToClipboard(text)
 
         val args = Bundle().apply {
@@ -1440,7 +426,7 @@ class AutoTouchService : AccessibilityService() {
         delay(1000)
         if (isTitleAlreadyPresentOnScreen(text)) return true
 
-        val allNodes = captureScreenNodes()
+        val allNodes = PhoneAgentManager.captureScreenNodes(this)
         val keyboardNodes = allNodes.filter {
             it.windowType == AccessibilityWindowInfo.TYPE_INPUT_METHOD
         }
@@ -1453,7 +439,7 @@ class AutoTouchService : AccessibilityService() {
         }
 
         if (clipboardChip != null) {
-            animateAndPhysicalTapNode(clipboardChip, "Tap: Clipboard")
+            PhoneAgentManager.animateAndPhysicalTapNode(this, clipboardChip, "Tap: Clipboard")
             delay(1600)
             return true
         }
@@ -1463,7 +449,7 @@ class AutoTouchService : AccessibilityService() {
             performLongPressGesture(boxX, boxY, 700L)
             delay(1500)
 
-            val pastePopupBtn = captureScreenNodes().firstOrNull {
+            val pastePopupBtn = PhoneAgentManager.captureScreenNodes(this).firstOrNull {
                 it.text.equals("Paste", true) ||
                 it.contentDesc.equals("Paste", true) ||
                 it.text.contains("चिपकाएं", true) ||
@@ -1471,7 +457,7 @@ class AutoTouchService : AccessibilityService() {
             }
 
             if (pastePopupBtn != null) {
-                animateAndPhysicalTapNode(pastePopupBtn, "Tap: Paste")
+                PhoneAgentManager.animateAndPhysicalTapNode(this, pastePopupBtn, "Tap: Paste")
                 delay(1400)
                 return true
             }
@@ -1482,7 +468,7 @@ class AutoTouchService : AccessibilityService() {
 
     private fun isTitleAlreadyPresentOnScreen(expectedTitle: String): Boolean {
         val prefix = expectedTitle.take(10).trim()
-        val appNodes = captureScreenNodes().filter {
+        val appNodes = PhoneAgentManager.captureScreenNodes(this).filter {
             it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
         }
         val hasTitleWords = prefix.isNotEmpty() && appNodes.any {
@@ -1497,18 +483,7 @@ class AutoTouchService : AccessibilityService() {
         return hasTitleWords || placeholderGone
     }
 
-    private fun isAddDetailsScreenVisible(appNodes: List<UiNodeSnapshot>): Boolean {
-        return appNodes.any {
-            val c = "${it.text} ${it.contentDesc} ${it.hintText}"
-            c.contains("Add details", true) ||
-            c.contains("Caption your Short", true) ||
-            c.contains("Upload Short", true) ||
-            c.contains("Select audience", true) ||
-            c.contains("Visibility", true)
-        }
-    }
-
-    private fun isKeyboardOpen(): Boolean {
+    fun isKeyboardOpen(): Boolean {
         return try {
             windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
         } catch (_: Exception) {
@@ -1516,115 +491,12 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    private fun copyToClipboard(text: String) {
+    fun copyToClipboard(text: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("ai_title", text))
     }
 
-    private fun launchYouTubeWithVideo(videoFile: File) {
-        val uri = FileProvider.getUriForFile(
-            this,
-            "${applicationContext.packageName}.provider",
-            videoFile
-        )
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "video/*"
-            setPackage("com.google.android.youtube")
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            val fallback = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-            if (fallback != null) {
-                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(fallback)
-            }
-        }
-    }
-
-    private fun captureScreenNodes(): List<UiNodeSnapshot> {
-        val list = mutableListOf<UiNodeSnapshot>()
-        var counter = 0
-
-        val windowRoots = mutableListOf<Pair<Int, AccessibilityNodeInfo>>()
-        try {
-            for (win in windows) {
-                val r = win.root ?: continue
-                val pkg = r.packageName?.toString() ?: ""
-                if (pkg != packageName && !pkg.contains("systemui", true)) {
-                    windowRoots.add(Pair(win.type, r))
-                }
-            }
-        } catch (_: Exception) {}
-
-        if (windowRoots.isEmpty()) {
-            rootInActiveWindow?.let {
-                val pkg = it.packageName?.toString() ?: ""
-                if (pkg != packageName && !pkg.contains("systemui", true)) {
-                    windowRoots.add(Pair(AccessibilityWindowInfo.TYPE_APPLICATION, it))
-                }
-            }
-        }
-
-        fun traverse(node: AccessibilityNodeInfo?, winType: Int) {
-            if (node == null) return
-            val pkg = node.packageName?.toString() ?: ""
-            if (pkg == packageName || pkg.contains("systemui", true)) return
-
-            val cls = node.className?.toString() ?: ""
-            val text = node.text?.toString()?.trim() ?: ""
-            val desc = node.contentDescription?.toString()?.trim() ?: ""
-            val hint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                node.hintText?.toString()?.trim() ?: ""
-            } else ""
-            val viewId = node.viewIdResourceName?.substringAfter("/") ?: ""
-            val clickable = node.isClickable
-            val focused = node.isFocused || node.isAccessibilityFocused
-            val actionIds = node.actionList?.map { it.id } ?: emptyList()
-            val canSetText = actionIds.contains(AccessibilityNodeInfo.ACTION_SET_TEXT) ||
-                             actionIds.contains(AccessibilityNodeInfo.ACTION_PASTE)
-            val editable = node.isEditable || cls.contains("EditText", true) || canSetText
-
-            if (text.isNotEmpty() || desc.isNotEmpty() || hint.isNotEmpty() || clickable || editable || focused) {
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                if (rect.width() > 0 && rect.height() > 0) {
-                    list.add(
-                        UiNodeSnapshot(
-                            index = counter++,
-                            node = node,
-                            packageName = pkg,
-                            windowType = winType,
-                            className = cls,
-                            text = text,
-                            contentDesc = desc,
-                            hintText = hint,
-                            viewId = viewId,
-                            isEditable = editable,
-                            isFocused = focused,
-                            isClickable = clickable,
-                            supportsSetText = canSetText,
-                            centerX = rect.exactCenterX(),
-                            centerY = rect.exactCenterY()
-                        )
-                    )
-                }
-            }
-
-            for (i in 0 until node.childCount) {
-                traverse(node.getChild(i), winType)
-            }
-        }
-
-        for ((wType, root) in windowRoots) {
-            traverse(root, wType)
-        }
-        return list
-    }
-
-    private fun clickNodeAndParents(node: AccessibilityNodeInfo): Boolean {
+    fun clickNodeAndParents(node: AccessibilityNodeInfo): Boolean {
         if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         var parent = node.parent
         var depth = 0
@@ -1638,20 +510,6 @@ class AutoTouchService : AccessibilityService() {
         return false
     }
 
-    private suspend fun animateAndPhysicalTapNode(snapshot: UiNodeSnapshot, label: String) {
-        overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
-        delay(420)
-        performTapGesture(snapshot.centerX, snapshot.centerY)
-        delay(180)
-        clickNodeAndParents(snapshot.node)
-    }
-
-    private suspend fun animateAndTapXY(x: Float, y: Float, label: String) {
-        overlayHud?.moveBotAndShowTap(x, y, label)
-        delay(420)
-        performTapGesture(x, y)
-    }
-
     fun performTapGesture(x: Float, y: Float) {
         val (realW, realH) = getRealScreenDimensions()
         val safeX = x.coerceIn(5f, realW - 5f)
@@ -1663,7 +521,7 @@ class AutoTouchService : AccessibilityService() {
         dispatchGesture(gesture, null, null)
     }
 
-    private fun performLongPressGesture(x: Float, y: Float, durationMs: Long) {
+    fun performLongPressGesture(x: Float, y: Float, durationMs: Long) {
         val (realW, realH) = getRealScreenDimensions()
         val safeX = x.coerceIn(5f, realW - 5f)
         val safeY = y.coerceIn(5f, realH - 5f)
@@ -1674,7 +532,7 @@ class AutoTouchService : AccessibilityService() {
         dispatchGesture(gesture, null, null)
     }
 
-    private fun performScrollDownGesture() {
+    fun performScrollDownGesture() {
         val path = Path().apply {
             moveTo(540f, 1650f)
             lineTo(540f, 550f)

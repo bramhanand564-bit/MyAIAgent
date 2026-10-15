@@ -390,8 +390,53 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
+    private fun recordLongTaskStatus(stepBadge: String, detailMessage: String, mood: String) {
+        val state = LongTaskStore.get(context) ?: return
+        val upper = mood.uppercase()
+        when (upper) {
+            "PAUSED" -> {
+                LongTaskStore.pause(context)
+                LongTaskForegroundService.stop(context)
+            }
+            "STOPPED", "CANCELLED", "STOP" -> {
+                LongTaskStore.cancel(context)
+                LongTaskForegroundService.stop(context)
+            }
+            "ERROR", "FAILED", "SAD" -> {
+                if (state.status != LongTaskState.Status.CANCELLED &&
+                    state.status != LongTaskState.Status.COMPLETED) {
+                    LongTaskStore.fail(context, detailMessage.ifBlank { stepBadge })
+                }
+                LongTaskForegroundService.stop(context)
+            }
+            "DONE", "HAPPY", "SUCCESS", "COMPLETED" -> {
+                if (state.status != LongTaskState.Status.CANCELLED &&
+                    state.status != LongTaskState.Status.FAILED) {
+                    LongTaskStore.complete(context)
+                }
+                LongTaskForegroundService.stop(context)
+            }
+            else -> {
+                if (state.status == LongTaskState.Status.RUNNING ||
+                    state.status == LongTaskState.Status.QUEUED) {
+                    val stepNumber = Regex("(?i)\\bstep\\s+(\\d+)").find(stepBadge)
+                        ?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    val estimated = stepNumber?.times(2)?.coerceIn(0, 94) ?: state.progress
+                    LongTaskStore.save(context, state.copy(
+                        status = LongTaskState.Status.RUNNING,
+                        progress = maxOf(state.progress, estimated),
+                        currentStep = stepBadge.take(160),
+                        checkpoint = "$stepBadge • $detailMessage".take(1200),
+                        lastError = ""
+                    ))
+                }
+            }
+        }
+    }
+
     fun updateStatus(stepBadge: String, detailMessage: String, mood: String = "WORKING") {
         mainHandler.post {
+            recordLongTaskStatus(stepBadge, detailMessage, mood)
             if (isPodVisible && (!isAdded || podRootLayout?.windowToken == null)) {
                 show()
             }
@@ -423,6 +468,10 @@ class AiOverlayHud(private val context: Context) {
             pointerCanvasView?.visibility = View.VISIBLE
             pointerCanvasView?.animateHandToTap(targetX, targetY, actionLabel)
         }
+    }
+
+    fun collapseToCompactStage() {
+        setPodStage(1)
     }
 
     private fun setPodStage(stage: Int) {
