@@ -37,12 +37,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvServiceBadge: TextView
     private lateinit var btnToggleFloatingPod: Button
 
+    private lateinit var tabHomeLayout: View
     private lateinit var tabChatLayout: View
     private lateinit var tabWebLayout: View
     private lateinit var tabPipelinesLayout: View
     private lateinit var tabDoctorLayout: View
     private lateinit var tabSettingsLayout: View
 
+    private lateinit var navTabHome: Button
     private lateinit var navTabChat: Button
     private lateinit var navTabWeb: Button
     private lateinit var navTabPipelines: Button
@@ -94,6 +96,8 @@ class MainActivity : AppCompatActivity() {
         setupTab3FlowAndYouTubePipelines()
         setupTab4Vault()
         setupTab5Settings()
+        setupHomePage()
+        switchTab(0)
 
         onLogUpdated = { logs ->
             runOnUiThread { tvConsoleLog.text = logs }
@@ -112,12 +116,14 @@ class MainActivity : AppCompatActivity() {
         tvServiceBadge = findViewById(R.id.tvServiceBadge)
         btnToggleFloatingPod = findViewById(R.id.btnToggleFloatingPod)
 
+        tabHomeLayout = findViewById(R.id.tabHomeLayout)
         tabChatLayout = findViewById(R.id.tabChatLayout)
         tabWebLayout = findViewById(R.id.tabWebLayout)
         tabPipelinesLayout = findViewById(R.id.tabPipelinesLayout)
         tabDoctorLayout = findViewById(R.id.tabDoctorLayout)
         tabSettingsLayout = findViewById(R.id.tabSettingsLayout)
 
+        navTabHome = findViewById(R.id.navTabHome)
         navTabChat = findViewById(R.id.navTabChat)
         navTabWeb = findViewById(R.id.navTabWeb)
         navTabPipelines = findViewById(R.id.navTabPipelines)
@@ -164,6 +170,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBottomNavigation() {
+        navTabHome.setOnClickListener { switchTab(0) }
         navTabChat.setOnClickListener { switchTab(1) }
         navTabWeb.setOnClickListener { switchTab(2) }
         navTabPipelines.setOnClickListener { switchTab(3) }
@@ -172,6 +179,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun switchTab(tabIndex: Int) {
+        tabHomeLayout.visibility = if (tabIndex == 0) View.VISIBLE else View.GONE
         tabChatLayout.visibility = if (tabIndex == 1) View.VISIBLE else View.GONE
         tabWebLayout.visibility = if (tabIndex == 2) View.VISIBLE else View.GONE
         tabPipelinesLayout.visibility = if (tabIndex == 3) View.VISIBLE else View.GONE
@@ -181,6 +189,7 @@ class MainActivity : AppCompatActivity() {
         val activeColor = 0xFF3B82F6.toInt()
         val inactiveColor = 0xFF94A3B8.toInt()
 
+        navTabHome.setTextColor(if (tabIndex == 0) activeColor else inactiveColor)
         navTabChat.setTextColor(if (tabIndex == 1) activeColor else inactiveColor)
         navTabWeb.setTextColor(if (tabIndex == 2) activeColor else inactiveColor)
         navTabPipelines.setTextColor(if (tabIndex == 3) activeColor else inactiveColor)
@@ -188,6 +197,7 @@ class MainActivity : AppCompatActivity() {
         navTabSettings.setTextColor(if (tabIndex == 5) activeColor else inactiveColor)
 
         tvActiveSubtitle.text = when (tabIndex) {
+            0 -> "Your AI Companion · Smart Task Control"
             1 -> "Interactive AI Chat & Universal Planner"
             2 -> "Full-Control Browser (Login Gmail & Google Flow)"
             3 -> "Google Flow (8s Video) ➔ Daily 7/8 PM YouTube"
@@ -205,6 +215,12 @@ class MainActivity : AppCompatActivity() {
         } else if (tabIndex == 3) {
             refreshFolderQueueStatus()
         }
+    }
+
+    private fun setupHomePage() {
+        findViewById<View>(R.id.homeActionChat).setOnClickListener { switchTab(1) }
+        findViewById<View>(R.id.homeActionBrowser).setOnClickListener { switchTab(2) }
+        findViewById<View>(R.id.homeActionSettings).setOnClickListener { switchTab(5) }
     }
 
     // ====================================================================
