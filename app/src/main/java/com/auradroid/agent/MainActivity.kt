@@ -292,6 +292,21 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.btnPauseAgent).setOnClickListener {
+            AutoTouchService.instance?.pauseCurrentJob()
+                ?: Toast.makeText(this, "Accessibility service is not active.", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<Button>(R.id.btnResumeAgent).setOnClickListener {
+            AutoTouchService.instance?.resumeCurrentJob()
+                ?: Toast.makeText(this, "Accessibility service is not active.", Toast.LENGTH_SHORT).show()
+        }
+
+        findViewById<Button>(R.id.btnRetryAgent).setOnClickListener {
+            AutoTouchService.instance?.retryCurrentTask()
+                ?: Toast.makeText(this, "Accessibility service is not active.", Toast.LENGTH_SHORT).show()
+        }
+
         findViewById<Button>(R.id.btnStopAgent).setOnClickListener {
             AutoTouchService.instance?.stopCurrentJob()
         }
