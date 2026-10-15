@@ -90,11 +90,18 @@ class AutoTouchService : AccessibilityService() {
 
     override fun onUnbind(intent: Intent?): Boolean {
         recordServiceState(false)
+        val state = LongTaskStore.get(this)
+        if (state?.status == LongTaskState.Status.RUNNING) LongTaskStore.pause(this)
+        activeJob?.cancel()
+        LongTaskForegroundService.stop(this)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         recordServiceState(false)
+        val state = LongTaskStore.get(this)
+        if (state?.status == LongTaskState.Status.RUNNING) LongTaskStore.pause(this)
+        activeJob?.cancel()
         releaseWakeLock()
         overlayHud?.hide()
         super.onDestroy()
@@ -168,15 +175,12 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
-    fun retryCurrentTask() {
+    fun retryCurrentTask(apiKey: String, model: String, useWeb: Boolean, url: String, folderPath: String) {
         val state = LongTaskStore.get(this)
         if (state == null || state.status !in listOf(LongTaskState.Status.FAILED, LongTaskState.Status.CANCELLED)) {
             VideoQueueManager.appendLog(this, "⚠️ Retry is available only after a failed or cancelled task.")
             return
         }
-        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
-        val apiKey = prefs.getString("api_key", "") ?: ""
-        val model = prefs.getString("model_name", "gemini-2.5-flash") ?: "gemini-2.5-flash"
         if (apiKey.isBlank() || state.goal.isBlank()) {
             VideoQueueManager.appendLog(this, "⚠️ Retry needs a saved goal and API key.")
             return
@@ -186,7 +190,8 @@ class AutoTouchService : AccessibilityService() {
             return
         }
         LongTaskStore.save(this, state.copy(retryCount = state.retryCount + 1, status = LongTaskState.Status.QUEUED))
-        startUniversalAiTask(apiKey, model, state.goal)
+        if (useWeb) startBackgroundWebTask(apiKey, model, url, state.goal, folderPath)
+        else startUniversalAiTask(apiKey, model, state.goal)
     }
 
     private suspend fun awaitTaskPermissionAndPause(step: Int, goal: String): Boolean {
@@ -337,7 +342,9 @@ class AutoTouchService : AccessibilityService() {
                     exactFlowPrompt = freshPrompt
                 )
             } catch (e: CancellationException) {
-                // Normal stop
+                if (LongTaskStore.get(this@AutoTouchService)?.status != LongTaskState.Status.CANCELLED) {
+                    LongTaskStore.pause(this@AutoTouchService)
+                }
             } catch (e: Exception) {
                 isJobRunning = false
                 overlayHud?.updateStatus("Flow Error", e.message ?: "Error", "ERROR")
@@ -558,7 +565,6 @@ class AutoTouchService : AccessibilityService() {
                 }
             } catch (e: Exception) {
                 LongTaskStore.fail(this@AutoTouchService, e.message ?: "Web task failed")
-                LongTaskStore.scheduleRetry(this@AutoTouchService)
                 isJobRunning = false
                 overlayHud?.updateStatus("Web Error", e.message ?: "Failed", "ERROR")
                 VideoQueueManager.appendLog(this@AutoTouchService, "❌ Web Agent Error: ${e.message}")
@@ -566,6 +572,11 @@ class AutoTouchService : AccessibilityService() {
                 clearWebVisualBadges(webView)
                 releaseWakeLock()
                 isJobRunning = false
+                val finalState = LongTaskStore.get(this@AutoTouchService)
+                if (finalState?.goal == userGoal && finalState.status == LongTaskState.Status.RUNNING) {
+                    LongTaskStore.complete(this@AutoTouchService)
+                    LongTaskForegroundService.stop(this@AutoTouchService)
+                }
             }
         }
     }
@@ -1065,6 +1076,11 @@ class AutoTouchService : AccessibilityService() {
                 overlayHud?.setCursorOverlayVisible(false)
                 releaseWakeLock()
                 isJobRunning = false
+                val finalState = LongTaskStore.get(this@AutoTouchService)
+                if (finalState?.goal == userGoal && finalState.status == LongTaskState.Status.RUNNING) {
+                    LongTaskStore.complete(this@AutoTouchService)
+                    LongTaskForegroundService.stop(this@AutoTouchService)
+                }
             }
         }
     }
