@@ -728,12 +728,11 @@ class AiOverlayHud(private val context: Context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var phase = 0f
         private var mood = "IDLE"
-
         private val animator = object : Runnable {
             override fun run() {
                 phase += 0.075f
                 invalidate()
-                postDelayed(this, 40)
+                postDelayed(this, 40L)
             }
         }
 
@@ -754,18 +753,17 @@ class AiOverlayHud(private val context: Context) {
             val w = width.toFloat()
             val h = height.toFloat()
             if (w <= 0f || h <= 0f) return
-
             val s = minOf(w / 120f, h / 120f)
             canvas.save()
             canvas.translate((w - 120f * s) * 0.5f, (h - 120f * s) * 0.5f)
             canvas.scale(s, s)
-            val bob = sin(phase * 0.65f) * 1.8f
+
+            val bob = sin(phase * 0.65f) * 1.5f
             val cx = 60f
             val cy = 60f + bob
             val cyan = Color.parseColor("#22D3EE")
-            val brightCyan = Color.parseColor("#67E8F9")
+            val bright = Color.parseColor("#67E8F9")
             val shell = Color.parseColor("#F7FCFF")
-            val dark = Color.parseColor("#071522")
             val accent = when (mood) {
                 "ERROR", "SAD", "FAILED" -> Color.parseColor("#FB7185")
                 "THINKING", "PROCESSING" -> Color.parseColor("#60A5FA")
@@ -774,121 +772,93 @@ class AiOverlayHud(private val context: Context) {
                 else -> cyan
             }
 
-            // Liquid crystal aura behind the robot.
+            // Face-only launcher: no torso or hands inside the circular icon.
             paint.style = Paint.Style.FILL
-            paint.shader = RadialGradient(cx, cy, 58f,
-                intArrayOf(Color.argb(95, 34, 211, 238), Color.argb(28, 34, 211, 238), Color.TRANSPARENT),
-                floatArrayOf(0f, 0.66f, 1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, 58f, paint)
+            paint.shader = RadialGradient(cx, cy, 57f,
+                intArrayOf(Color.argb(85, 34, 211, 238), Color.argb(22, 34, 211, 238), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP)
+            canvas.drawCircle(cx, cy, 57f, paint)
             paint.shader = null
 
-            // Thin flowing rings and a few water-glass droplets.
             paint.style = Paint.Style.STROKE
-            for (i in 0..2) {
-                val p = phase * 0.28f + i * 2.094f
-                paint.strokeWidth = if (i == 0) 1.8f else 1.0f
-                paint.color = Color.argb(105 - i * 24, 103, 232, 249)
-                canvas.drawOval(RectF(9f - sin(p) * 1.5f, 10f + cos(p) * 1.5f,
-                    111f + sin(p) * 1.5f, 110f + cos(p) * 1.5f), paint)
-            }
-            paint.style = Paint.Style.FILL
-            for (i in 0..3) {
-                val p = phase * 0.45f + i * 1.57f
-                val dx = cx + cos(p) * 51f
-                val dy = cy + sin(p * 0.8f) * 46f
-                paint.color = Color.argb(150, 186, 247, 255)
-                canvas.drawCircle(dx, dy, 1.8f + (sin(p) + 1f) * 0.7f, paint)
+            for (i in 0..1) {
+                val p = phase * 0.3f + i * 3.14159f
+                paint.strokeWidth = 1.1f
+                paint.color = Color.argb(70, 103, 232, 249)
+                canvas.drawOval(RectF(7f - sin(p), 8f + cos(p), 113f + sin(p), 112f + cos(p)), paint)
             }
 
-            // Rounded ceramic helmet with a subtle shaded edge.
+            // Rounded glossy helmet and side audio modules.
+            paint.style = Paint.Style.FILL
             paint.color = Color.argb(60, 0, 0, 0)
-            canvas.drawRoundRect(RectF(18f, 16f + bob, 104f, 104f + bob), 34f, 34f, paint)
-            paint.shader = LinearGradient(20f, 16f + bob, 100f, 104f + bob,
+            canvas.drawRoundRect(RectF(18f, 17f + bob, 104f, 105f + bob), 34f, 34f, paint)
+            paint.shader = LinearGradient(18f, 15f + bob, 103f, 103f + bob,
                 intArrayOf(Color.WHITE, shell, Color.parseColor("#B8DDE8")),
                 null, Shader.TileMode.CLAMP)
-            paint.color = Color.WHITE
-            canvas.drawRoundRect(RectF(17f, 13f + bob, 103f, 101f + bob), 33f, 33f, paint)
+            canvas.drawRoundRect(RectF(16f, 13f + bob, 104f, 101f + bob), 34f, 34f, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.6f
             paint.color = Color.parseColor("#A5F3FC")
-            canvas.drawRoundRect(RectF(17f, 13f + bob, 103f, 101f + bob), 33f, 33f, paint)
+            canvas.drawRoundRect(RectF(16f, 13f + bob, 104f, 101f + bob), 34f, 34f, paint)
 
-            // Side ear modules: unmistakably a compact futuristic robot, not a plain pill.
-            for (side in 0..1) {
-                val ex = if (side == 0) 17f else 103f
+            for (x in listOf(18f, 102f)) {
                 paint.style = Paint.Style.FILL
                 paint.color = Color.parseColor("#D9F5FC")
-                canvas.drawRoundRect(RectF(ex - 5f, 42f + bob, ex + 5f, 74f + bob), 5f, 5f, paint)
+                canvas.drawRoundRect(RectF(x - 5f, 43f + bob, x + 5f, 75f + bob), 5f, 5f, paint)
                 paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2.2f
+                paint.strokeWidth = 2f
                 paint.color = accent
-                canvas.drawRoundRect(RectF(ex - 5f, 42f + bob, ex + 5f, 74f + bob), 5f, 5f, paint)
+                canvas.drawRoundRect(RectF(x - 5f, 43f + bob, x + 5f, 75f + bob), 5f, 5f, paint)
                 paint.style = Paint.Style.FILL
-                paint.shader = RadialGradient(ex, 58f + bob, 8f,
+                paint.shader = RadialGradient(x, 59f + bob, 7f,
                     intArrayOf(Color.WHITE, accent, Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
-                canvas.drawCircle(ex, 58f + bob, 6.8f, paint)
+                canvas.drawCircle(x, 59f + bob, 5.5f, paint)
                 paint.shader = null
             }
 
-            // Glossy dark visor.
+            // Dark glass face plate with large cyan eyes.
             paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#071522")
-            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 75f + bob), 17f, 17f, paint)
+            paint.shader = LinearGradient(25f, 38f + bob, 95f, 76f + bob,
+                intArrayOf(Color.parseColor("#061321"), Color.parseColor("#102B40")),
+                null, Shader.TileMode.CLAMP)
+            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 76f + bob), 17f, 17f, paint)
+            paint.shader = null
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.1f
             paint.color = Color.parseColor("#164E63")
-            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 75f + bob), 17f, 17f, paint)
+            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 76f + bob), 17f, 17f, paint)
 
-            val lookX = if (mood == "THINKING" || mood == "PROCESSING") sin(phase * 1.4f) * 1.8f else 0f
             val blink = sin(phase * 0.72f) > 0.985f
-            val eyeY = 54f + bob
-            for (eyeX in listOf(43f + lookX, 77f + lookX)) {
+            for (eyeX in listOf(43f, 77f)) {
+                val eyeY = 55f + bob
                 paint.style = Paint.Style.FILL
                 paint.color = Color.argb(45, 34, 211, 238)
                 canvas.drawCircle(eyeX, eyeY, 11.5f, paint)
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 1.8f
                 paint.color = accent
-                canvas.drawCircle(eyeX, eyeY, 9.4f, paint)
-                paint.style = Paint.Style.FILL
-                paint.shader = RadialGradient(eyeX - 1f, eyeY - 1f, 9f,
-                    intArrayOf(Color.WHITE, brightCyan, accent), null, Shader.TileMode.CLAMP)
+                canvas.drawCircle(eyeX, eyeY, 9.2f, paint)
                 if (blink) {
-                    paint.shader = null
                     paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 2.8f
-                    canvas.drawLine(eyeX - 6f, eyeY, eyeX + 6f, eyeY, paint)
+                    paint.strokeWidth = 2.6f
+                    paint.color = Color.WHITE
+                    canvas.drawLine(eyeX - 5f, eyeY, eyeX + 5f, eyeY, paint)
                 } else {
-                    canvas.drawCircle(eyeX, eyeY, 6.3f, paint)
+                    paint.shader = RadialGradient(eyeX - 2f, eyeY - 2f, 8f,
+                        intArrayOf(Color.WHITE, bright, accent), null, Shader.TileMode.CLAMP)
+                    canvas.drawCircle(eyeX, eyeY, 6.4f, paint)
+                    paint.shader = null
                 }
-                paint.shader = null
             }
 
-            // Small expressive smile; mouth remains smaller than the eyes.
             paint.style = Paint.Style.STROKE
             paint.strokeCap = Paint.Cap.ROUND
-            paint.strokeWidth = 2.3f
+            paint.strokeWidth = 2.2f
             paint.color = accent
             when (mood) {
-                "ERROR", "SAD", "FAILED" ->
-                    canvas.drawArc(RectF(53f, 62f + bob, 67f, 71f + bob), 205f, 130f, false, paint)
-                "THINKING", "PROCESSING" ->
-                    canvas.drawCircle(60f, 66f + bob, 2.4f + sin(phase * 2f) * 0.5f, paint)
+                "ERROR", "SAD", "FAILED" -> canvas.drawArc(RectF(53f, 62f + bob, 67f, 71f + bob), 205f, 130f, false, paint)
+                "THINKING", "PROCESSING" -> canvas.drawCircle(60f, 66f + bob, 2.2f + sin(phase * 2f) * 0.4f, paint)
                 else -> canvas.drawArc(RectF(53f, 61f + bob, 67f, 70f + bob), 20f, 140f, false, paint)
             }
-
-            // Tiny chest/core indicator and two articulated shoulder hints.
-            paint.style = Paint.Style.FILL
-            paint.color = Color.parseColor("#DFFBFF")
-            canvas.drawCircle(60f, 88f + bob, 5.5f, paint)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.7f
-            paint.color = accent
-            canvas.drawCircle(60f, 88f + bob, 5.5f + sin(phase) * 0.7f, paint)
-            canvas.drawArc(RectF(28f, 80f + bob, 43f, 99f + bob), 210f, 115f, false, paint)
-            canvas.drawArc(RectF(77f, 80f + bob, 92f, 99f + bob), 215f, 115f, false, paint)
-
             canvas.restore()
         }
     }
