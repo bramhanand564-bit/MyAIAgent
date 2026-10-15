@@ -398,6 +398,7 @@ class AiOverlayHud(private val context: Context) {
             tvPodTitle?.text = stepBadge
             tvPodSubtitle?.text = detailMessage
             tvExpandedStepInfo?.text = "$stepBadge • $detailMessage"
+            CompanionVisualState.update(mood)
             botAvatarView?.setMood(mood)
             pointerCanvasView?.setHandMood(mood)
 
@@ -742,6 +743,7 @@ class AiOverlayHud(private val context: Context) {
 
         fun setMood(newMood: String) {
             mood = newMood.uppercase()
+            CompanionVisualState.update(mood)
             invalidate()
         }
 
@@ -760,106 +762,115 @@ class AiOverlayHud(private val context: Context) {
             canvas.translate((w - 120f * s) * 0.5f, (h - 120f * s) * 0.5f)
             canvas.scale(s, s)
 
-            val bob = sin(phase * 0.65f) * 1.5f
-            val cx = 60f
-            val cy = 60f + bob
+            val bob = sin(phase * 0.65f) * 1.2f
             val cyan = Color.parseColor("#22D3EE")
-            val bright = Color.parseColor("#67E8F9")
-            val shell = Color.parseColor("#F7FCFF")
+            val bright = Color.parseColor("#A5F3FC")
             val accent = when (mood) {
-                "ERROR", "SAD", "FAILED" -> Color.parseColor("#FB7185")
-                "THINKING", "PROCESSING" -> Color.parseColor("#60A5FA")
-                "DONE", "HAPPY", "SUCCESS" -> Color.parseColor("#34D399")
-                "WAITING" -> Color.parseColor("#FBBF24")
+                "ERROR", "SAD", "FAILED" -> Color.parseColor("#FB5578")
+                "THINKING", "PROCESSING", "WORKING" -> Color.parseColor("#4F9CFF")
+                "DONE", "HAPPY", "SUCCESS", "COMPLETED" -> Color.parseColor("#34D399")
+                "WAITING", "NEEDS_PERMISSION", "APPROVAL_REQUIRED" -> Color.parseColor("#FBBF24")
+                "STOP", "STOPPED", "CANCELLED", "PAUSED" -> Color.parseColor("#B7A6FF")
                 else -> cyan
             }
 
-            // Face-only launcher: no torso or hands inside the circular icon.
+            // Tight liquid-glass halo; no protruding ears or hand in the launcher.
             paint.style = Paint.Style.FILL
-            paint.shader = RadialGradient(cx, cy, 57f,
-                intArrayOf(Color.argb(85, 34, 211, 238), Color.argb(22, 34, 211, 238), Color.TRANSPARENT),
-                floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, 53f, paint)
+            paint.shader = RadialGradient(60f, 60f + bob, 60f,
+                intArrayOf(Color.argb(90, 34, 211, 238), Color.argb(24, 34, 211, 238), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.72f, 1f), Shader.TileMode.CLAMP)
+            canvas.drawCircle(60f, 60f + bob, 59f, paint)
             paint.shader = null
 
+            // Quiet animated perimeter glints.
             paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
             for (i in 0..1) {
-                val p = phase * 0.3f + i * 3.14159f
-                paint.strokeWidth = 1.1f
-                paint.color = Color.argb(70, 103, 232, 249)
-                canvas.drawOval(RectF(10f - sin(p), 11f + cos(p), 110f + sin(p), 109f + cos(p)), paint)
+                val p = phase * 0.34f + i * 3.14159f
+                paint.strokeWidth = if (i == 0) 1.5f else 0.9f
+                paint.color = Color.argb(85, 103, 232, 249)
+                canvas.drawArc(RectF(7f, 7f, 113f, 113f), Math.toDegrees(p.toDouble()).toFloat(), 65f, false, paint)
             }
 
-            // Rounded glossy helmet and side audio modules.
+            // Smooth white helmet shell with a real shaded edge.
             paint.style = Paint.Style.FILL
             paint.color = Color.argb(60, 0, 0, 0)
-            canvas.drawRoundRect(RectF(20f, 17f + bob, 100f, 99f + bob), 34f, 34f, paint)
-            paint.shader = LinearGradient(18f, 15f + bob, 103f, 103f + bob,
-                intArrayOf(Color.WHITE, shell, Color.parseColor("#B8DDE8")),
-                null, Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(RectF(18f, 13f + bob, 102f, 97f + bob), 34f, 34f, paint)
+            canvas.drawRoundRect(RectF(15f, 17f + bob, 105f, 105f + bob), 34f, 34f, paint)
+            paint.shader = LinearGradient(15f, 12f + bob, 108f, 108f + bob,
+                intArrayOf(Color.WHITE, Color.parseColor("#F4FCFF"), Color.parseColor("#A8D9E8")),
+                floatArrayOf(0f, 0.58f, 1f), Shader.TileMode.CLAMP)
+            canvas.drawRoundRect(RectF(12f, 10f + bob, 108f, 106f + bob), 35f, 35f, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.6f
-            paint.color = Color.parseColor("#A5F3FC")
-            canvas.drawRoundRect(RectF(16f, 13f + bob, 104f, 101f + bob), 34f, 34f, paint)
+            paint.strokeWidth = 1.7f
+            paint.color = Color.parseColor("#B8F5FF")
+            canvas.drawRoundRect(RectF(12f, 10f + bob, 108f, 106f + bob), 35f, 35f, paint)
 
-            for (x in listOf(18f, 102f)) {
-                paint.style = Paint.Style.FILL
-                paint.color = Color.parseColor("#D9F5FC")
-                canvas.drawRoundRect(RectF(x - 5f, 43f + bob, x + 5f, 75f + bob), 5f, 5f, paint)
-                paint.style = Paint.Style.STROKE
-                paint.strokeWidth = 2f
-                paint.color = accent
-                canvas.drawRoundRect(RectF(x - 5f, 43f + bob, x + 5f, 75f + bob), 5f, 5f, paint)
-                paint.style = Paint.Style.FILL
-                paint.shader = RadialGradient(x, 59f + bob, 7f,
-                    intArrayOf(Color.WHITE, accent, Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
-                canvas.drawCircle(x, 59f + bob, 5.5f, paint)
-                paint.shader = null
-            }
-
-            // Dark glass face plate with large cyan eyes.
+            // Large black/navy face panel: larger eyes and expression, shell kept compact.
             paint.style = Paint.Style.FILL
-            paint.shader = LinearGradient(25f, 38f + bob, 95f, 76f + bob,
-                intArrayOf(Color.parseColor("#061321"), Color.parseColor("#102B40")),
-                null, Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(RectF(25f, 36f + bob, 95f, 75f + bob), 17f, 17f, paint)
+            paint.shader = LinearGradient(19f, 29f + bob, 101f, 88f + bob,
+                intArrayOf(Color.parseColor("#020915"), Color.parseColor("#08283D"), Color.parseColor("#103C57")),
+                floatArrayOf(0f, 0.62f, 1f), Shader.TileMode.CLAMP)
+            canvas.drawRoundRect(RectF(18f, 28f + bob, 102f, 86f + bob), 23f, 23f, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 1.1f
-            paint.color = Color.parseColor("#164E63")
-            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 76f + bob), 17f, 17f, paint)
+            paint.strokeWidth = 1.5f
+            paint.color = Color.argb(210, Color.red(accent), Color.green(accent), Color.blue(accent))
+            canvas.drawRoundRect(RectF(18f, 28f + bob, 102f, 86f + bob), 23f, 23f, paint)
 
-            val blink = sin(phase * 0.72f) > 0.985f
-            for (eyeX in listOf(43f, 77f)) {
-                val eyeY = 55f + bob
+            val blink = sin(phase * 0.72f) > 0.985f && mood !in listOf("ERROR", "SAD", "FAILED", "PAUSED", "STOPPED")
+            val eyeY = 53f + bob
+            for (eyeX in listOf(39f, 81f)) {
+                // Triple-layer eye glow; far more prominent without letting the eyes collide.
                 paint.style = Paint.Style.FILL
-                paint.color = Color.argb(45, 34, 211, 238)
-                canvas.drawCircle(eyeX, eyeY, 11.5f, paint)
+                paint.color = Color.argb(45, Color.red(accent), Color.green(accent), Color.blue(accent))
+                canvas.drawCircle(eyeX, eyeY, 17f, paint)
                 paint.color = accent
-                canvas.drawCircle(eyeX, eyeY, 9.2f, paint)
-                if (blink) {
-                    paint.style = Paint.Style.STROKE
-                    paint.strokeWidth = 2.6f
+                canvas.drawCircle(eyeX, eyeY, 13.5f, paint)
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 1.5f
+                paint.color = bright
+                canvas.drawCircle(eyeX, eyeY, 11.5f, paint)
+
+                if (mood in listOf("PAUSED", "STOPPED", "CANCELLED", "STOP")) {
+                    paint.strokeWidth = 3f
+                    paint.strokeCap = Paint.Cap.ROUND
+                    paint.color = bright
+                    canvas.drawLine(eyeX - 6.8f, eyeY, eyeX + 6.8f, eyeY, paint)
+                } else if (blink) {
+                    paint.strokeWidth = 3.4f
+                    paint.strokeCap = Paint.Cap.ROUND
                     paint.color = Color.WHITE
-                    canvas.drawLine(eyeX - 5f, eyeY, eyeX + 5f, eyeY, paint)
+                    canvas.drawLine(eyeX - 7.5f, eyeY, eyeX + 7.5f, eyeY, paint)
                 } else {
-                    paint.shader = RadialGradient(eyeX - 2f, eyeY - 2f, 8f,
+                    paint.style = Paint.Style.FILL
+                    paint.shader = RadialGradient(eyeX - 3.5f, eyeY - 4f, 12f,
                         intArrayOf(Color.WHITE, bright, accent), null, Shader.TileMode.CLAMP)
-                    canvas.drawCircle(eyeX, eyeY, 6.4f, paint)
+                    canvas.drawCircle(eyeX, eyeY, 9.5f, paint)
                     paint.shader = null
+                    paint.color = Color.WHITE
+                    canvas.drawCircle(eyeX - 3f, eyeY - 4f, 2.2f, paint)
                 }
             }
 
+            // Expression changes with live task state: happy, thinking, sad, waiting, stopped.
             paint.style = Paint.Style.STROKE
             paint.strokeCap = Paint.Cap.ROUND
-            paint.strokeWidth = 2.2f
+            paint.strokeWidth = 3f
             paint.color = accent
+            val mouth = RectF(51f, 65f + bob, 69f, 79f + bob)
             when (mood) {
-                "ERROR", "SAD", "FAILED" -> canvas.drawArc(RectF(53f, 62f + bob, 67f, 71f + bob), 205f, 130f, false, paint)
-                "THINKING", "PROCESSING" -> canvas.drawCircle(60f, 66f + bob, 2.2f + sin(phase * 2f) * 0.4f, paint)
-                else -> canvas.drawArc(RectF(53f, 61f + bob, 67f, 70f + bob), 20f, 140f, false, paint)
+                "ERROR", "SAD", "FAILED" -> canvas.drawArc(mouth, 205f, 130f, false, paint)
+                "THINKING", "PROCESSING", "WORKING" -> {
+                    val r = 3.5f + (sin(phase * 2.1f) + 1f) * 1.2f
+                    canvas.drawCircle(60f, 72f + bob, r, paint)
+                    paint.strokeWidth = 1.5f
+                    canvas.drawArc(RectF(55f, 34f + bob, 65f, 41f + bob), 195f, 120f, false, paint)
+                }
+                "PAUSED", "STOPPED", "CANCELLED", "STOP" -> canvas.drawLine(54f, 73f + bob, 66f, 73f + bob, paint)
+                "DONE", "HAPPY", "SUCCESS", "COMPLETED" -> canvas.drawArc(mouth, 12f, 156f, false, paint)
+                "WAITING", "NEEDS_PERMISSION", "APPROVAL_REQUIRED" -> canvas.drawCircle(60f, 72f + bob, 3.6f, paint)
+                else -> canvas.drawArc(mouth, 12f, 156f, false, paint)
             }
             canvas.restore()
         }
