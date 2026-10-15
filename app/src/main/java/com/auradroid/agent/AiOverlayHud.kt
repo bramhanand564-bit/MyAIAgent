@@ -381,7 +381,7 @@ class AiOverlayHud(private val context: Context) {
                 root.background = GradientDrawable().apply {
                     setColor(Color.TRANSPARENT)
                 }
-                root.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+                root.setPadding(dpToPx(1), dpToPx(1), dpToPx(1), dpToPx(1))
             }
 
             try {
@@ -497,9 +497,9 @@ class AiOverlayHud(private val context: Context) {
             )
         }
 
-        // Plump Soft-White Bot Face with 4x HUGE Solid Eyes (62dp x 58dp)
+        // Compact face-only launcher; keep the eyes large within a smaller outer shell (48dp x 46dp).
         botAvatarView = ExpressiveCompanionAvatar(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(62), dpToPx(58))
+            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(46))
         }
         compactRow?.addView(botAvatarView)
 
@@ -777,7 +777,7 @@ class AiOverlayHud(private val context: Context) {
             paint.shader = RadialGradient(cx, cy, 57f,
                 intArrayOf(Color.argb(85, 34, 211, 238), Color.argb(22, 34, 211, 238), Color.TRANSPARENT),
                 floatArrayOf(0f, 0.7f, 1f), Shader.TileMode.CLAMP)
-            canvas.drawCircle(cx, cy, 57f, paint)
+            canvas.drawCircle(cx, cy, 53f, paint)
             paint.shader = null
 
             paint.style = Paint.Style.STROKE
@@ -785,17 +785,17 @@ class AiOverlayHud(private val context: Context) {
                 val p = phase * 0.3f + i * 3.14159f
                 paint.strokeWidth = 1.1f
                 paint.color = Color.argb(70, 103, 232, 249)
-                canvas.drawOval(RectF(7f - sin(p), 8f + cos(p), 113f + sin(p), 112f + cos(p)), paint)
+                canvas.drawOval(RectF(10f - sin(p), 11f + cos(p), 110f + sin(p), 109f + cos(p)), paint)
             }
 
             // Rounded glossy helmet and side audio modules.
             paint.style = Paint.Style.FILL
             paint.color = Color.argb(60, 0, 0, 0)
-            canvas.drawRoundRect(RectF(18f, 17f + bob, 104f, 105f + bob), 34f, 34f, paint)
+            canvas.drawRoundRect(RectF(20f, 17f + bob, 100f, 99f + bob), 34f, 34f, paint)
             paint.shader = LinearGradient(18f, 15f + bob, 103f, 103f + bob,
                 intArrayOf(Color.WHITE, shell, Color.parseColor("#B8DDE8")),
                 null, Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(RectF(16f, 13f + bob, 104f, 101f + bob), 34f, 34f, paint)
+            canvas.drawRoundRect(RectF(18f, 13f + bob, 102f, 97f + bob), 34f, 34f, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.6f
@@ -822,7 +822,7 @@ class AiOverlayHud(private val context: Context) {
             paint.shader = LinearGradient(25f, 38f + bob, 95f, 76f + bob,
                 intArrayOf(Color.parseColor("#061321"), Color.parseColor("#102B40")),
                 null, Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(RectF(25f, 37f + bob, 95f, 76f + bob), 17f, 17f, paint)
+            canvas.drawRoundRect(RectF(25f, 36f + bob, 95f, 75f + bob), 17f, 17f, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.1f
