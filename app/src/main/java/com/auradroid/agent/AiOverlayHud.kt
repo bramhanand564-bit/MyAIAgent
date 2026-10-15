@@ -454,8 +454,10 @@ class AiOverlayHud(private val context: Context) {
                     setSideBarExpanded(true, 0L)
                     expandedContainer?.visibility = View.VISIBLE
                     btnExpandFullToggle?.text = "⛶ Full Screen"
-                    params.width = (dm.widthPixels * 0.88f).toInt()
-                    params.height = (dm.heightPixels * 0.46f).toInt()
+                    // Compact mini window: keep the companion face and task controls visible
+                    // without covering most of the app behind it.
+                    params.width = (dm.widthPixels * 0.78f).toInt()
+                    params.height = (dm.heightPixels * 0.38f).toInt()
                     params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     podWebFrame?.let { attachWebViewToContainer(it) }
