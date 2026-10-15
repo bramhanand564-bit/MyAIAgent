@@ -240,13 +240,13 @@ class FutureCompanionHomeView @JvmOverloads constructor(
             val eyeY = 111f + bob
             paint.style = Paint.Style.FILL
             paint.color = Color.argb(58, Color.red(accent), Color.green(accent), Color.blue(accent))
-            canvas.drawCircle(eyeX, eyeY, 25f, paint)
+            canvas.drawCircle(eyeX, eyeY, 31f, paint)
             paint.color = accent
-            canvas.drawCircle(eyeX, eyeY, 19f, paint)
+            canvas.drawCircle(eyeX, eyeY, 24f, paint)
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2.2f
             paint.color = ice
-            canvas.drawCircle(eyeX, eyeY, 16.8f, paint)
+            canvas.drawCircle(eyeX, eyeY, 21f, paint)
 
             if (stopped) {
                 paint.strokeWidth = 3.8f
@@ -260,14 +260,14 @@ class FutureCompanionHomeView @JvmOverloads constructor(
             } else {
                 paint.style = Paint.Style.FILL
                 paint.color = Color.rgb(1, 18, 33)
-                canvas.drawCircle(eyeX, eyeY, 13.8f, paint)
+                canvas.drawCircle(eyeX, eyeY, 16.5f, paint)
                 paint.color = accent
                 paint.shader = RadialGradient(eyeX - 4.5f, eyeY - 5f, 15f,
                     intArrayOf(Color.WHITE, ice, accent), null, Shader.TileMode.CLAMP)
                 canvas.drawCircle(eyeX, eyeY, 12f, paint)
                 paint.shader = null
                 paint.color = Color.WHITE
-                canvas.drawCircle(eyeX - 4f, eyeY - 5f, 3f, paint)
+                canvas.drawCircle(eyeX - 5f, eyeY - 6f, 4f, paint)
                 paint.color = Color.argb(150, 255, 255, 255)
                 canvas.drawCircle(eyeX + 5f, eyeY + 5f, 1.6f, paint)
             }
@@ -278,15 +278,15 @@ class FutureCompanionHomeView @JvmOverloads constructor(
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeWidth = 4f
         paint.color = accent
-        val mouth = RectF(157f, 124f + bob, 183f, 145f + bob)
+        val mouth = RectF(151f, 128f + bob, 189f, 152f + bob)
         when {
             sad -> canvas.drawArc(mouth, 205f, 130f, false, paint)
-            stopped -> canvas.drawLine(161f, 137f + bob, 179f, 137f + bob, paint)
+            stopped -> canvas.drawLine(156f, 141f + bob, 184f, 141f + bob, paint)
             thinking -> {
                 val dot = 3f + (sin(phase * 2.3f) + 1f) * 1.3f
-                canvas.drawCircle(170f, 136f + bob, dot, paint)
+                canvas.drawCircle(170f, 140f + bob, dot, paint)
             }
-            mood in listOf("WAITING", "NEEDS_PERMISSION", "APPROVAL_REQUIRED") -> canvas.drawCircle(170f, 136f + bob, 4f, paint)
+            mood in listOf("WAITING", "NEEDS_PERMISSION", "APPROVAL_REQUIRED") -> canvas.drawCircle(170f, 140f + bob, 4.8f, paint)
             happy -> canvas.drawArc(mouth, 10f, 160f, false, paint)
             else -> canvas.drawArc(mouth, 10f, 160f, false, paint)
         }
