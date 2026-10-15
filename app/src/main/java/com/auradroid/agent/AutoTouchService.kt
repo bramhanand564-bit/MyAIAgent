@@ -577,7 +577,7 @@ class AutoTouchService : AccessibilityService() {
                 releaseWakeLock()
                 isJobRunning = false
                 val finalState = LongTaskStore.get(this@AutoTouchService)
-                if (finalState?.goal == userGoal && finalState.status == LongTaskState.Status.RUNNING) {
+                if (finalState != null && finalState.status == LongTaskState.Status.RUNNING) {
                     LongTaskStore.complete(this@AutoTouchService)
                     LongTaskForegroundService.stop(this@AutoTouchService)
                 }
@@ -1144,7 +1144,7 @@ class AutoTouchService : AccessibilityService() {
                 var repeatTapCount = 0
 
                 for (step in 1..maxSteps) {
-                    if (!isActive || !awaitTaskPermissionAndPause(step, userGoal)) break
+                    if (!isActive || !awaitTaskPermissionAndPause(step, maxSteps, userGoal)) break
                     val nodes = captureScreenNodes()
 
                     // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
