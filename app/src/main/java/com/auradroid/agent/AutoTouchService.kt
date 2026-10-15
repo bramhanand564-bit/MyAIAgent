@@ -193,9 +193,9 @@ class AutoTouchService : AccessibilityService() {
             VideoQueueManager.appendLog(this, "⚠️ Retry limit reached (3). Start a new task manually.")
             return
         }
-        LongTaskStore.save(this, state.copy(retryCount = state.retryCount + 1, status = LongTaskState.Status.QUEUED))
-        if (useWeb) startBackgroundWebTask(apiKey, model, url, state.goal, folderPath)
-        else startUniversalAiTask(apiKey, model, state.goal)
+        LongTaskStore.save(this, state.copy(status = LongTaskState.Status.QUEUED))
+        LongTaskStore.scheduleRetry(this, useWeb, url, folderPath)
+        VideoQueueManager.appendLog(this, "↻ Retry queued with WorkManager (bounded exponential backoff).")
     }
 
     private suspend fun awaitTaskPermissionAndPause(step: Int, maxSteps: Int, goal: String): Boolean {
