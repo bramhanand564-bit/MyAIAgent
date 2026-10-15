@@ -303,8 +303,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<Button>(R.id.btnRetryAgent).setOnClickListener {
-            AutoTouchService.instance?.retryCurrentTask()
-                ?: Toast.makeText(this, "Accessibility service is not active.", Toast.LENGTH_SHORT).show()
+            val service = AutoTouchService.instance
+            if (service == null) {
+                Toast.makeText(this, "Accessibility service is not active.", Toast.LENGTH_SHORT).show()
+            } else {
+                service.retryCurrentTask(
+                    etApiKey.text.toString().trim(),
+                    etModelName.text.toString().trim(),
+                    rbModeBackgroundWeb.isChecked,
+                    etWebUrl.text.toString().trim(),
+                    etFolderPath.text.toString().trim()
+                )
+            }
         }
 
         findViewById<Button>(R.id.btnStopAgent).setOnClickListener {
