@@ -899,6 +899,8 @@ class AutoTouchService : AccessibilityService() {
             return
         }
 
+        LongTaskStore.begin(this, "Video upload task: $userPrompt")
+        LongTaskForegroundService.start(this)
         activeJob = serviceScope.launch {
             isJobRunning = true
             acquireWakeLock()
