@@ -1244,7 +1244,6 @@ class AutoTouchService : AccessibilityService() {
                 // Clean user stop
             } catch (e: Exception) {
                 LongTaskStore.fail(this@AutoTouchService, e.message ?: "Phone task failed")
-                LongTaskStore.scheduleRetry(this@AutoTouchService)
                 isJobRunning = false
                 overlayHud?.setCursorOverlayVisible(false)
                 overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
