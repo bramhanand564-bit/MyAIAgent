@@ -289,7 +289,7 @@ class AiOverlayHud(private val context: Context) {
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT
                 )
-                pointerCanvasView = CuteBaymaxHandCursorCanvas(context).apply {
+                pointerCanvasView = CuteRobotHandCursorCanvas(context).apply {
                     visibility = View.GONE
                 }
                 windowManager.addView(pointerCanvasView, canvasParams)
@@ -893,7 +893,7 @@ class AiOverlayHud(private val context: Context) {
         }
     }
 
-private class CuteBaymaxHandCursorCanvas(context: Context) : View(context) {
+private class CuteRobotHandCursorCanvas(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#F8FAFC")
