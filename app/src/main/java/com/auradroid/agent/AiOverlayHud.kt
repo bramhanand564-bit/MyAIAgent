@@ -808,16 +808,21 @@ class AiOverlayHud(private val context: Context) {
                 paint.style = Paint.Style.FILL
             }
 
-            // Soft Drop Shadow
+            // Slightly smaller outer shell; facial features keep their original dimensions.
+            val shellInsetX = w * 0.085f
+            val shellInsetY = h * 0.075f
+            val headRect = RectF(shellInsetX, 4f + shellInsetY + bobY, w - shellInsetX, h - 4f - shellInsetY + bobY)
             paint.style = Paint.Style.FILL
-            paint.color = Color.argb(80, 0, 0, 0)
-            canvas.drawRoundRect(RectF(4f, 6f + bobY, w - 4f, h - 1f + bobY), h * 0.48f, h * 0.48f, paint)
+            paint.color = Color.argb(65, 0, 0, 0)
+            canvas.drawRoundRect(
+                RectF(headRect.left + 1f, headRect.top + 3f, headRect.right + 1f, headRect.bottom + 3f),
+                headRect.height() * 0.48f, headRect.height() * 0.48f, paint
+            )
 
-            // 1. Soft Marshmallow White Head
-            val headRect = RectF(3f, 4f + bobY, w - 3f, h - 4f + bobY)
+            // 1. Soft marshmallow head: reduce only the outside round body, not the eyes.
             paint.style = Paint.Style.FILL
             paint.color = Color.parseColor("#F8FAFC")
-            canvas.drawRoundRect(headRect, h * 0.48f, h * 0.48f, paint)
+            canvas.drawRoundRect(headRect, headRect.height() * 0.48f, headRect.height() * 0.48f, paint)
 
             val accentColor = when (mood) {
                 "ERROR", "SAD", "FAILED" -> Color.parseColor("#EF4444")
@@ -830,14 +835,14 @@ class AiOverlayHud(private val context: Context) {
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 3f
             paint.color = accentColor
-            canvas.drawRoundRect(headRect, h * 0.48f, h * 0.48f, paint)
+            canvas.drawRoundRect(headRect, headRect.height() * 0.48f, headRect.height() * 0.48f, paint)
 
             val lookOffsetX = if (mood == "THINKING") sin(phase * 1.5f) * (w * 0.05f) else 0f
             val lookOffsetY = if (mood == "THINKING") cos(phase * 1.1f) * (h * 0.03f) else 0f
 
             val eyeY = h * 0.44f + bobY + lookOffsetY
-            val leftEyeX = w * 0.30f + lookOffsetX
-            val rightEyeX = w * 0.70f + lookOffsetX
+            val leftEyeX = w * 0.32f + lookOffsetX
+            val rightEyeX = w * 0.68f + lookOffsetX
 
             // 2. Subtle Baymax-style Connector Line Between the 4x Eyes
             paint.style = Paint.Style.STROKE
@@ -898,7 +903,7 @@ class AiOverlayHud(private val context: Context) {
                 "ERROR", "SAD", "FAILED" -> {
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = 3.8f
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.13f, mouthTopY, mouthCenterX + w * 0.13f, mouthTopY + h * 0.13f), 200f, 140f, false, paint)
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.105f, mouthTopY, mouthCenterX + w * 0.105f, mouthTopY + h * 0.10f), 200f, 140f, false, paint)
                 }
                 "THINKING", "PROCESSING" -> {
                     paint.style = Paint.Style.STROKE
@@ -908,12 +913,12 @@ class AiOverlayHud(private val context: Context) {
                 }
                 "DONE", "HAPPY", "SUCCESS" -> {
                     paint.style = Paint.Style.FILL
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.15f, mouthTopY - 3f, mouthCenterX + w * 0.15f, mouthTopY + h * 0.14f), 0f, 180f, true, paint)
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.12f, mouthTopY - 3f, mouthCenterX + w * 0.12f, mouthTopY + h * 0.11f), 0f, 180f, true, paint)
                 }
                 else -> {
                     paint.style = Paint.Style.STROKE
                     paint.strokeWidth = 3.8f
-                    canvas.drawArc(RectF(mouthCenterX - w * 0.13f, mouthTopY - 3f, mouthCenterX + w * 0.13f, mouthTopY + h * 0.11f), 15f, 150f, false, paint)
+                    canvas.drawArc(RectF(mouthCenterX - w * 0.105f, mouthTopY - 3f, mouthCenterX + w * 0.105f, mouthTopY + h * 0.09f), 15f, 150f, false, paint)
                 }
             }
         }
