@@ -152,6 +152,67 @@ class AutoTouchService : AccessibilityService() {
         } catch (_: Exception) {}
     }
 
+    fun pauseCurrentJob() {
+        LongTaskStore.pause(this)
+        overlayHud?.updateStatus("Paused", "Task checkpoint saved", "WAITING")
+        VideoQueueManager.appendLog(this, "⏸ Task paused; progress checkpoint saved.")
+    }
+
+    fun resumeCurrentJob() {
+        val state = LongTaskStore.resume(this)
+        if (state != null && state.status == LongTaskState.Status.RUNNING) {
+            overlayHud?.updateStatus("Resuming", state.currentStep, "WORKING")
+            VideoQueueManager.appendLog(this, "▶ Resume requested from saved checkpoint: ${state.checkpoint}")
+        } else {
+            VideoQueueManager.appendLog(this, "⚠️ No paused task to resume.")
+        }
+    }
+
+    fun retryCurrentTask() {
+        val state = LongTaskStore.get(this)
+        if (state == null || state.status !in listOf(LongTaskState.Status.FAILED, LongTaskState.Status.CANCELLED)) {
+            VideoQueueManager.appendLog(this, "⚠️ Retry is available only after a failed or cancelled task.")
+            return
+        }
+        val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+        val apiKey = prefs.getString("api_key", "") ?: ""
+        val model = prefs.getString("model_name", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+        if (apiKey.isBlank() || state.goal.isBlank()) {
+            VideoQueueManager.appendLog(this, "⚠️ Retry needs a saved goal and API key.")
+            return
+        }
+        if (state.retryCount >= LongTaskRetryWorker.MAX_RETRIES) {
+            VideoQueueManager.appendLog(this, "⚠️ Retry limit reached (3). Start a new task manually.")
+            return
+        }
+        LongTaskStore.save(this, state.copy(retryCount = state.retryCount + 1, status = LongTaskState.Status.QUEUED))
+        startUniversalAiTask(apiKey, model, state.goal)
+    }
+
+    private suspend fun awaitTaskPermissionAndPause(step: Int, goal: String): Boolean {
+        while (currentCoroutineContext().isActive) {
+            val state = LongTaskStore.get(this) ?: return false
+            if (state.status == LongTaskState.Status.CANCELLED) return false
+            if (state.status == LongTaskState.Status.PAUSED) {
+                releaseWakeLock()
+                overlayHud?.setCursorOverlayVisible(false)
+                delay(300)
+                continue
+            }
+            if (!Settings.canDrawOverlays(this) && overlayHud != null) {
+                LongTaskStore.fail(this, "Overlay permission revoked")
+                return false
+            }
+            if (state.status == LongTaskState.Status.RUNNING) {
+                LongTaskStore.checkpoint(this, "Step $step", ((step * 100) / maxOf(step + 1, 40)), "step:$step")
+                if (wakeLock?.isHeld == false) acquireWakeLock()
+                return true
+            }
+            delay(300)
+        }
+        return false
+    }
+
     fun stopCurrentJob() {
         LongTaskStore.cancel(this)
         LongTaskForegroundService.stop(this)
@@ -239,6 +300,8 @@ class AutoTouchService : AccessibilityService() {
             return
         }
 
+        LongTaskStore.begin(this, "Google Flow to YouTube: $topicIdea")
+        LongTaskForegroundService.start(this)
         activeJob = serviceScope.launch {
             isJobRunning = true
             acquireWakeLock()
@@ -303,6 +366,8 @@ class AutoTouchService : AccessibilityService() {
 
         val shouldChainYt = chainYouTubeAfterDownload || forceChainYouTube
 
+        LongTaskStore.begin(this, userGoal)
+        LongTaskForegroundService.start(this)
         activeJob = serviceScope.launch {
             isJobRunning = true
             acquireWakeLock()
@@ -338,7 +403,7 @@ class AutoTouchService : AccessibilityService() {
                 val history = mutableListOf<String>()
 
                 for (step in 1..maxSteps) {
-                    if (!isActive) break
+                    if (!isActive || !awaitTaskPermissionAndPause(step, userGoal)) break
 
                     // Check if a newly downloaded .mp4 video file has arrived in AutoVideos / Downloads!
                     val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
@@ -478,6 +543,8 @@ class AutoTouchService : AccessibilityService() {
                         "DONE" -> {
                             isJobRunning = false
                             overlayHud?.updateStatus("✅ Web Task Done", decision.reason, "DONE")
+                            LongTaskStore.complete(this@AutoTouchService)
+                            LongTaskForegroundService.stop(this@AutoTouchService)
                             VideoQueueManager.appendLog(this@AutoTouchService, "✅ Web Task Completed: ${decision.reason}")
                             return@launch
                         }
@@ -486,8 +553,12 @@ class AutoTouchService : AccessibilityService() {
                     delay(stepDelay)
                 }
             } catch (e: CancellationException) {
-                // Clean user stop
+                if (LongTaskStore.get(this@AutoTouchService)?.status != LongTaskState.Status.CANCELLED) {
+                    LongTaskStore.pause(this@AutoTouchService)
+                }
             } catch (e: Exception) {
+                LongTaskStore.fail(this@AutoTouchService, e.message ?: "Web task failed")
+                LongTaskStore.scheduleRetry(this@AutoTouchService)
                 isJobRunning = false
                 overlayHud?.updateStatus("Web Error", e.message ?: "Failed", "ERROR")
                 VideoQueueManager.appendLog(this@AutoTouchService, "❌ Web Agent Error: ${e.message}")
@@ -861,6 +932,7 @@ class AutoTouchService : AccessibilityService() {
                 val (realW, realH) = getRealScreenDimensions()
 
                 for (step in 1..25) {
+                    if (!isActive || !awaitTaskPermissionAndPause(step, "YouTube upload")) break
                     if (!isActive) break
                     val nodes = captureScreenNodes()
                     val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
@@ -1011,6 +1083,8 @@ class AutoTouchService : AccessibilityService() {
             return
         }
 
+        LongTaskStore.begin(this, userGoal)
+        LongTaskForegroundService.start(this)
         activeJob = serviceScope.launch {
             isJobRunning = true
             acquireWakeLock()
@@ -1048,7 +1122,7 @@ class AutoTouchService : AccessibilityService() {
                 var repeatTapCount = 0
 
                 for (step in 1..maxSteps) {
-                    if (!isActive) break
+                    if (!isActive || !awaitTaskPermissionAndPause(step, userGoal)) break
                     val nodes = captureScreenNodes()
 
                     // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
@@ -1112,6 +1186,8 @@ class AutoTouchService : AccessibilityService() {
                     VideoQueueManager.appendLog(this@AutoTouchService, "🤖 Step $step [${decision.action}]: ${decision.reason}")
 
                     if (decision.action.equals("DONE", true)) {
+                        LongTaskStore.complete(this@AutoTouchService)
+                        LongTaskForegroundService.stop(this@AutoTouchService)
                         isJobRunning = false
                         overlayHud?.setCursorOverlayVisible(false)
                         overlayHud?.updateStatus("🎉 Task Complete!", decision.reason, "DONE")
@@ -1151,6 +1227,8 @@ class AutoTouchService : AccessibilityService() {
             } catch (e: CancellationException) {
                 // Clean user stop
             } catch (e: Exception) {
+                LongTaskStore.fail(this@AutoTouchService, e.message ?: "Phone task failed")
+                LongTaskStore.scheduleRetry(this@AutoTouchService)
                 isJobRunning = false
                 overlayHud?.setCursorOverlayVisible(false)
                 overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
