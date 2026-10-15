@@ -808,15 +808,15 @@ class AiOverlayHud(private val context: Context) {
 
             // Large black/navy face panel: larger eyes and expression, shell kept compact.
             paint.style = Paint.Style.FILL
-            paint.shader = LinearGradient(19f, 29f + bob, 101f, 88f + bob,
+            paint.shader = LinearGradient(15f, 27f + bob, 105f, 90f + bob,
                 intArrayOf(Color.parseColor("#020915"), Color.parseColor("#08283D"), Color.parseColor("#103C57")),
                 floatArrayOf(0f, 0.62f, 1f), Shader.TileMode.CLAMP)
-            canvas.drawRoundRect(RectF(18f, 28f + bob, 102f, 86f + bob), 23f, 23f, paint)
+            canvas.drawRoundRect(RectF(14f, 26f + bob, 106f, 90f + bob), 24f, 24f, paint)
             paint.shader = null
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 1.5f
             paint.color = Color.argb(210, Color.red(accent), Color.green(accent), Color.blue(accent))
-            canvas.drawRoundRect(RectF(18f, 28f + bob, 102f, 86f + bob), 23f, 23f, paint)
+            canvas.drawRoundRect(RectF(14f, 26f + bob, 106f, 90f + bob), 24f, 24f, paint)
 
             val blink = sin(phase * 0.72f) > 0.985f && mood !in listOf("ERROR", "SAD", "FAILED", "PAUSED", "STOPPED")
             val eyeY = 53f + bob
@@ -824,13 +824,13 @@ class AiOverlayHud(private val context: Context) {
                 // Triple-layer eye glow; far more prominent without letting the eyes collide.
                 paint.style = Paint.Style.FILL
                 paint.color = Color.argb(45, Color.red(accent), Color.green(accent), Color.blue(accent))
-                canvas.drawCircle(eyeX, eyeY, 17f, paint)
+                canvas.drawCircle(eyeX, eyeY, 19.5f, paint)
                 paint.color = accent
-                canvas.drawCircle(eyeX, eyeY, 13.5f, paint)
+                canvas.drawCircle(eyeX, eyeY, 15.5f, paint)
                 paint.style = Paint.Style.STROKE
                 paint.strokeWidth = 1.5f
                 paint.color = bright
-                canvas.drawCircle(eyeX, eyeY, 11.5f, paint)
+                canvas.drawCircle(eyeX, eyeY, 14.2f, paint)
 
                 if (mood in listOf("PAUSED", "STOPPED", "CANCELLED", "STOP")) {
                     paint.strokeWidth = 3f
@@ -849,7 +849,7 @@ class AiOverlayHud(private val context: Context) {
                     canvas.drawCircle(eyeX, eyeY, 9.5f, paint)
                     paint.shader = null
                     paint.color = Color.WHITE
-                    canvas.drawCircle(eyeX - 3f, eyeY - 4f, 2.2f, paint)
+                    canvas.drawCircle(eyeX - 4f, eyeY - 4.5f, 2.8f, paint)
                 }
             }
 
@@ -858,18 +858,18 @@ class AiOverlayHud(private val context: Context) {
             paint.strokeCap = Paint.Cap.ROUND
             paint.strokeWidth = 3f
             paint.color = accent
-            val mouth = RectF(51f, 65f + bob, 69f, 79f + bob)
+            val mouth = RectF(46f, 64f + bob, 74f, 83f + bob)
             when (mood) {
                 "ERROR", "SAD", "FAILED" -> canvas.drawArc(mouth, 205f, 130f, false, paint)
                 "THINKING", "PROCESSING", "WORKING" -> {
                     val r = 3.5f + (sin(phase * 2.1f) + 1f) * 1.2f
-                    canvas.drawCircle(60f, 72f + bob, r, paint)
+                    canvas.drawCircle(60f, 73f + bob, r, paint)
                     paint.strokeWidth = 1.5f
                     canvas.drawArc(RectF(55f, 34f + bob, 65f, 41f + bob), 195f, 120f, false, paint)
                 }
-                "PAUSED", "STOPPED", "CANCELLED", "STOP" -> canvas.drawLine(54f, 73f + bob, 66f, 73f + bob, paint)
+                "PAUSED", "STOPPED", "CANCELLED", "STOP" -> canvas.drawLine(52f, 74f + bob, 68f, 74f + bob, paint)
                 "DONE", "HAPPY", "SUCCESS", "COMPLETED" -> canvas.drawArc(mouth, 12f, 156f, false, paint)
-                "WAITING", "NEEDS_PERMISSION", "APPROVAL_REQUIRED" -> canvas.drawCircle(60f, 72f + bob, 3.6f, paint)
+                "WAITING", "NEEDS_PERMISSION", "APPROVAL_REQUIRED" -> canvas.drawCircle(60f, 73f + bob, 4.4f, paint)
                 else -> canvas.drawArc(mouth, 12f, 156f, false, paint)
             }
             canvas.restore()
