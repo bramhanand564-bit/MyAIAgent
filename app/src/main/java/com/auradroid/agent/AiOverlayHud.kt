@@ -305,7 +305,7 @@ class AiOverlayHud(private val context: Context) {
                 ).apply {
                     gravity = Gravity.TOP or Gravity.START
                     x = dpToPx(16)
-                    y = dpToPx(48)
+                    y = dpToPx(92)
                 }
 
                 podRootLayout = buildThreeStagePodUi()
@@ -457,8 +457,8 @@ class AiOverlayHud(private val context: Context) {
                     btnExpandFullToggle?.text = "⛶ Full Screen"
                     // Compact mini window: keep the companion face and task controls visible
                     // without covering most of the app behind it.
-                    params.width = (dm.widthPixels * 0.78f).toInt()
-                    params.height = (dm.heightPixels * 0.38f).toInt()
+                    params.width = (dm.widthPixels * 0.70f).toInt()
+                    params.height = (dm.heightPixels * 0.32f).toInt()
                     params.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     podWebFrame?.let { attachWebViewToContainer(it) }
@@ -688,8 +688,8 @@ class AiOverlayHud(private val context: Context) {
                     if (abs(dx) > 10 || abs(dy) > 10) {
                         isDragging = true
                         if (currentStage != 3) {
-                            params.x = (startX + dx).coerceIn(0, 960)
-                            params.y = (startY + dy).coerceIn(20, 2150)
+                            params.x = (startX + dx).coerceIn(0, (context.resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0))
+                            params.y = (startY + dy).coerceIn(dpToPx(32), (context.resources.displayMetrics.heightPixels - root.height - dpToPx(48)).coerceAtLeast(dpToPx(32)))
                             try {
                                 windowManager.updateViewLayout(root, params)
                             } catch (_: Exception) {}
