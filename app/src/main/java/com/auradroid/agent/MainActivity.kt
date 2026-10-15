@@ -11,6 +11,7 @@ import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
+import android.webkit.MimeTypeMap
 import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -28,7 +29,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         var onLogUpdated: ((String) -> Unit)? = null
         var onBrowserUrlChanged: ((String) -> Unit)? = null
+        @Volatile var instance: MainActivity? = null
         private const val REQ_VOICE_SPEECH = 202
+        private const val REQ_WEB_FILE_CHOOSER = 203
     }
 
     private val uiScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -86,6 +89,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
         setContentView(R.layout.activity_main)
 
         bindViews()
@@ -564,13 +568,61 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Deprecated("Deprecated in Java")
+    /**
+     * Opens Android's document picker for a WebView upload input.
+     * Supports one or multiple images, videos, or other accepted file types.
+     */
+    fun launchWebFileChooser(acceptTypes: Array<String>, allowMultiple: Boolean): Boolean {
+        val mimeTypes = acceptTypes.asSequence()
+            .flatMap { it.split(',').asSequence() }
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .filter { it.isNotBlank() }
+            .mapNotNull { type ->
+                if (type.contains('/')) type
+                else MimeTypeMap.getSingleton().getMimeTypeFromExtension(type.substringAfterLast('.').removePrefix("."))
+            }
+            .distinct()
+            .toList()
+
+        val picker = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = when (mimeTypes.size) {
+                0 -> "*/*"
+                1 -> mimeTypes[0]
+                else -> "*/*"
+            }
+            if (mimeTypes.size > 1) putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple)
+        }
+
+        return try {
+            startActivityForResult(
+                Intent.createChooser(picker, "Select photos, videos or files"),
+                REQ_WEB_FILE_CHOOSER
+            )
+            true
+        } catch (e: Exception) {
+            Toast.makeText(this, "Cannot open file picker: ${e.message}", Toast.LENGTH_LONG).show()
+            false
+        }
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_WEB_FILE_CHOOSER) {
+            AutoTouchService.instance?.overlayHud?.handleFileChooserResult(resultCode, data)
+            return
+        }
         if (requestCode == REQ_VOICE_SPEECH && resultCode == Activity.RESULT_OK && data != null) {
             val spoken = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spoken.isNullOrBlank()) etChatInput.setText(spoken)
         }
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        super.onDestroy()
     }
 
     override fun onResume() {

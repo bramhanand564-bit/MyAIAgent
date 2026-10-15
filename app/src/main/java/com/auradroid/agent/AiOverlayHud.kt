@@ -2,8 +2,10 @@ package com.auradroid.agent
 
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -23,6 +25,7 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
+import android.webkit.ValueCallback
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -71,6 +74,7 @@ class AiOverlayHud(private val context: Context) {
     private var podWebFrame: FrameLayout? = null
 
     private var sharedWebView: WebView? = null
+    private var pendingFileChooserCallback: ValueCallback<Array<Uri>>? = null
     private var isDesktopMode = false
     private var isAdded = false
     private var isPodVisible = true
@@ -142,7 +146,26 @@ class AiOverlayHud(private val context: Context) {
                         url?.let { MainActivity.onBrowserUrlChanged?.invoke(it) }
                     }
                 }
-                webChromeClient = WebChromeClient()
+                webChromeClient = object : WebChromeClient() {
+                    override fun onShowFileChooser(
+                        webView: WebView?,
+                        filePathCallback: ValueCallback<Array<Uri>>,
+                        fileChooserParams: FileChooserParams
+                    ): Boolean {
+                        pendingFileChooserCallback?.onReceiveValue(null)
+                        pendingFileChooserCallback = filePathCallback
+                        val host = MainActivity.instance
+                        val launched = host?.launchWebFileChooser(
+                            fileChooserParams.acceptTypes ?: emptyArray(),
+                            fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE
+                        ) ?: false
+                        if (!launched) {
+                            pendingFileChooserCallback = null
+                            filePathCallback.onReceiveValue(null)
+                        }
+                        return launched
+                    }
+                }
 
                 setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
                     try {
@@ -234,6 +257,20 @@ class AiOverlayHud(private val context: Context) {
             } catch (e: Exception) {
                 if (cont.isActive) cont.resume(null)
             }
+        }
+    }
+
+    /** Deliver photos/videos/files picked by Android back to the WebView input[type=file]. */
+    fun handleFileChooserResult(resultCode: Int, data: Intent?) {
+        mainHandler.post {
+            val callback = pendingFileChooserCallback
+            pendingFileChooserCallback = null
+            val selectedUris = if (resultCode == Activity.RESULT_OK && data != null) {
+                WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+            } else {
+                null
+            }
+            callback?.onReceiveValue(selectedUris)
         }
     }
 
