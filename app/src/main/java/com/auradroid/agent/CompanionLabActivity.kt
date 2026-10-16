@@ -38,6 +38,9 @@ class CompanionLabActivity : AppCompatActivity() {
     private lateinit var storyPart: EditText
     private lateinit var storyText: EditText
     private lateinit var storyDialogue: EditText
+    private lateinit var storySeedInput: EditText
+    private lateinit var storyTwistInput: EditText
+    private lateinit var storyGenerationStatus: TextView
     private lateinit var storyStatus: TextView
     private lateinit var topicInput: EditText
     private lateinit var dialogueInput: EditText
@@ -159,10 +162,68 @@ class CompanionLabActivity : AppCompatActivity() {
         storyPart = edit("Current part number (1–10000)", "1")
         storyText = edit("Current story / scene summary", "", true)
         storyDialogue = edit("Hindi dialogue for this part", "", true)
+        storySeedInput = edit("Base story idea / original premise", "A friendly white robot discovers a hidden city beneath a futuristic mountain", true)
+        storyTwistInput = edit("New twist for this part (optional)", "", true)
         memoryCard.addView(storySeries)
         memoryCard.addView(storyPart)
+        memoryCard.addView(storySeedInput)
+        memoryCard.addView(storyTwistInput)
         memoryCard.addView(storyText)
         memoryCard.addView(storyDialogue)
+        storyGenerationStatus = label("Generated episodes are drafts. Review them before saving.")
+        memoryCard.addView(storyGenerationStatus)
+        memoryCard.addView(actionButton("✨ Generate next story part + Hindi dialogue", true) {
+            val part = storyPart.text.toString().toIntOrNull()
+            if (part == null || part !in 1..10000) {
+                toast("Enter a valid part number from 1 to 10000.")
+                return@actionButton
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Generate story with Gemini?")
+                .setMessage("The base idea, saved previous-part context and optional twist will be sent to the Gemini model configured in MyAIAgent. The result will be a draft only; nothing is saved or published until you review and tap Save.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Generate draft") { _, _ ->
+                    uiScope.launch {
+                        storyGenerationStatus.text = "Generating Part $part using saved story context…"
+                        try {
+                            val previous = if (part > 1) {
+                                store.getStoryContext(storySeries.text.toString(), part, 5)
+                            } else {
+                                "No previous part. Establish the premise and protagonist."
+                            }
+                            val episode = StoryEpisodeGenerator.generate(
+                                this@CompanionLabActivity,
+                                storySeries.text.toString(),
+                                part,
+                                storySeedInput.text.toString(),
+                                previous,
+                                storyTwistInput.text.toString()
+                            )
+                            storyText.setText(
+                                buildString {
+                                    append(episode.storyText)
+                                    if (episode.cliffhanger.isNotBlank()) {
+                                        append("\n\nEnding hook: ")
+                                        append(episode.cliffhanger)
+                                    }
+                                    if (episode.nextPartOutline.isNotBlank()) {
+                                        append("\n\nNext part idea: ")
+                                        append(episode.nextPartOutline)
+                                    }
+                                }
+                            )
+                            storyDialogue.setText(episode.hindiDialogue)
+                            topicInput.setText("${episode.title}\n${episode.storySummary}".trim())
+                            storyGenerationStatus.text = "Draft: ${episode.title}\nSummary: ${episode.storySummary}\n\nReview story/dialogue; then tap Save this story part."
+                            store.saveTaskEpisode("STORY_DRAFT_GENERATED", "Drafted ${storySeries.text} — Part $part")
+                        } catch (e: Exception) {
+                            storyGenerationStatus.text = "Generation failed: ${e.message ?: "unknown error"}"
+                            toast(e.message ?: "Could not generate story.")
+                        }
+                    }
+                }
+                .show()
+        })
         memoryCard.addView(actionButton("💾 Save this story part", true) {
             val part = storyPart.text.toString().toIntOrNull()
             if (part == null || part !in 1..10000) {
