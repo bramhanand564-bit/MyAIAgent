@@ -59,14 +59,41 @@ class CompanionLabActivity : AppCompatActivity() {
     private lateinit var expressionSpinner: Spinner
     private lateinit var recordingButton: Button
 
-    private val screenshotPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            try {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (_: Exception) {}
-            store.addTrainingAsset(uri.toString(), resolveDisplayName(uri))
-            stepStatus.text = "Screenshot reference saved. The image is stored as training material; it is not auto-clicked or OCR-read."
+    private val screenshotPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            uris.take(6).forEach { uri ->
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) {}
+                store.addTrainingAsset(uri.toString(), resolveDisplayName(uri))
+            }
             refreshTrainingAssets()
+            val selected = uris.take(6)
+            AlertDialog.Builder(this)
+                .setTitle("Analyze ordered screenshots?")
+                .setMessage("The selected screenshots will be sent to Google Gemini using the API key saved in MyAIAgent. Gemini will propose a draft workflow JSON; it will NOT run automatically. Do not select screenshots containing passwords, OTPs, private messages or payment details.")
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton("Keep local only", null)
+                .setPositiveButton("Analyze with Gemini") { _, _ ->
+                    uiScope.launch {
+                        stepStatus.text = "Analyzing ${selected.size} screenshot(s)…"
+                        try {
+                            val blueprint = ScreenshotBlueprintAnalyzer.analyze(this@CompanionLabActivity, selected)
+                            draftSteps.clear()
+                            draftSteps.addAll(blueprint.steps)
+                            blueprintName.setText(blueprint.name)
+                            recording = false
+                            recordingButton.text = "⏺ Start recording a new workflow"
+                            jsonInput.setText(blueprint.toJson())
+                            refreshDraftStatus()
+                            toast("Screenshot workflow draft created. Review every step and import the edited JSON before replay.")
+                        } catch (e: Exception) {
+                            stepStatus.text = "Screenshot analysis failed: ${e.message ?: "unknown error"}"
+                            toast(e.message ?: "Screenshot analysis failed.")
+                        }
+                    }
+                }
+                .show()
         }
     }
 
@@ -234,7 +261,7 @@ class CompanionLabActivity : AppCompatActivity() {
         trainingCard.addView(actionButton("＋ Add selected step to recording", true) { addDraftStep() })
         stepStatus = label("")
         trainingCard.addView(stepStatus)
-        trainingCard.addView(actionButton("🖼 Add gallery screenshots as references", false) {
+        trainingCard.addView(actionButton("🖼 Select ordered screenshots → AI workflow draft", false) {
             screenshotPicker.launch(arrayOf("image/*"))
         })
         trainingCard.addView(label("Gallery reference files:\n${store.listTrainingAssets()}"))
