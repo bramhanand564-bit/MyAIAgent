@@ -108,8 +108,8 @@ object BlueprintRunner {
                         false to "target missing: coordinate TAP needs explicit x and y; (0,0) is refused as an unsafe default"
                     } else {
                         val (sw, sh) = service.getRealScreenDimensions()
-                        val x = (step.x * sw).coerceIn(1f, sw - 1f)
-                        val y = (step.y * sh).coerceIn(1f, sh - 1f)
+                        val x = (step.x.toFloat() * sw).coerceIn(1f, sw - 1f)
+                        val y = (step.y.toFloat() * sh).coerceIn(1f, sh - 1f)
                         tap(service, x, y) to "coordinate tap failed"
                     }
                 }
@@ -179,11 +179,13 @@ object BlueprintRunner {
     }
 
     private fun findClickableAncestor(start: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
-        var current = start
-        repeat(9) {
-            if (current == null) return null
-            if (current.isClickable && current.isEnabled) return current
-            current = current?.parent
+        var current: AccessibilityNodeInfo? = start
+        var depth = 0
+        while (current != null && depth < 9) {
+            val node = current ?: break
+            if (node.isClickable && node.isEnabled) return node
+            current = node.parent
+            depth++
         }
         return start?.takeIf { it.isEnabled }
     }

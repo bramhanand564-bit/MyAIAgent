@@ -105,7 +105,7 @@ class CompanionLabActivity : AppCompatActivity() {
         header.addView(actionButton("Back", false) { finish() })
         outer.addView(header)
 
-        val scroll = ScrollView(this).apply { fillViewport = true }
+        val scroll = ScrollView(this).apply { isFillViewport = true }
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(24))
