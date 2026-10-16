@@ -758,7 +758,7 @@ class CompanionLabActivity : AppCompatActivity() {
         results.add("8s/10s/12s/15s timing planner: ${if (durationOk) "PASS" else "FAIL"}")
         results.add("Self-correction guardrails: ${if (SelfCorrectionPolicy.runSelfCheck()) "PASS" else "FAIL"}")
         results.add("SQLite integrity: ${if (store.integrityCheck()) "PASS" else "FAIL"}")
-        results.add("Baymax expression catalogue (18 states): ${if (BaymaxFaceView.EXPRESSIONS.size >= 15) "PASS" else "FAIL"}")
+        results.add("Nax Bot emotion catalogue (exactly 15): ${if (BaymaxFaceView.EXPRESSIONS.size == 15) "PASS" else "FAIL"}")
         val allPassed = results.all { it.endsWith("PASS") }
         AlertDialog.Builder(this)
             .setTitle(if (allPassed) "Module self-check passed" else "Module self-check needs attention")

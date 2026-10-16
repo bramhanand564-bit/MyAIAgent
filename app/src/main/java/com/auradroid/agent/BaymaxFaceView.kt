@@ -16,9 +16,9 @@ class BaymaxFaceView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
     companion object {
         val EXPRESSIONS = listOf(
-            "Normal", "Happy", "Very Happy", "Thinking", "Focused", "Surprised",
-            "Sad", "Worried", "Confused", "Wink", "Sleepy", "Sleeping",
-            "Listening", "Working", "Error", "Success", "Curious", "Proud"
+            "Normal", "Happy", "Thinking", "Focused", "Surprised",
+            "Sad", "Confused", "Wink", "Sleepy", "Listening",
+            "Working", "Error", "Success", "Curious", "Proud"
         )
     }
 
@@ -78,7 +78,7 @@ class BaymaxFaceView @JvmOverloads constructor(
         if (expression == "Wink") {
             canvas.drawCircle(centerX - eyeGap, eyeY, eyeRadius, eye)
             canvas.drawLine(centerX + eyeGap - eyeRadius * 1.35f, eyeY, centerX + eyeGap + eyeRadius * 1.35f, eyeY, mouth)
-        } else if (expression == "Sleeping" || expression == "Sleepy") {
+        } else if (expression == "Sleepy") {
             canvas.drawLine(centerX - eyeGap - eyeRadius * 1.35f, eyeY, centerX - eyeGap + eyeRadius * 1.35f, eyeY, mouth)
             canvas.drawLine(centerX + eyeGap - eyeRadius * 1.35f, eyeY, centerX + eyeGap + eyeRadius * 1.35f, eyeY, mouth)
         } else {
@@ -94,14 +94,14 @@ class BaymaxFaceView @JvmOverloads constructor(
         val mouthY = eyeY + headH * 0.22f
         val half = headW * 0.10f
         when (expression) {
-            "Happy", "Very Happy", "Success", "Proud" -> {
+            "Happy", "Success", "Proud" -> {
                 val p = Path().apply {
                     moveTo(centerX - half, mouthY)
                     quadTo(centerX, mouthY + headH * if (expression == "Very Happy") 0.16f else 0.10f, centerX + half, mouthY)
                 }
                 canvas.drawPath(p, mouth)
             }
-            "Sad", "Worried", "Error" -> {
+            "Sad", "Error" -> {
                 val p = Path().apply {
                     moveTo(centerX - half, mouthY + headH * 0.07f)
                     quadTo(centerX, mouthY - headH * 0.02f, centerX + half, mouthY + headH * 0.07f)
