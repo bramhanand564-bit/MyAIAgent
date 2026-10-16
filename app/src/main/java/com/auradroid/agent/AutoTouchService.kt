@@ -78,7 +78,14 @@ class AutoTouchService : AccessibilityService() {
         VideoQueueManager.appendLog(this, "✅ Modular Companion Connected (Auto-Model & Verification Active)!")
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        // Opt-in only: no recording occurs unless the user starts Live Teach in Training Lab.
+        // Recorder exceptions are isolated so existing agent behavior is unaffected.
+        try {
+            TrainingRecorder.recordAccessibilityEvent(this, event)
+        } catch (_: Exception) {}
+    }
     override fun onInterrupt() {}
 
     override fun onUnbind(intent: Intent?): Boolean {
