@@ -252,14 +252,15 @@ class AutoTouchService : AccessibilityService() {
         folderPath: String,
         chainYouTubeAfterDownload: Boolean = false,
         forceChainYouTube: Boolean = false,
-        exactFlowPrompt: String = ""
+        exactFlowPrompt: String = "",
+        preferredDurationSeconds: Int = 8
     ) {
         activeJob = serviceScope.launch {
             acquireWakeLock()
             try {
                 WebPipelineManager.runBackgroundWebTask(
                     this@AutoTouchService, apiKey, model, initialUrl, userGoal, folderPath,
-                    chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt
+                    chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt, preferredDurationSeconds
                 )
             } finally {
                 releaseWakeLock()

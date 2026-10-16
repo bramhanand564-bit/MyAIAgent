@@ -222,10 +222,70 @@ class CompanionLabActivity : AppCompatActivity() {
         })
         promptOutput = edit("Generated prompt (editable)", "", true)
         videoCard.addView(promptOutput)
+        videoCard.addView(actionButton("🚀 Run this duration in Google Flow", true) {
+            try {
+                val seconds = VideoPromptPlanner.supportedDurationsSeconds[
+                    durationSpinner.selectedItemPosition.coerceIn(0, VideoPromptPlanner.supportedDurationsSeconds.lastIndex)
+                ]
+                val part = storyPart.text.toString().toIntOrNull()
+                val previous = if (part != null) {
+                    store.getStoryContext(storySeries.text.toString(), part, 5)
+                } else {
+                    store.getStoryContext(storySeries.text.toString(), null, 5)
+                }
+                val timedPrompt = VideoPromptPlanner.buildTimedPrompt(
+                    topicInput.text.toString(), seconds, previous, dialogueInput.text.toString()
+                )
+                promptOutput.setText(timedPrompt)
+                val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
+                val apiKey = prefs.getString("api_key", "").orEmpty().trim()
+                val model = prefs.getString("model_name", "gemini-2.5-flash").orEmpty().trim()
+                val folder = prefs.getString("folder_path", "/storage/emulated/0/Download/AutoVideos")
+                    ?: "/storage/emulated/0/Download/AutoVideos"
+                if (apiKey.isBlank()) {
+                    toast("Add your Gemini API key in the main Settings tab first.")
+                    return@actionButton
+                }
+                val service = AutoTouchService.instance
+                if (service == null) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Accessibility service required")
+                        .setMessage("Enable AuraDroid's Accessibility Service before running Google Flow automation.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Open settings") { _, _ ->
+                            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        }
+                        .show()
+                    return@actionButton
+                }
+                val goal = """
+                    We are on Google Flow (${VideoQueueManager.getPinnedFlowUrl(this)}).
+                    Create one video using the exact supplied prompt only once.
+                    Required target mode: Video • 720p • ${seconds}s • x1.
+                    Verify the selected mode displays ${seconds}s before submitting. If the UI doesn't offer or confirm this duration, STOP and ask the user; do not submit at a different duration.
+                    After submission, wait for the render to finish, then download the completed video. Do not chain YouTube upload.
+                """.trimIndent()
+                service.startBackgroundWebTask(
+                    apiKey = apiKey,
+                    model = model,
+                    initialUrl = VideoQueueManager.getPinnedFlowUrl(this),
+                    userGoal = goal,
+                    folderPath = folder,
+                    chainYouTubeAfterDownload = false,
+                    forceChainYouTube = false,
+                    exactFlowPrompt = timedPrompt,
+                    preferredDurationSeconds = seconds
+                )
+                store.saveTaskEpisode("FLOW_RUN_REQUESTED", "Requested ${seconds}s Google Flow video", timedPrompt)
+                toast("Flow task started. The app will stop if the requested duration cannot be confirmed.")
+            } catch (e: Exception) {
+                toast(e.message ?: "Could not start Flow task.")
+            }
+        })
         videoCard.addView(actionButton("Copy prompt", false) {
             copyToClipboard("Video prompt", promptOutput.text.toString())
         })
-        videoCard.addView(label("Important: this creates timing instructions only. Google Flow or another generator may not offer every duration listed here."))
+        videoCard.addView(label("The prompt-only button does not run a video. The Flow button checks the requested duration; if the current Google Flow UI cannot confirm it, the task stops before prompt submission. Other generators may support different durations."))
         body.addView(videoCard)
 
         val trainingCard = section("🎓 Train Model / Record & Play")

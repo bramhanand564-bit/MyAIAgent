@@ -77,7 +77,8 @@ object WebPipelineManager {
         folderPath: String,
         chainYouTubeAfterDownload: Boolean = false,
         forceChainYouTube: Boolean = false,
-        exactFlowPrompt: String = ""
+        exactFlowPrompt: String = "",
+        preferredDurationSeconds: Int = 8
     ) {
         if (AutoTouchService.isJobRunning) {
             VideoQueueManager.appendLog(service, "⚠️ A task is already running!")
@@ -88,6 +89,9 @@ object WebPipelineManager {
         service.overlayHud?.setCursorOverlayVisible(false)
 
         val shouldChainYt = chainYouTubeAfterDownload || forceChainYouTube
+        val requestedDurationSeconds = preferredDurationSeconds.takeIf {
+            it in VideoPromptPlanner.supportedDurationsSeconds
+        } ?: 8
         val startTimeMs = System.currentTimeMillis()
         val webView = service.overlayHud?.getOrCreateSharedWebView()
         val memoryVault = VideoQueueManager.getMemoryVault(service)
@@ -134,11 +138,21 @@ object WebPipelineManager {
 
                 val currentUrl = webView?.url ?: initialUrl
                 if (!flowPromptSubmitted && currentUrl.contains("labs.google/fx", true)) {
-                    val modeFix = ensureGoogleFlowVideo8sMode(webView)
-                    if (modeFix.startsWith("SWITCHED")) {
-                        VideoQueueManager.appendLog(service, "⚙️ Auto-Configured Google Flow Mode: $modeFix")
-                        delay(1600)
+                    var modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
+                    if (modeFix == "MODE_PILL_NOT_FOUND") {
+                        delay(1200)
+                        modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
                     }
+                    val modeConfirmed = modeFix.startsWith("ALREADY_VIDEO_") || modeFix.startsWith("CONFIRMED_VIDEO_")
+                    if (!modeConfirmed) {
+                        val explanation = "Requested ${requestedDurationSeconds}s video mode was not confirmed ($modeFix). Prompt not submitted, to avoid wasting credits."
+                        VideoQueueManager.appendLog(service, "⚠️ $explanation")
+                        service.overlayHud?.updateStatus("Duration not confirmed", explanation, "ERROR")
+                        AutoTouchService.isJobRunning = false
+                        return
+                    }
+                    VideoQueueManager.appendLog(service, "⚙️ Verified Google Flow mode: $modeFix")
+                    delay(350)
                 }
 
                 // ====================================================================
@@ -279,8 +293,19 @@ object WebPipelineManager {
                     }
                     "TYPE_EL" -> {
                         val promptToUse = exactFlowPrompt.ifBlank { decision.textToType }
-                        ensureGoogleFlowVideo8sMode(webView)
-                        delay(700)
+                        var modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
+                        if (modeFix == "MODE_PILL_NOT_FOUND") {
+                            delay(1200)
+                            modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
+                        }
+                        if (!modeFix.startsWith("ALREADY_VIDEO_") && !modeFix.startsWith("CONFIRMED_VIDEO_")) {
+                            val explanation = "Requested ${requestedDurationSeconds}s video mode was not confirmed ($modeFix). Prompt not submitted."
+                            VideoQueueManager.appendLog(service, "⚠️ $explanation")
+                            service.overlayHud?.updateStatus("Duration not confirmed", explanation, "ERROR")
+                            AutoTouchService.isJobRunning = false
+                            return
+                        }
+                        delay(500)
                         val typeRes = performWebJsTypeAndSubmit(webView, decision.elementIndex, promptToUse)
                         VideoQueueManager.appendLog(service, "✍️ Web Type Result: $typeRes")
                         history.add("Step $step: TYPE_EL(${decision.elementIndex}) -> $typeRes")
@@ -578,37 +603,82 @@ object WebPipelineManager {
         }
     }
 
-    private suspend fun ensureGoogleFlowVideo8sMode(webView: WebView?): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) { cont.resume("NO_WEBVIEW"); return@suspendCancellableCoroutine }
-        val js = """
-            (function() {
-                var allBtns = document.querySelectorAll('button, [role="button"], div');
-                var modePill = null;
-                for (var i = 0; i < allBtns.length; i++) {
-                    var t = (allBtns[i].innerText || '').trim();
-                    if ((t.indexOf('Nano Banana') !== -1 || t.indexOf('Image') !== -1 || t.indexOf('x2') !== -1 || t.indexOf('x4') !== -1) && allBtns[i].getBoundingClientRect().top > 220) {
-                        modePill = allBtns[i];
+    private suspend fun ensureGoogleFlowVideoMode(
+        webView: WebView?,
+        durationSeconds: Int
+    ): String {
+        if (webView == null) return "NO_WEBVIEW"
+        val duration = durationSeconds.takeIf { it in VideoPromptPlanner.supportedDurationsSeconds } ?: 8
+        val requestResult = suspendCancellableCoroutine<String> { cont ->
+            val js = """
+                (function() {
+                    var desired = '${duration}s';
+                    var nodes = document.querySelectorAll('button, [role="button"], div');
+                    var pill = null;
+                    for (var i = 0; i < nodes.length; i++) {
+                        var el = nodes[i];
+                        var text = (el.innerText || '').trim();
+                        var rect = el.getBoundingClientRect();
+                        if (!text || text.length > 110 || rect.width < 2 || rect.height < 2 || rect.top < window.innerHeight * 0.40) continue;
+                        if (text.indexOf('Video') === -1 && text.indexOf('Nano Banana') === -1 && text.indexOf('Image') === -1) continue;
+                        if (text.indexOf('Video') !== -1 && text.indexOf(desired) !== -1 && text.indexOf('x1') !== -1) {
+                            return 'ALREADY_VIDEO_' + desired.toUpperCase() + '_X1';
+                        }
+                        pill = el;
                         break;
                     }
-                }
-                if (modePill) {
-                    modePill.click();
+                    if (!pill) return 'MODE_PILL_NOT_FOUND';
+                    pill.click();
                     setTimeout(function() {
                         var opts = document.querySelectorAll('button, [role="tab"], [role="button"], span, div');
-                        for (var j = 0; j < opts.length; j++) {
-                            var ot = (opts[j].innerText || '').trim();
-                            if (ot === 'Video' || ot === '9:16' || ot === '8s' || ot === 'x1') {
-                                opts[j].click();
+                        var wanted = ['Video', '9:16', desired, 'x1'];
+                        for (var w = 0; w < wanted.length; w++) {
+                            var found = null;
+                            for (var j = 0; j < opts.length; j++) {
+                                var option = opts[j];
+                                var text = (option.innerText || '').trim();
+                                var rect = option.getBoundingClientRect();
+                                if (text === wanted[w] && rect.width > 0 && rect.height > 0) {
+                                    found = option;
+                                    break;
+                                }
                             }
+                            if (found) found.click();
                         }
                     }, 350);
-                    return 'SWITCHED_TO_VIDEO_8S_X1';
-                }
-                return 'ALREADY_VIDEO_MODE';
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "OK")
+                    return 'MODE_MENU_OPENED';
+                })();
+            """.trimIndent()
+            webView.evaluateJavascript(js) { response ->
+                if (cont.isActive) cont.resume(response?.trim('"') ?: "MODE_RESULT_UNKNOWN")
+            }
+        }
+        if (requestResult.startsWith("ALREADY_VIDEO_") ||
+            requestResult == "MODE_PILL_NOT_FOUND" || requestResult == "NO_WEBVIEW" ||
+            requestResult != "MODE_MENU_OPENED"
+        ) return requestResult
+
+        delay(800L)
+        return suspendCancellableCoroutine { cont ->
+            val verifyJs = """
+                (function() {
+                    var desired = '${duration}s';
+                    var nodes = document.querySelectorAll('button, [role="button"], div');
+                    for (var i = 0; i < nodes.length; i++) {
+                        var el = nodes[i];
+                        var text = (el.innerText || '').trim();
+                        var rect = el.getBoundingClientRect();
+                        if (!text || text.length > 110 || rect.width < 2 || rect.height < 2 || rect.top < window.innerHeight * 0.40) continue;
+                        if (text.indexOf('Video') !== -1 && text.indexOf(desired) !== -1 && text.indexOf('x1') !== -1) {
+                            return 'CONFIRMED_VIDEO_' + desired.toUpperCase() + '_X1';
+                        }
+                    }
+                    return 'DURATION_UNCONFIRMED_' + desired.toUpperCase();
+                })();
+            """.trimIndent()
+            webView.evaluateJavascript(verifyJs) { response ->
+                if (cont.isActive) cont.resume(response?.trim('"') ?: "DURATION_UNCONFIRMED")
+            }
         }
     }
 
