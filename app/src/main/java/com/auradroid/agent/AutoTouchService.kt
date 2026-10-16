@@ -70,12 +70,12 @@ class AutoTouchService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         recordServiceState(true)
-        postKeepAliveNotification("AuraDroid Companion Active & Ready")
+        postKeepAliveNotification("Nax Bot Companion Active & Ready")
         overlayHud = AiOverlayHud(this)
         overlayHud?.show()
         overlayHud?.setCursorOverlayVisible(false)
         overlayHud?.updateStatus("Ready", "Tap 🌐 for Browser", "IDLE")
-        VideoQueueManager.appendLog(this, "✅ Modular Companion Connected (Auto-Model & Verification Active)!")
+        VideoQueueManager.appendLog(this, "✅ Nax Bot connected (Auto-Model & Verification Active)!")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -118,14 +118,14 @@ class AutoTouchService : AccessibilityService() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val chan = NotificationChannel(
                     CHANNEL_ID,
-                    "AuraDroid 24/7 Active Companion",
+                    "Nax Bot Background Companion",
                     NotificationManager.IMPORTANCE_LOW
                 )
                 nm.createNotificationChannel(chan)
             }
             val notif = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_launcher)
-                .setContentTitle("AuraDroid OS • Verified AI Agent")
+                .setContentTitle("Nax Bot • Verified AI Companion")
                 .setContentText(statusText)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)

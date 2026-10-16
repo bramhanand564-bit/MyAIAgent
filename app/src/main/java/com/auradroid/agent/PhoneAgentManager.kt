@@ -135,7 +135,8 @@ object PhoneAgentManager {
                     isContinuousMonitorMode = isContinuousMonitor,
                     useHighModel = useHighModelNow,
                     highModelName = highModelName,
-                    useGoogleSearch = googleSearchEnabled && useHighModelNow
+                    useGoogleSearch = googleSearchEnabled && useHighModelNow,
+                    trainedBlueprint = TrainingMemoryStore(service).getVerifiedSkillBlueprintForTask(userGoal)
                 )
 
                 previousPhoneScreenshotB64 = currentScreenshotB64

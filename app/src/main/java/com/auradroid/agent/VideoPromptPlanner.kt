@@ -8,18 +8,22 @@ object VideoPromptPlanner {
         topic: String,
         durationSeconds: Int,
         storyContext: String = "",
-        hindiDialogue: String = ""
+        hindiDialogue: String = "",
+        storyMode: String = "SERIAL",
+        characterLock: String = "Cute rounded white companion robot with large solid color-changing eyes"
     ): String {
-        require(durationSeconds in supportedDurationsSeconds) {
-            "Choose one of: ${supportedDurationsSeconds.joinToString(", ")} seconds."
+        require(durationSeconds in 5..60) {
+            "Choose a duration between 5 and 60 seconds."
         }
         require(topic.isNotBlank()) { "Enter a video topic or scene." }
 
-        val beats = when (durationSeconds) {
-            8 -> listOf(0 to 2, 2 to 5, 5 to 8)
-            10 -> listOf(0 to 3, 3 to 7, 7 to 10)
-            12 -> listOf(0 to 3, 3 to 8, 8 to 12)
-            else -> listOf(0 to 4, 4 to 10, 10 to 15)
+        val firstBeatEnd = (durationSeconds * 0.28).toInt().coerceIn(1, durationSeconds - 2)
+        val secondBeatEnd = (durationSeconds * 0.70).toInt().coerceIn(firstBeatEnd + 1, durationSeconds - 1)
+        val beats = listOf(0 to firstBeatEnd, firstBeatEnd to secondBeatEnd, secondBeatEnd to durationSeconds)
+        val modeInstruction = when (storyMode.uppercase()) {
+            "SERIAL" -> "Continue previous plot threads and avoid repeating saved scenes/dialogue."
+            "SIDE_STORY" -> "Create a distinct side incident in the same visual universe."
+            else -> "Create a self-contained standalone scene."
         }
         val timeline = beats.joinToString("\n") { (start, end) ->
             "${start}–${end}s: one clear visual beat; maintain character, costume, lighting and camera continuity."
@@ -32,6 +36,8 @@ object VideoPromptPlanner {
         }
         return buildString {
             appendLine("Create a coherent cinematic video with target duration ${durationSeconds} seconds.")
+            appendLine("STORY MODE: ${storyMode.uppercase()} — $modeInstruction")
+            appendLine("MAIN CHARACTER VISUAL LOCK: ${characterLock.trim().take(1200)}")
             appendLine("TOPIC / SCENE: ${topic.trim()}")
             if (storyContext.isNotBlank()) {
                 appendLine("STORY CONTINUITY — treat this as the next episode; do not repeat prior events:")

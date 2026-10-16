@@ -260,7 +260,8 @@ object WebPipelineManager {
                     previousScreenshotBase64 = previousWebScreenshotB64,
                     useHighModel = useHighModelNow,
                     highModelName = highModelName,
-                    useGoogleSearch = googleSearchEnabled && useHighModelNow
+                    useGoogleSearch = googleSearchEnabled && useHighModelNow,
+                    trainedBlueprint = TrainingMemoryStore(service).getVerifiedSkillBlueprintForTask(userGoal)
                 )
 
                 previousWebScreenshotB64 = currentWebScreenshotB64
@@ -415,7 +416,19 @@ object WebPipelineManager {
 
             VideoQueueManager.appendLog(service, "🎬 Uploading Video (${if (VideoQueueManager.isUploadNewestFirst(service)) "Newest First" else "Oldest First"}): ${nextVideo.name}")
             service.overlayHud?.updateStatus("Step 2/5 • Gemini", "Generating viral Title...", "THINKING")
-            val metadata = GeminiBrain.generateYouTubeMetadata(apiKey, model, nextVideo.name, userPrompt)
+            val storyPlan = if (listOf("story", "episode", "part").any { userPrompt.contains(it, true) } ||
+                listOf("story", "episode", "part").any { nextVideo.name.contains(it, true) }) {
+                TrainingMemoryStore(service).getLatestStoryEpisodePlan()
+            } else null
+            val metadata = GeminiBrain.generateYouTubeMetadata(
+                apiKey = apiKey,
+                model = model,
+                fileName = nextVideo.name,
+                userInstruction = userPrompt,
+                episodeNum = storyPlan?.episodeNumber ?: 0,
+                episodeTitle = storyPlan?.episodeTitle.orEmpty(),
+                storySummary = storyPlan?.plotSummary.orEmpty()
+            )
 
             copyToClipboard(service, metadata.title)
             service.overlayHud?.updateStatus("Step 3/5 • YouTube", "Opening YouTube Upload...", "WORKING")

@@ -159,49 +159,56 @@ object GeminiBrain {
      * - Skips any 429 quota-exhausted models currently on cooldown (`cooldownModelsUntilMs`)
      * - Automatically orders by Fast Free-Tier vs High-Reasoning Escalation mode
      */
+    private fun normalizeCandidateModel(raw: String): String? {
+        val clean = raw.trim().removePrefix("models/")
+        if (clean.isEmpty() || !clean.startsWith("gemini-")) return null
+        return clean.takeIf { it.matches(Regex("^[A-Za-z0-9._-]{1,120}$")) }
+    }
+
     private fun buildSmartCandidateQueue(
         apiKey: String,
-        escalateToHighModel: Boolean
+        userPreferredModel: String,
+        escalateToHighModel: Boolean,
+        highModelName: String
     ): List<String> {
         val now = System.currentTimeMillis()
         val liveList = refreshLiveModelsIfNeeded(apiKey)
-        val combinedPool = (liveList + fallbackSeedModels).distinct()
+        val preferredFast = normalizeCandidateModel(userPreferredModel)
+        val preferredHigh = normalizeCandidateModel(highModelName)
+        val combinedPool = (
+            listOfNotNull(preferredHigh, preferredFast) +
+                liveList.mapNotNull { normalizeCandidateModel(it) } +
+                fallbackSeedModels.mapNotNull { normalizeCandidateModel(it) }
+            ).distinct()
 
-        // Filter out dead (404) models and currently rate-limited (429) models
         val healthyPool = combinedPool.filter { model ->
             if (model in permanentlyDeadModels) return@filter false
-            val cooldownUntil = cooldownModelsUntilMs[model] ?: 0L
-            now >= cooldownUntil
+            now >= (cooldownModelsUntilMs[model] ?: 0L)
         }.ifEmpty {
-            // If every single model was on cooldown, clear cooldowns and try fresh
             cooldownModelsUntilMs.clear()
             combinedPool.filter { it !in permanentlyDeadModels }
         }
 
         val sortedPool = if (escalateToHighModel) {
-            // HIGH-BRAIN MODE (Stuck / Verification Failed):
-            // Prioritize Pro, Thinking, and Highest-Version (4.x -> 3.8 -> 3.5 -> 2.5) Flash models
             healthyPool.sortedWith(
                 compareByDescending<String> { name ->
-                    val l = name.lowercase()
+                    val lower = name.lowercase()
                     when {
-                        l.contains("pro") && !l.contains("vision") -> 3
-                        l.contains("thinking") -> 3
-                        l.contains("flash") && !l.contains("lite") -> 2
+                        lower.contains("pro") && !lower.contains("vision") -> 4
+                        lower.contains("thinking") -> 4
+                        lower.contains("flash") && !lower.contains("lite") -> 3
                         else -> 1
                     }
                 }.thenByDescending { extractVersionScore(it) }
             )
         } else {
-            // NORMAL FAST FREE-TIER MODE:
-            // Prioritize Flash & Flash-Lite models (Highest Free-Tier Quota + Fastest Speed), newest version first!
             healthyPool.sortedWith(
                 compareByDescending<String> { name ->
-                    val l = name.lowercase()
+                    val lower = name.lowercase()
                     when {
-                        l.contains("flash") && !l.contains("lite") && !l.contains("8b") -> 4
-                        l.contains("flash-lite") || l.contains("lite") -> 3
-                        l.contains("flash") -> 2
+                        lower.contains("flash") && !lower.contains("lite") && !lower.contains("8b") -> 4
+                        lower.contains("flash-lite") || lower.contains("lite") -> 3
+                        lower.contains("pro") -> 2
                         else -> 1
                     }
                 }.thenByDescending { extractVersionScore(it) }
@@ -209,12 +216,15 @@ object GeminiBrain {
         }
 
         val finalQueue = linkedSetOf<String>()
-        // Put the currently proven working model at index 0 for instant response
         if (escalateToHighModel) {
+            preferredHigh?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
             activeHighModel?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
+            preferredFast?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
             activeFastModel?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
         } else {
+            preferredFast?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
             activeFastModel?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
+            preferredHigh?.takeIf { it in healthyPool }?.let { finalQueue.add(it) }
         }
         finalQueue.addAll(sortedPool)
         return finalQueue.toList()
@@ -237,7 +247,7 @@ object GeminiBrain {
     ): String = withContext(Dispatchers.IO) {
         if (apiKey.isBlank()) throw Exception("Gemini API Key missing! Settings tab mein jaakar API Key daalein.")
 
-        var candidateQueue = buildSmartCandidateQueue(apiKey, escalateToHighModel)
+        var candidateQueue = buildSmartCandidateQueue(apiKey, userModel, escalateToHighModel, highModelName)
         if (candidateQueue.isEmpty()) {
             permanentlyDeadModels.clear()
             cooldownModelsUntilMs.clear()
@@ -493,12 +503,19 @@ object GeminiBrain {
         apiKey: String,
         model: String,
         fileName: String,
-        userInstruction: String
+        userInstruction: String,
+        episodeNum: Int = 0,
+        episodeTitle: String = "",
+        storySummary: String = ""
     ): VideoMetadata {
+        val episodeContext = if (episodeNum > 0) {
+            "This is Part $episodeNum of an ongoing series. Episode title: '$episodeTitle'. Story summary: '$storySummary'. Include 'Part $episodeNum' in the short title and preserve series continuity."
+        } else ""
         val prompt = """
             You are an expert Social Media & YouTube Shorts SEO Manager.
             Video file name: "$fileName"
             Topic / Instruction: "$userInstruction"
+            EPISODE CONTEXT: $episodeContext
             
             Generate a catchy viral Title/Caption (max 85 chars, include 2 hashtags like #shorts #viral) and a full SEO Description with hashtags.
             Respond strictly in valid JSON:
@@ -540,7 +557,8 @@ object GeminiBrain {
         previousScreenshotBase64: String? = null,
         useHighModel: Boolean = false,
         highModelName: String = "AUTO",
-        useGoogleSearch: Boolean = false
+        useGoogleSearch: Boolean = false,
+        trainedBlueprint: String = ""
     ): WebAgentDecision {
         val escalationBanner = if (useHighModel) {
             """
@@ -561,6 +579,10 @@ object GeminiBrain {
             
             USER'S PERSONAL MEMORY VAULT:
             $memoryVault
+
+            FIRST-RUN LIVE-VERIFIED TRAINED SKILL BLUEPRINT (use only when the current screen matches):
+            $trainedBlueprint
+            Treat this as a guide, not proof of the current state. Verify each outcome and stop for user input if the live screen differs.
             
             STEP VERIFICATION STATUS SINCE LAST ACTION:
             $screenChangedStatus
@@ -651,7 +673,8 @@ object GeminiBrain {
         isContinuousMonitorMode: Boolean = false,
         useHighModel: Boolean = false,
         highModelName: String = "AUTO",
-        useGoogleSearch: Boolean = false
+        useGoogleSearch: Boolean = false,
+        trainedBlueprint: String = ""
     ): AgentDecision {
         val monitorRules = if (isContinuousMonitorMode) {
             """
@@ -683,6 +706,10 @@ object GeminiBrain {
             
             USER'S SAVED MEMORY VAULT:
             $memoryVault
+
+            FIRST-RUN LIVE-VERIFIED TRAINED SKILL BLUEPRINT (use only when the current screen matches):
+            $trainedBlueprint
+            Treat this as a guide, not proof of the current state. Verify each outcome; if the current screen differs, re-observe and stop for user input rather than blindly replaying coordinates.
             
             STEP VERIFICATION STATUS SINCE LAST ACTION:
             $screenChangedStatus
