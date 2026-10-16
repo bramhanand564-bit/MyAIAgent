@@ -37,6 +37,12 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".CompanionLabActivity"
+            android:exported="false"
+            android:label="Agent Training Lab"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".AutoTouchService"
             android:exported="true"
