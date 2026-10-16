@@ -52,8 +52,13 @@ object ScreenshotBlueprintAnalyzer {
                 )
             )
 
+            var totalEncodedChars = 0
             screenshots.forEachIndexed { index, uri ->
                 val encoded = encodeImage(context, uri)
+                totalEncodedChars += encoded.length
+                require(totalEncodedChars <= 12 * 1024 * 1024) {
+                    "Combined screenshots are too large. Select fewer images or smaller screenshots."
+                }
                 parts.put(JSONObject().put("text", "WORKFLOW SCREENSHOT ${index + 1} of ${screenshots.size} — preserve this order."))
                 parts.put(
                     JSONObject().put(
@@ -130,8 +135,9 @@ object ScreenshotBlueprintAnalyzer {
 
     private fun encodeImage(context: Context, uri: Uri): String {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        val boundsStream = context.contentResolver.openInputStream(uri)
             ?: throw IllegalArgumentException("Unable to open a selected screenshot.")
+        boundsStream.use { stream -> BitmapFactory.decodeStream(stream, null, bounds) }
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Selected file is not a readable image." }
 
         var sample = 1
