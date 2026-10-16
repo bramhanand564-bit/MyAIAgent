@@ -1205,6 +1205,17 @@
             android:textSize="12sp" />
 
         <Button
+            android:id="@+id/navTabLab"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?attr/selectableItemBackground"
+            android:text="🧠\nLab"
+            android:textAllCaps="false"
+            android:textColor="#94A3B8"
+            android:textSize="12sp" />
+
+        <Button
             android:id="@+id/navTabSettings"
             android:layout_width="0dp"
             android:layout_height="match_parent"

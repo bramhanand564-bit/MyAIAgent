@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var navTabPipelines: Button
     private lateinit var navTabDoctor: Button
     private lateinit var navTabSettings: Button
+    private lateinit var navTabLab: Button
 
     private lateinit var tvChatHistory: TextView
     private lateinit var etChatInput: EditText
@@ -118,6 +119,7 @@ class MainActivity : AppCompatActivity() {
         navTabPipelines = findViewById(R.id.navTabPipelines)
         navTabDoctor = findViewById(R.id.navTabDoctor)
         navTabSettings = findViewById(R.id.navTabSettings)
+        navTabLab = findViewById(R.id.navTabLab)
 
         tvChatHistory = findViewById(R.id.tvChatHistory)
         etChatInput = findViewById(R.id.etChatInput)
@@ -166,6 +168,7 @@ class MainActivity : AppCompatActivity() {
         navTabPipelines.setOnClickListener { switchTab(3) }
         navTabDoctor.setOnClickListener { switchTab(4) }
         navTabSettings.setOnClickListener { switchTab(5) }
+        navTabLab.setOnClickListener { startActivity(Intent(this, CompanionLabActivity::class.java)) }
     }
 
     private fun switchTab(tabIndex: Int) {
