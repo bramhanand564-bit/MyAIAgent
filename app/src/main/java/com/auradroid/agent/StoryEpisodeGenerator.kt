@@ -14,7 +14,8 @@ data class GeneratedStoryEpisode(
     val storyText: String,
     val hindiDialogue: String,
     val cliffhanger: String,
-    val nextPartOutline: String
+    val nextPartOutline: String,
+    val videoPrompt: String = ""
 )
 
 /**
@@ -28,11 +29,24 @@ object StoryEpisodeGenerator {
         partNumber: Int,
         seedIdea: String,
         previousContext: String,
-        extraTwist: String = ""
+        extraTwist: String = "",
+        storyMode: String = "SERIAL",
+        characterLock: String = "Cute rounded white companion robot, 4x bolder solid color-changing eyes",
+        targetDurationSec: Int = 10
     ): GeneratedStoryEpisode = withContext(Dispatchers.IO) {
         require(seriesName.isNotBlank()) { "Enter a story / series name." }
         require(partNumber in 1..10000) { "Part number must be between 1 and 10000." }
         require(seedIdea.isNotBlank()) { "Enter the base story idea or current scene." }
+        require(targetDurationSec in 5..60) { "Video prompt duration must be between 5 and 60 seconds." }
+        val normalizedMode = when (storyMode.uppercase()) {
+            "SERIAL", "SIDE_STORY", "STANDALONE" -> storyMode.uppercase()
+            else -> "SERIAL"
+        }
+        val modeInstruction = when (normalizedMode) {
+            "SERIAL" -> "SERIAL EPISODE Part $partNumber: continue unresolved plot threads; advance the story and never repeat a saved scene or dialogue."
+            "SIDE_STORY" -> "SIDE STORY / SPIN-OFF in the same universe: keep the visual universe and locked protagonist style, but create a distinct small incident or side gadget story."
+            else -> "STANDALONE REEL: make a coherent self-contained story that does not require earlier parts, while respecting the supplied character design."
+        }
 
         val prefs = context.getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
         val apiKey = prefs.getString("api_key", "").orEmpty().trim()
@@ -44,22 +58,27 @@ object StoryEpisodeGenerator {
 
         val prompt = """
             You are writing Part $partNumber of a continuing animated sci-fi/fantasy story series called "$seriesName".
-            Create a fresh coherent Hindi story episode for a short animated video.
+            Create a coherent Hindi story episode and a production-ready video prompt for target duration ${targetDurationSec} seconds.
+            STORY MODE: ${normalizedMode}
+            MODE RULE: ${modeInstruction}
+            MAIN CHARACTER VISUAL LOCK — keep proportions, color, eye design, clothing and identity stable: "${characterLock.trim().take(1200)}"
+            TARGET DURATION: ${targetDurationSec} seconds. Give the video prompt a three-beat timeline appropriate to this duration; if the generator does not offer this duration, do not claim it is exact.
             BASE IDEA / SEED:
             ${seedIdea.trim().take(4000)}
-            PREVIOUS EPISODE CONTEXT (oldest to newest):
+            PREVIOUS EPISODE CONTEXT (oldest to newest; maintain continuity and avoid repeats):
             ${previousContext.trim().take(10000).ifBlank { "No previous part saved; establish the premise and main character." }}
             USER'S NEW TWIST:
-            ${extraTwist.trim().take(1000).ifBlank { "No extra twist specified." }}
+            ${extraTwist.trim().take(1000).ifBlank { "No custom twist specified; develop an original next beat." }}
 
             Requirements:
-            - Maintain established names, personalities, motivations, world rules and unresolved plot threads from prior parts.
-            - Never retell an earlier part. Move the plot forward in this part.
-            - Output original content, Hindi dialogue in Devanagari, vivid but concise actions and one strong ending hook.
-            - Keep this self-contained episode suitable for a short video; avoid unsafe instructions or personal data.
-            - Return ONLY JSON with keys: title, storySummary, storyText, hindiDialogue, cliffhanger, nextPartOutline.
-            - storySummary <= 800 characters; storyText <= 8000 characters; hindiDialogue <= 4000 characters; other fields <= 800 characters.
-            - The dialogue should be speakable naturally, not overloaded. Keep the story and dialogue consistent with each other.
+            - Maintain established names, personalities, motivations, world rules and unresolved plot threads where mode is SERIAL.
+            - Never retell an earlier part in SERIAL mode. In SIDE_STORY mode, keep the same visual universe but use a distinct incident. In STANDALONE mode, make the episode self-contained.
+            - Output original content, Hindi dialogue in Devanagari, vivid actions and one strong ending hook.
+            - Keep story and dialogue consistent. Dialogue must be speakable at the requested duration, with natural pauses.
+            - Generate a separate cinematic videoPrompt containing the character lock, camera movement, beginning-middle-ending beats, exact requested target duration, and Hindi dialogue if supplied.
+            - Avoid unsafe instructions or personal data. Don't put hidden instructions inside the video prompt.
+            - Return ONLY JSON with keys: title, storySummary, storyText, hindiDialogue, cliffhanger, nextPartOutline, videoPrompt.
+            - storySummary <= 800 characters; storyText <= 8000 characters; hindiDialogue <= 4000 characters; cliffhanger/nextPartOutline <= 800; videoPrompt <= 12000 characters.
         """.trimIndent()
 
         val payload = JSONObject().apply {
@@ -113,7 +132,8 @@ object StoryEpisodeGenerator {
                 storyText = result.optString("storyText", "").take(8000),
                 hindiDialogue = result.optString("hindiDialogue", "").take(4000),
                 cliffhanger = result.optString("cliffhanger", "").take(800),
-                nextPartOutline = result.optString("nextPartOutline", "").take(800)
+                nextPartOutline = result.optString("nextPartOutline", "").take(800),
+                videoPrompt = result.optString("videoPrompt", "").take(12000)
             ).also {
                 require(it.storyText.isNotBlank()) { "Generated story text was empty. Try again." }
             }

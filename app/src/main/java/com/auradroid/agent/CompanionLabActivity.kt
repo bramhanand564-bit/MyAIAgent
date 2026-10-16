@@ -40,8 +40,17 @@ class CompanionLabActivity : AppCompatActivity() {
     private lateinit var storyDialogue: EditText
     private lateinit var storySeedInput: EditText
     private lateinit var storyTwistInput: EditText
+    private lateinit var storyModeSpinner: Spinner
+    private lateinit var characterLockInput: EditText
     private lateinit var storyGenerationStatus: TextView
     private lateinit var storyStatus: TextView
+    private lateinit var customDurationInput: EditText
+    private lateinit var skillNameInput: EditText
+    private lateinit var skillStatus: TextView
+    private var latestEpisodeDraft: GeneratedStoryEpisode? = null
+    private var latestDraftMode: String = ""
+    private var latestDraftDuration: Int = -1
+    private var latestDraftCharacterLock: String = ""
     private lateinit var topicInput: EditText
     private lateinit var dialogueInput: EditText
     private lateinit var durationSpinner: Spinner
@@ -64,14 +73,14 @@ class CompanionLabActivity : AppCompatActivity() {
 
     private val screenshotPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) {
-            uris.take(6).forEach { uri ->
+            uris.take(8).forEach { uri ->
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: Exception) {}
                 store.addTrainingAsset(uri.toString(), resolveDisplayName(uri))
             }
             refreshTrainingAssets()
-            val selected = uris.take(6)
+            val selected = uris.take(8)
             AlertDialog.Builder(this)
                 .setTitle("Analyze ordered screenshots?")
                 .setMessage("The selected screenshots will be sent to Google Gemini using the API key saved in MyAIAgent. Gemini will propose a draft workflow JSON; it will NOT run automatically. Do not select screenshots containing passwords, OTPs, private messages or payment details.")
@@ -157,15 +166,24 @@ class CompanionLabActivity : AppCompatActivity() {
         faceCard.addView(label("Expression is a local UI preview; it does not generate or alter a video character."))
         body.addView(faceCard)
 
-        val memoryCard = section("📚 SQLite episodic story memory")
+        val memoryCard = section("📚 Nax Bot • SQLite Episodic Story Memory")
         storySeries = edit("Story / series name", "My Story")
         storyPart = edit("Current part number (1–10000)", "1")
         storyText = edit("Current story / scene summary", "", true)
         storyDialogue = edit("Hindi dialogue for this part", "", true)
-        storySeedInput = edit("Base story idea / original premise", "A friendly white robot discovers a hidden city beneath a futuristic mountain", true)
+        storySeedInput = edit("Base story idea / original premise", "Nax Bot discovers a hidden city beneath a futuristic mountain", true)
         storyTwistInput = edit("New twist for this part (optional)", "", true)
+        storyModeSpinner = spinner(listOf("SERIAL", "SIDE_STORY", "STANDALONE"))
+        characterLockInput = edit(
+            "Main character visual lock (keep identical every part)",
+            "Nax Bot: cute round white capsule-shaped companion, same small size, four-times-bolder solid color-changing eyes, minimal friendly face",
+            true
+        )
         memoryCard.addView(storySeries)
         memoryCard.addView(storyPart)
+        memoryCard.addView(label("Story mode: serial continuation, side story, or standalone"))
+        memoryCard.addView(storyModeSpinner)
+        memoryCard.addView(characterLockInput)
         memoryCard.addView(storySeedInput)
         memoryCard.addView(storyTwistInput)
         memoryCard.addView(storyText)
@@ -186,19 +204,31 @@ class CompanionLabActivity : AppCompatActivity() {
                     uiScope.launch {
                         storyGenerationStatus.text = "Generating Part $part using saved story context…"
                         try {
-                            val previous = if (part > 1) {
+                            val mode = storyModeSpinner.selectedItem?.toString() ?: "SERIAL"
+                            val characterLock = characterLockInput.text.toString().trim()
+                            val seconds = currentRequestedDurationSeconds()
+                            val previousStory = if (part > 1) {
                                 store.getStoryContext(storySeries.text.toString(), part, 5)
                             } else {
                                 "No previous part. Establish the premise and protagonist."
                             }
+                            val previousPlans = store.getPreviousEpisodePlansContext(storySeries.text.toString(), part, 6)
+                            val previous = listOf(previousPlans, previousStory).filter { it.isNotBlank() }.joinToString("\n\n").take(10000)
                             val episode = StoryEpisodeGenerator.generate(
-                                this@CompanionLabActivity,
-                                storySeries.text.toString(),
-                                part,
-                                storySeedInput.text.toString(),
-                                previous,
-                                storyTwistInput.text.toString()
+                                context = this@CompanionLabActivity,
+                                seriesName = storySeries.text.toString(),
+                                partNumber = part,
+                                seedIdea = storySeedInput.text.toString(),
+                                previousContext = previous,
+                                extraTwist = storyTwistInput.text.toString(),
+                                storyMode = mode,
+                                characterLock = characterLock,
+                                targetDurationSec = seconds
                             )
+                            latestEpisodeDraft = episode
+                            latestDraftMode = mode
+                            latestDraftDuration = seconds
+                            latestDraftCharacterLock = characterLock
                             storyText.setText(
                                 buildString {
                                     append(episode.storyText)
@@ -214,7 +244,8 @@ class CompanionLabActivity : AppCompatActivity() {
                             )
                             storyDialogue.setText(episode.hindiDialogue)
                             topicInput.setText("${episode.title}\n${episode.storySummary}".trim())
-                            storyGenerationStatus.text = "Draft: ${episode.title}\nSummary: ${episode.storySummary}\n\nReview story/dialogue; then tap Save this story part."
+                            promptOutput.setText(episode.videoPrompt)
+                            storyGenerationStatus.text = "Draft: ${episode.title}\nMode: ${mode} • Duration: ${seconds}s\nSummary: ${episode.storySummary}\n\nReview story, Hindi dialogue and video prompt; then tap Save this story part."
                             store.saveTaskEpisode("STORY_DRAFT_GENERATED", "Drafted ${storySeries.text} — Part $part")
                         } catch (e: Exception) {
                             storyGenerationStatus.text = "Generation failed: ${e.message ?: "unknown error"}"
@@ -236,9 +267,22 @@ class CompanionLabActivity : AppCompatActivity() {
                         storyText.text.toString(),
                         storyDialogue.text.toString()
                     )
+                    val draft = latestEpisodeDraft
+                    if (draft != null && promptOutput.text.toString().isNotBlank()) {
+                        store.saveStoryEpisodePlan(
+                            seriesName = storySeries.text.toString(),
+                            episodeNumber = part,
+                            storyMode = storyModeSpinner.selectedItem?.toString() ?: "SERIAL",
+                            characterLock = characterLockInput.text.toString(),
+                            episodeTitle = draft.title,
+                            plotSummary = draft.storySummary,
+                            videoPrompt = promptOutput.text.toString(),
+                            durationSeconds = currentRequestedDurationSeconds()
+                        )
+                    }
                     store.saveTaskEpisode("STORY_PART_SAVED", "Saved ${storySeries.text} — Part ${part}")
                     refreshStoryMemory()
-                    toast("Story part saved to SQLite.")
+                    toast("Story part saved to SQLite.");
                 } catch (e: Exception) {
                     toast(e.message ?: "Could not save this story part.")
                 }
@@ -247,21 +291,45 @@ class CompanionLabActivity : AppCompatActivity() {
         storyStatus = label("")
         memoryCard.addView(storyStatus)
         memoryCard.addView(actionButton("Refresh memory", false) { refreshStoryMemory() })
+        memoryCard.addView(actionButton("📚 View complete story arc report", false) {
+            AlertDialog.Builder(this)
+                .setTitle("Story Arc • ${storySeries.text}")
+                .setMessage(store.getStoryArcReport(storySeries.text.toString()))
+                .setPositiveButton("OK", null)
+                .show()
+        })
+        memoryCard.addView(actionButton("Reset this series history…", false) {
+            AlertDialog.Builder(this)
+                .setTitle("Reset story series?")
+                .setMessage("This removes saved story parts and episode prompts only for '${storySeries.text}'. Trained skills, screenshots and task memory are not removed.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Reset this series") { _, _ ->
+                    try {
+                        store.resetStoryArcHistory(storySeries.text.toString())
+                        latestEpisodeDraft = null
+                        refreshStoryMemory()
+                        toast("Selected story history reset.")
+                    } catch (e: Exception) {
+                        toast(e.message ?: "Could not reset story history.")
+                    }
+                }
+                .show()
+        })
         body.addView(memoryCard)
 
         val videoCard = section("🎬 Custom duration + prompt timing")
         topicInput = edit("Video topic / scene", "A friendly rounded robot helps in a futuristic city")
         dialogueInput = edit("Hindi dialogue (optional)", "", true)
-        durationSpinner = spinner(VideoPromptPlanner.supportedDurationsSeconds.map { "${it}s" })
+        durationSpinner = spinner(VideoPromptPlanner.supportedDurationsSeconds.map { "${it}s" }).apply { setSelection(1) }
+        customDurationInput = edit("Optional custom duration in seconds (5–60; Flow execution supports only listed modes)", "")
         videoCard.addView(topicInput)
         videoCard.addView(label("Requested duration"))
         videoCard.addView(durationSpinner)
+        videoCard.addView(customDurationInput)
         videoCard.addView(dialogueInput)
         videoCard.addView(actionButton("Build timed prompt with previous-story context", true) {
             try {
-                val seconds = VideoPromptPlanner.supportedDurationsSeconds[
-                    durationSpinner.selectedItemPosition.coerceIn(0, VideoPromptPlanner.supportedDurationsSeconds.lastIndex)
-                ]
+                val seconds = currentRequestedDurationSeconds()
                 val part = storyPart.text.toString().toIntOrNull()
                 val previous = if (part != null && part > 1) {
                     store.getStoryContext(storySeries.text.toString(), part, 5)
@@ -269,10 +337,12 @@ class CompanionLabActivity : AppCompatActivity() {
                     store.getStoryContext(storySeries.text.toString(), null, 5)
                 }
                 val result = VideoPromptPlanner.buildTimedPrompt(
-                    topicInput.text.toString(),
-                    seconds,
-                    previous,
-                    dialogueInput.text.toString()
+                    topic = topicInput.text.toString(),
+                    durationSeconds = seconds,
+                    storyContext = previous + "\n\n" + store.getPreviousEpisodePlansContext(storySeries.text.toString(), part, 6),
+                    hindiDialogue = dialogueInput.text.toString(),
+                    storyMode = storyModeSpinner.selectedItem?.toString() ?: "SERIAL",
+                    characterLock = characterLockInput.text.toString()
                 )
                 promptOutput.setText(result)
                 store.saveTaskEpisode("VIDEO_PROMPT", "Prepared ${seconds}s timed prompt", result)
@@ -285,18 +355,35 @@ class CompanionLabActivity : AppCompatActivity() {
         videoCard.addView(promptOutput)
         videoCard.addView(actionButton("🚀 Run this duration in Google Flow", true) {
             try {
-                val seconds = VideoPromptPlanner.supportedDurationsSeconds[
-                    durationSpinner.selectedItemPosition.coerceIn(0, VideoPromptPlanner.supportedDurationsSeconds.lastIndex)
-                ]
+                val seconds = currentRequestedDurationSeconds()
+                if (seconds !in VideoPromptPlanner.supportedDurationsSeconds) {
+                    toast("Google Flow automation currently runs only verified 8s/10s/12s/15s modes. Your custom-duration prompt can still be copied or used in another generator.")
+                    return@actionButton
+                }
                 val part = storyPart.text.toString().toIntOrNull()
                 val previous = if (part != null) {
                     store.getStoryContext(storySeries.text.toString(), part, 5)
                 } else {
                     store.getStoryContext(storySeries.text.toString(), null, 5)
                 }
-                val timedPrompt = VideoPromptPlanner.buildTimedPrompt(
-                    topicInput.text.toString(), seconds, previous, dialogueInput.text.toString()
-                )
+                val sameEpisodeDraft = latestEpisodeDraft?.takeIf {
+                    latestDraftDuration == seconds &&
+                        latestDraftMode == (storyModeSpinner.selectedItem?.toString() ?: "SERIAL") &&
+                        latestDraftCharacterLock == characterLockInput.text.toString().trim() &&
+                        it.videoPrompt.isNotBlank()
+                }
+                val timedPrompt = if (sameEpisodeDraft != null && promptOutput.text.toString().isNotBlank()) {
+                    promptOutput.text.toString().trim()
+                } else {
+                    VideoPromptPlanner.buildTimedPrompt(
+                        topic = topicInput.text.toString(),
+                        durationSeconds = seconds,
+                        storyContext = previous + "\n\n" + store.getPreviousEpisodePlansContext(storySeries.text.toString(), part, 6),
+                        hindiDialogue = dialogueInput.text.toString(),
+                        storyMode = storyModeSpinner.selectedItem?.toString() ?: "SERIAL",
+                        characterLock = characterLockInput.text.toString()
+                    )
+                }
                 promptOutput.setText(timedPrompt)
                 val prefs = getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
                 val apiKey = prefs.getString("api_key", "").orEmpty().trim()
@@ -311,7 +398,7 @@ class CompanionLabActivity : AppCompatActivity() {
                 if (service == null) {
                     AlertDialog.Builder(this)
                         .setTitle("Accessibility service required")
-                        .setMessage("Enable AuraDroid's Accessibility Service before running Google Flow automation.")
+                        .setMessage("Enable Nax Bot's Accessibility Service before running Google Flow automation.")
                         .setNegativeButton("Cancel", null)
                         .setPositiveButton("Open settings") { _, _ ->
                             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -382,7 +469,7 @@ class CompanionLabActivity : AppCompatActivity() {
         trainingCard.addView(actionButton("＋ Add selected step to recording", true) { addDraftStep() })
         stepStatus = label("")
         trainingCard.addView(stepStatus)
-        trainingCard.addView(actionButton("🖼 Select ordered screenshots → AI workflow draft", false) {
+        trainingCard.addView(actionButton("🖼 Select up to 8 ordered screenshots → AI workflow draft", false) {
             screenshotPicker.launch(arrayOf("image/*"))
         })
         trainingCard.addView(label("Gallery reference files:\n${store.listTrainingAssets()}"))
@@ -403,6 +490,67 @@ class CompanionLabActivity : AppCompatActivity() {
         })
         jsonInput = edit("Paste or review automation blueprint JSON", "", true)
         trainingCard.addView(jsonInput)
+        skillNameInput = edit("Saved skill name (e.g. GOOGLE_FLOW)", "My workflow")
+        trainingCard.addView(skillNameInput)
+        skillStatus = label("Saved skills are unverified until a live test is observed and explicitly confirmed.")
+        trainingCard.addView(skillStatus)
+        trainingCard.addView(actionButton("💾 Save current JSON as a trained skill", true) {
+            try {
+                val blueprint = currentBlueprint()
+                val name = store.saveTrainedSkillBlueprint(skillNameInput.text.toString(), blueprint.toJson())
+                skillStatus.text = "Saved skill: $name • UNVERIFIED (any blueprint edit resets verification)."
+                toast("Skill saved. Run a live test and confirm a visible VERIFY step before marking it verified.")
+            } catch (e: Exception) {
+                toast("Could not save skill: ${e.message}")
+            }
+        })
+        trainingCard.addView(actionButton("📂 Load named trained skill", false) {
+            val json = store.getTrainedSkillBlueprint(skillNameInput.text.toString())
+            if (json.isNullOrBlank()) {
+                toast("No saved skill with that name.")
+            } else {
+                try {
+                    val parsed = AutomationBlueprint.fromJson(json)
+                    blueprintName.setText(parsed.name)
+                    draftSteps.clear()
+                    draftSteps.addAll(parsed.steps)
+                    jsonInput.setText(parsed.toJson())
+                    skillStatus.text = "${skillNameInput.text} • ${if (store.isSkillLiveVerified(skillNameInput.text.toString())) "LIVE-VERIFIED" else "UNVERIFIED"}"
+                    refreshDraftStatus()
+                    toast("Skill loaded as a draft; review before running.")
+                } catch (e: Exception) {
+                    toast("Saved skill JSON needs repair: ${e.message}")
+                }
+            }
+        })
+        trainingCard.addView(actionButton("📚 View all trained skills", false) {
+            AlertDialog.Builder(this)
+                .setTitle("Nax Bot • Trained Skills")
+                .setMessage(store.getAllTrainedSkillsSummary())
+                .setPositiveButton("OK", null)
+                .show()
+        })
+        trainingCard.addView(actionButton("✅ Mark named skill LIVE-VERIFIED", false) {
+            AlertDialog.Builder(this)
+                .setTitle("Confirm live calibration")
+                .setMessage("Only confirm after watching the workflow run in the real target app and checking the expected screen result. The saved blueprint must contain at least one VERIFY step. Any later edit will reset this flag.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("I checked the live result") { _, _ ->
+                    val marked = store.markSkillLiveVerified(skillNameInput.text.toString(), true)
+                    skillStatus.text = if (marked) {
+                        "${skillNameInput.text} • LIVE-VERIFIED — eligible to guide matching tasks"
+                    } else {
+                        "Not verified. Save this skill first and include at least one VERIFY step."
+                    }
+                    toast(if (marked) "Live verification saved." else "A saved skill with a VERIFY step is required.")
+                }
+                .show()
+        })
+        trainingCard.addView(actionButton("↩ Require a new live test", false) {
+            val changed = store.markSkillLiveVerified(skillNameInput.text.toString(), false)
+            if (changed) skillStatus.text = "${skillNameInput.text} • UNVERIFIED"
+            toast(if (changed) "Skill verification reset." else "Save the skill first.")
+        })
         trainingCard.addView(actionButton("Export blueprint JSON to clipboard", false) {
             try {
                 val blueprint = currentBlueprint()
@@ -523,12 +671,26 @@ class CompanionLabActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("I reviewed — Run") { _, _ ->
                 uiScope.launch {
-                    stepStatus.text = "Starting replay…"
+                    stepStatus.text = "Starting first-run live test…"
+                    val skillName = store.saveTrainedSkillBlueprint(skillNameInput.text.toString().ifBlank { blueprint.name }, blueprint.toJson())
                     val result = BlueprintRunner.run(this@CompanionLabActivity, blueprint) { message ->
                         stepStatus.text = message
                     }
                     stepStatus.text = "${result.summary}\nCompleted steps: ${result.completedSteps}"
-                    toast(if (result.success) "Workflow finished. Verify the actual result." else "Workflow stopped safely.")
+                    skillStatus.text = "$skillName • ${if (store.isSkillLiveVerified(skillName)) "LIVE-VERIFIED" else "UNVERIFIED"}"
+                    if (result.success && blueprint.steps.any { it.action == BlueprintAction.VERIFY }) {
+                        AlertDialog.Builder(this@CompanionLabActivity)
+                            .setTitle("Live test finished")
+                            .setMessage("The runner completed its steps. Did you visually confirm the expected result in the target app?")
+                            .setNegativeButton("Not yet", null)
+                            .setPositiveButton("Yes, mark verified") { _, _ ->
+                                val marked = store.markSkillLiveVerified(skillName, true)
+                                skillStatus.text = if (marked) "$skillName • LIVE-VERIFIED" else "Verification requires a saved blueprint with a VERIFY step."
+                            }
+                            .show()
+                    } else {
+                        toast(if (result.success) "Workflow finished. Add a VERIFY step and visually confirm before certification." else "Workflow stopped safely; skill remains unverified.")
+                    }
                 }
             }
             .show()
@@ -538,9 +700,19 @@ class CompanionLabActivity : AppCompatActivity() {
         stepStatus.text = "Mode: ${if (recording) "recording" else "draft saved"}\nSteps: ${draftSteps.size}\n${draftSteps.mapIndexed { i, s -> "${i + 1}. ${s.action.wireValue} — ${s.target.ifBlank { s.text.take(50) }}" }.joinToString("\n")}"
     }
 
+    private fun currentRequestedDurationSeconds(): Int {
+        val custom = if (::customDurationInput.isInitialized) customDurationInput.text.toString().trim().toIntOrNull() else null
+        val selected = if (::durationSpinner.isInitialized) {
+            VideoPromptPlanner.supportedDurationsSeconds.getOrElse(durationSpinner.selectedItemPosition) { 10 }
+        } else 10
+        val seconds = custom ?: selected
+        require(seconds in 5..60) { "Enter a custom duration between 5 and 60 seconds." }
+        return seconds
+    }
+
     private fun refreshStoryMemory() {
         if (!::storyStatus.isInitialized) return
-        storyStatus.text = "Saved series:\n${store.listStorySeries()}\n\nRecent task episodes:\n${store.recentTaskEpisodes(5)}"
+        storyStatus.text = "Saved story parts:\n${store.listStorySeries()}\n\nSaved episode prompts:\n${store.getStoryArcReport(storySeries.text.toString())}\n\nRecent task episodes:\n${store.recentTaskEpisodes(5)}"
     }
 
     private fun refreshTrainingAssets() {

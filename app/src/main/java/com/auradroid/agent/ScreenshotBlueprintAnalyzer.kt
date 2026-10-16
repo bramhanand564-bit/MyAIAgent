@@ -23,7 +23,7 @@ object ScreenshotBlueprintAnalyzer {
     suspend fun analyze(context: Context, screenshots: List<Uri>): AutomationBlueprint =
         withContext(Dispatchers.IO) {
             require(screenshots.isNotEmpty()) { "Select at least one screenshot." }
-            require(screenshots.size <= 6) { "Select at most 6 ordered screenshots per analysis." }
+            require(screenshots.size <= 8) { "Select at most 8 ordered screenshots per analysis." }
 
             val prefs = context.getSharedPreferences(VideoQueueManager.PREFS_NAME, Context.MODE_PRIVATE)
             val apiKey = prefs.getString("api_key", "").orEmpty().trim()

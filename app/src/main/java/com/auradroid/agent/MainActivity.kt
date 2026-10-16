@@ -158,7 +158,7 @@ class MainActivity : AppCompatActivity() {
             val service = AutoTouchService.instance
             if (service == null) { Toast.makeText(this, "Enable Auto-Touch first!", Toast.LENGTH_SHORT).show(); switchTab(5); return@setOnClickListener }
             val visible = service.overlayHud?.togglePodVisibility() ?: false
-            btnToggleFloatingPod.text = if (visible) "Bot: ON" else "Bot: OFF"
+            btnToggleFloatingPod.text = if (visible) "Nax Bot: ON" else "Nax Bot: OFF"
         }
     }
 
@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupTab1ChatAndPlanner() {
-        findViewById<Button>(R.id.btnClearChat).setOnClickListener { tvChatHistory.text = "🤖 Companion Bot: Chat cleared." }
+        findViewById<Button>(R.id.btnClearChat).setOnClickListener { tvChatHistory.text = "🤖 Nax Bot: Chat cleared." }
         findViewById<Button>(R.id.btnVoiceMic).setOnClickListener {
             try {
                 startActivityForResult(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -203,11 +203,11 @@ class MainActivity : AppCompatActivity() {
             saveSettings()
             val userMsg = etChatInput.text.toString().trim()
             if (userMsg.isEmpty()) return@setOnClickListener
-            val updatedChat = "${tvChatHistory.text}\n\n👤 You: $userMsg\n\n🤖 Companion Bot: Planning..."
+            val updatedChat = "${tvChatHistory.text}\n\n👤 You: $userMsg\n\n🤖 Nax Bot: Planning..."
             tvChatHistory.text = updatedChat; etChatInput.setText("")
             uiScope.launch {
                 val planRes = GeminiBrain.chatAndBuildPlan(etApiKey.text.toString().trim(), etModelName.text.toString().trim(), userMsg, updatedChat, etMemoryVault.text.toString().trim())
-                tvChatHistory.text = "${updatedChat.substringBeforeLast("🤖 Companion Bot:")}🤖 Companion Bot: ${planRes.replyText}"
+                tvChatHistory.text = "${updatedChat.substringBeforeLast("🤖 Nax Bot:")}🤖 Nax Bot: ${planRes.replyText}"
                 tvPlanSteps.text = "🎯 Goal: ${planRes.planGoal}\n\n${planRes.planSteps}"
                 currentLockedGoal = planRes.planGoal; etWebTaskGoal.setText(planRes.planGoal)
                 if (planRes.targetUrl.isNotBlank()) etWebUrl.setText(planRes.targetUrl)

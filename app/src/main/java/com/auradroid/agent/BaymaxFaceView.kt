@@ -26,12 +26,31 @@ class BaymaxFaceView @JvmOverloads constructor(
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFCFD8E3.toInt(); style = Paint.Style.STROKE; strokeWidth = 3f
     }
-    private val eye = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF17212B.toInt(); style = Paint.Style.FILL }
+    private val eye = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF00D7FF.toInt(); style = Paint.Style.FILL }
+    private var eyeColorIndex = 0
+    private val eyeColors = intArrayOf(
+        0xFF00D7FF.toInt(), 0xFF4F8CFF.toInt(), 0xFFB56BFF.toInt(),
+        0xFFFF5BBE.toInt(), 0xFF28D98B.toInt(), 0xFFFFC247.toInt()
+    )
+    private val colorTicker = object : Runnable {
+        override fun run() {
+            eyeColorIndex = (eyeColorIndex + 1) % eyeColors.size
+            invalidate()
+            postDelayed(this, 900L)
+        }
+    }
     private val mouth = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF17212B.toInt(); style = Paint.Style.STROKE; strokeWidth = 4f; strokeCap = Paint.Cap.ROUND
     }
     var expression: String = "Normal"
         private set
+
+    init { post(colorTicker) }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(colorTicker)
+        super.onDetachedFromWindow()
+    }
 
     fun setExpression(value: String) {
         expression = if (EXPRESSIONS.contains(value)) value else "Normal"
@@ -53,13 +72,15 @@ class BaymaxFaceView @JvmOverloads constructor(
 
         val eyeY = head.top + headH * 0.48f
         val eyeGap = headW * 0.22f
-        val eyeRadius = headH * if (expression == "Sleeping") 0.012f else 0.035f
+        // Four-times bolder visually: larger filled discs instead of tiny dot outlines.
+        val eyeRadius = headH * 0.14f
+        eye.color = eyeColors[eyeColorIndex]
         if (expression == "Wink") {
             canvas.drawCircle(centerX - eyeGap, eyeY, eyeRadius, eye)
-            canvas.drawLine(centerX + eyeGap - eyeRadius * 2, eyeY, centerX + eyeGap + eyeRadius * 2, eyeY, mouth)
-        } else if (expression == "Sleeping") {
-            canvas.drawLine(centerX - eyeGap - eyeRadius * 2, eyeY, centerX - eyeGap + eyeRadius * 2, eyeY, mouth)
-            canvas.drawLine(centerX + eyeGap - eyeRadius * 2, eyeY, centerX + eyeGap + eyeRadius * 2, eyeY, mouth)
+            canvas.drawLine(centerX + eyeGap - eyeRadius * 1.35f, eyeY, centerX + eyeGap + eyeRadius * 1.35f, eyeY, mouth)
+        } else if (expression == "Sleeping" || expression == "Sleepy") {
+            canvas.drawLine(centerX - eyeGap - eyeRadius * 1.35f, eyeY, centerX - eyeGap + eyeRadius * 1.35f, eyeY, mouth)
+            canvas.drawLine(centerX + eyeGap - eyeRadius * 1.35f, eyeY, centerX + eyeGap + eyeRadius * 1.35f, eyeY, mouth)
         } else {
             canvas.drawCircle(centerX - eyeGap, eyeY, eyeRadius, eye)
             canvas.drawCircle(centerX + eyeGap, eyeY, eyeRadius, eye)
