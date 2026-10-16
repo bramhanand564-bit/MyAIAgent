@@ -642,11 +642,11 @@ class AiOverlayHud(private val context: Context) {
             Color.parseColor("#FFC247")
         )
 
+        // Exactly 15 canonical moods. Runtime task states map to these rather than adding more.
         private val supportedEmotions = setOf(
-            "NORMAL", "IDLE", "HAPPY", "EXCITED", "THINKING", "FOCUSED",
-            "SURPRISED", "SAD", "WORRIED", "CONFUSED", "WINK", "SLEEPY",
-            "LISTENING", "WORKING", "ERROR", "SUCCESS", "WAITING", "CURIOUS",
-            "PROUD", "SLEEPING"
+            "NORMAL", "IDLE", "HAPPY", "THINKING", "FOCUSED",
+            "SURPRISED", "SAD", "CONFUSED", "WINK", "SLEEPY",
+            "LISTENING", "WORKING", "ERROR", "SUCCESS", "WAITING"
         )
 
         private val animator = object : Runnable {
@@ -668,10 +668,13 @@ class AiOverlayHud(private val context: Context) {
                 "DONE", "COMPLETE", "COMPLETED" -> "SUCCESS"
                 "PROCESSING", "ANALYZING" -> "THINKING"
                 "FAILED" -> "ERROR"
-                "SAD", "DISCONNECTED" -> "SAD"
+                "WORRIED", "DISCONNECTED" -> "SAD"
                 "READY", "START", "STOPPED" -> "IDLE"
                 "BUSY", "EXECUTING" -> "WORKING"
                 "WAIT", "PAUSED" -> "WAITING"
+                "HAPPY" -> "HAPPY"
+                "CURIOUS" -> "SURPRISED"
+                "SLEEPING" -> "SLEEPY"
                 else -> if (requested in supportedEmotions) requested else "NORMAL"
             }
             invalidate()
@@ -692,11 +695,11 @@ class AiOverlayHud(private val context: Context) {
 
             val dynamicColor = colorCycle[((phase / 5f).toInt() % colorCycle.size).coerceAtLeast(0)]
             val eyeColor = when (mood) {
-                "ERROR", "SAD", "WORRIED" -> Color.parseColor("#FF4F68")
+                "ERROR", "SAD" -> Color.parseColor("#FF4F68")
                 "THINKING", "FOCUSED", "LISTENING", "WORKING" -> Color.parseColor("#00CFE8")
-                "SUCCESS", "HAPPY" -> Color.parseColor("#20CF88")
-                "WAITING", "SLEEPY", "SLEEPING" -> Color.parseColor("#FFB12E")
-                "EXCITED", "PROUD" -> Color.parseColor("#FF5BBE")
+                "SUCCESS" -> Color.parseColor("#20CF88")
+                "HAPPY" -> Color.parseColor("#FF5BBE")
+                "WAITING", "SLEEPY" -> Color.parseColor("#FFB12E")
                 "SURPRISED", "CONFUSED" -> Color.parseColor("#8E7BFF")
                 else -> dynamicColor
             }
@@ -751,7 +754,7 @@ class AiOverlayHud(private val context: Context) {
                     canvas.drawArc(RectF(rightEyeX - eyeRadius, eyeY - eyeRadius * 0.35f, rightEyeX + eyeRadius, eyeY + eyeRadius * 0.30f), 190f, 160f, false, paint)
                 }
                 else -> {
-                    val occasionalBlink = sin(phase * 0.82f) > 0.993f && mood !in setOf("SURPRISED", "EXCITED", "ERROR")
+                    val occasionalBlink = sin(phase * 0.82f) > 0.993f && mood !in setOf("SURPRISED", "ERROR")
                     if (occasionalBlink) {
                         paint.style = Paint.Style.STROKE
                         paint.strokeWidth = maxOf(2f, w * 0.045f)
@@ -773,15 +776,15 @@ class AiOverlayHud(private val context: Context) {
             paint.strokeCap = Paint.Cap.ROUND
             paint.color = Color.parseColor("#455366")
             when (mood) {
-                "SAD", "ERROR", "WORRIED" -> canvas.drawArc(
+                "SAD", "ERROR" -> canvas.drawArc(
                     RectF(cx - mouthWidth, mouthY, cx + mouthWidth, mouthY + h * 0.14f),
                     205f, 130f, false, paint
                 )
-                "HAPPY", "EXCITED", "SUCCESS", "PROUD" -> canvas.drawArc(
+                "HAPPY", "SUCCESS" -> canvas.drawArc(
                     RectF(cx - mouthWidth, mouthY - h * 0.015f, cx + mouthWidth, mouthY + h * 0.12f),
                     15f, 150f, false, paint
                 )
-                "SURPRISED", "CURIOUS" -> {
+                "SURPRISED" -> {
                     paint.style = Paint.Style.FILL
                     canvas.drawCircle(cx, mouthY + h * 0.045f, h * 0.045f, paint)
                 }
