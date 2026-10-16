@@ -68,7 +68,6 @@ object PhoneAgentManager {
             var consecutiveVerificationFails = 0
 
             for (step in 1..maxSteps) {
-                service.awaitIfPaused()
                 val nodes = captureScreenNodes(service)
 
                 // AUTO-SEND GUARD FOR WHATSAPP/CHAT:

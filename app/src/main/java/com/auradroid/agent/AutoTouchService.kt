@@ -63,9 +63,6 @@ class AutoTouchService : AccessibilityService() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob() + crashGuard)
     private var activeJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    @Volatile private var pauseRequested = false
-    @Volatile private var isTaskLaunching = false
-    private var lastTaskReplay: (() -> Unit)? = null
     var overlayHud: AiOverlayHud? = null
         private set
 
@@ -148,126 +145,12 @@ class AutoTouchService : AccessibilityService() {
         } catch (_: Exception) {}
     }
 
-    private fun launchManagedTask(goal: String, replay: () -> Unit, block: suspend () -> Unit) {
-        if (isJobRunning || isTaskLaunching) {
-            VideoQueueManager.appendLog(this, "⚠️ A task is already running; new task was not started.")
-            return
-        }
-        isTaskLaunching = true
-        pauseRequested = false
-        lastTaskReplay = replay
-        LongTaskStore.begin(this, goal)
-        LongTaskForegroundService.start(this)
-
-        activeJob = serviceScope.launch {
-            acquireWakeLock()
-            try {
-                block()
-                val state = LongTaskStore.get(this@AutoTouchService)
-                if (state?.status == LongTaskState.Status.RUNNING ||
-                    state?.status == LongTaskState.Status.QUEUED) {
-                    LongTaskStore.complete(this@AutoTouchService)
-                }
-            } catch (e: CancellationException) {
-                val state = LongTaskStore.get(this@AutoTouchService)
-                if (state != null && state.status !in listOf(
-                        LongTaskState.Status.PAUSED,
-                        LongTaskState.Status.CANCELLED,
-                        LongTaskState.Status.COMPLETED,
-                        LongTaskState.Status.FAILED
-                    )) {
-                    LongTaskStore.cancel(this@AutoTouchService)
-                }
-                throw e
-            } catch (e: Exception) {
-                LongTaskStore.fail(this@AutoTouchService, e.message ?: "Task failed")
-                throw e
-            } finally {
-                isJobRunning = false
-                isTaskLaunching = false
-                pauseRequested = false
-                releaseWakeLock()
-                LongTaskForegroundService.stop(this@AutoTouchService)
-            }
-        }
-    }
-
-    /** Pause at the next safe automation step; in-flight UI/API calls are allowed to finish. */
-    fun pauseCurrentJob() {
-        if (!isTaskLaunching && !isJobRunning) {
-            VideoQueueManager.appendLog(this, "ℹ️ No active task to pause.")
-            return
-        }
-        pauseRequested = true
-        LongTaskStore.pause(this)
-        overlayHud?.setCursorOverlayVisible(false)
-        overlayHud?.updateStatus("Task Paused", "Paused at a safe step. Tap Resume to continue.", "PAUSED")
-        postKeepAliveNotification("Task paused")
-        VideoQueueManager.appendLog(this, "⏸️ Task pause requested; waiting for the current safe step.")
-    }
-
-    fun resumeCurrentJob() {
-        if (!pauseRequested) {
-            VideoQueueManager.appendLog(this, "ℹ️ Task is not paused.")
-            return
-        }
-        pauseRequested = false
-        LongTaskStore.update(this) {
-            if (it.status == LongTaskState.Status.PAUSED || it.status == LongTaskState.Status.QUEUED)
-                it.copy(status = LongTaskState.Status.RUNNING, lastError = "")
-            else it
-        }
-        LongTaskForegroundService.start(this)
-        overlayHud?.setCursorOverlayVisible(true)
-        overlayHud?.updateStatus("Task Resuming", "Continuing from the next safe step.", "WORKING")
-        postKeepAliveNotification("Task resumed")
-        VideoQueueManager.appendLog(this, "▶️ Task resumed.")
-    }
-
-    suspend fun awaitIfPaused() {
-        while (pauseRequested && (isJobRunning || isTaskLaunching)) {
-            kotlinx.coroutines.delay(180L)
-        }
-    }
-
-    fun retryCurrentTask(apiKey: String, model: String, useWeb: Boolean, url: String, folderPath: String) {
-        val previousJob = activeJob
-        val replay = lastTaskReplay
-        val savedGoal = LongTaskStore.get(this)?.goal.orEmpty()
-        if (replay == null && savedGoal.isBlank()) {
-            VideoQueueManager.appendLog(this, "⚠️ No saved task is available to retry.")
-            overlayHud?.updateStatus("Retry Unavailable", "Start a task before using Retry.", "ERROR")
-            return
-        }
-
-        pauseRequested = false
-        isJobRunning = false
-        LongTaskStore.cancel(this)
-        LongTaskForegroundService.stop(this)
-        serviceScope.launch {
-            try {
-                previousJob?.cancelAndJoin()
-            } catch (_: CancellationException) {}
-            kotlinx.coroutines.delay(250L)
-            if (replay != null) {
-                replay()
-            } else if (useWeb) {
-                startBackgroundWebTask(apiKey, model, url, savedGoal, folderPath)
-            } else {
-                startUniversalAiTask(apiKey, model, savedGoal)
-            }
-        }
-    }
-
     fun stopCurrentJob() {
-        pauseRequested = false
         isJobRunning = false
-        LongTaskStore.cancel(this)
         activeJob?.cancel()
         releaseWakeLock()
         overlayHud?.setCursorOverlayVisible(false)
-        overlayHud?.updateStatus("Task Stopped", "Task stopped by user.", "STOPPED")
-        LongTaskForegroundService.stop(this)
+        overlayHud?.updateStatus("Stopped", "Task stopped by user", "DONE")
         postKeepAliveNotification("Ready for next instruction")
         VideoQueueManager.appendLog(this, "🛑 All active tasks stopped by user.")
     }
@@ -342,13 +225,15 @@ class AutoTouchService : AccessibilityService() {
         dailyVideoCount: Int,
         folderPath: String
     ) {
-        launchManagedTask(
-            goal = "Google Flow to YouTube: $topicIdea",
-            replay = { startGoogleFlowToYouTubePipeline(apiKey, model, flowUrl, topicIdea, dailyVideoCount, folderPath) }
-        ) {
-            WebPipelineManager.runGoogleFlowPipeline(
-                this@AutoTouchService, apiKey, model, flowUrl, topicIdea, dailyVideoCount, folderPath
-            )
+        activeJob = serviceScope.launch {
+            acquireWakeLock()
+            try {
+                WebPipelineManager.runGoogleFlowPipeline(
+                    this@AutoTouchService, apiKey, model, flowUrl, topicIdea, dailyVideoCount, folderPath
+                )
+            } finally {
+                releaseWakeLock()
+            }
         }
     }
 
@@ -362,14 +247,16 @@ class AutoTouchService : AccessibilityService() {
         forceChainYouTube: Boolean = false,
         exactFlowPrompt: String = ""
     ) {
-        launchManagedTask(
-            goal = userGoal,
-            replay = { startBackgroundWebTask(apiKey, model, initialUrl, userGoal, folderPath, chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt) }
-        ) {
-            WebPipelineManager.runBackgroundWebTask(
-                this@AutoTouchService, apiKey, model, initialUrl, userGoal, folderPath,
-                chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt
-            )
+        activeJob = serviceScope.launch {
+            acquireWakeLock()
+            try {
+                WebPipelineManager.runBackgroundWebTask(
+                    this@AutoTouchService, apiKey, model, initialUrl, userGoal, folderPath,
+                    chainYouTubeAfterDownload, forceChainYouTube, exactFlowPrompt
+                )
+            } finally {
+                releaseWakeLock()
+            }
         }
     }
 
@@ -380,13 +267,15 @@ class AutoTouchService : AccessibilityService() {
         userPrompt: String,
         createAiVideoIfEmpty: Boolean = false
     ) {
-        launchManagedTask(
-            goal = "YouTube upload: $userPrompt",
-            replay = { startYouTubeAutoUpload(apiKey, model, folderPath, userPrompt, createAiVideoIfEmpty) }
-        ) {
-            WebPipelineManager.runYouTubeAutoUpload(
-                this@AutoTouchService, apiKey, model, folderPath, userPrompt, createAiVideoIfEmpty
-            )
+        activeJob = serviceScope.launch {
+            acquireWakeLock()
+            try {
+                WebPipelineManager.runYouTubeAutoUpload(
+                    this@AutoTouchService, apiKey, model, folderPath, userPrompt, createAiVideoIfEmpty
+                )
+            } finally {
+                releaseWakeLock()
+            }
         }
     }
 
@@ -396,19 +285,18 @@ class AutoTouchService : AccessibilityService() {
         userGoal: String,
         initialSettingAction: String? = null
     ) {
-        launchManagedTask(
-            goal = userGoal,
-            replay = { startUniversalAiTask(apiKey, model, userGoal, initialSettingAction) }
-        ) {
-            PhoneAgentManager.runUniversalAiTask(
-                this@AutoTouchService, apiKey, model, userGoal, initialSettingAction
-            )
+        activeJob = serviceScope.launch {
+            acquireWakeLock()
+            try {
+                PhoneAgentManager.runUniversalAiTask(
+                    this@AutoTouchService, apiKey, model, userGoal, initialSettingAction
+                )
+            } finally {
+                releaseWakeLock()
+            }
         }
     }
 
-    // ========================================================================
-    // SHARED TEXT ENTRY, CLIPBOARD & GESTURE HELPERS
-    // ========================================================================
     // ========================================================================
     // SHARED TEXT ENTRY, CLIPBOARD & GESTURE HELPERS
     // ========================================================================
