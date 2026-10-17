@@ -1,277 +1,369 @@
 package com.auradroid.agent
 
-import android.content.ContentValues
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Environment
+import androidx.documentfile.provider.DocumentFile
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private class AuraBrainDatabase(context: Context) :
-    SQLiteOpenHelper(context.applicationContext, "auradroid_brain.db", null, 1) {
+data class QueuedVideoItem(
+    val id: String,
+    val displayName: String,
+    val localFile: File?,
+    val safUri: Uri?,
+    val lastModified: Long,
+    val sizeBytes: Long
+)
 
-    override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS episodic_memory (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                domain TEXT,
-                rule_learned TEXT UNIQUE ON CONFLICT REPLACE,
-                timestamp INTEGER
-            )
-            """.trimIndent()
-        )
-        val coreLessons = listOf(
-            "GOOGLE_FLOW" to "Never use words like boy, girl, child, kid, minor, or skin in video prompts; always use safe terms like futuristic cybernetic android explorer.",
-            "GOOGLE_FLOW" to "Before typing a prompt in Google Flow, switch Nano Banana / Image / x2 mode to Video • 9:16 • 8s • x1 so credits are never wasted.",
-            "GOOGLE_FLOW" to "Never type or click arrow_forward more than once per video. While % progress is visible, always WAIT.",
-            "GOOGLE_FLOW" to "When video rendering finishes on the project grid, tap the completed video thumbnail card physically to open the video player, tap the center Play button so the MP4 stream loads, and then download it.",
-            "WHATSAPP" to "If reply text is already typed inside the bottom Message input box and the green Send button (desc='Send') is visible, immediately click the Send node instead of waiting.",
-            "ANDROID_UI" to "Always prefer CLICK_NODE over CLICK_XY. If a tap does not open the expected next page, verify using screenshot and escalate to High Model or physical coordinates."
-        )
-        for ((dom, rule) in coreLessons) {
-            val cv = ContentValues().apply {
-                put("domain", dom)
-                put("rule_learned", rule)
-                put("timestamp", System.currentTimeMillis())
-            }
-            db.insertWithOnConflict("episodic_memory", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
-        }
-    }
+data class StoryArcState(
+    val currentEpisode: Int,
+    val storyMode: String,
+    val characterVisualLock: String,
+    val arcHistorySummary: String
+)
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-}
+data class YouTubeSeoMetadata(
+    val title: String,
+    val description: String,
+    val tags: List<String>
+)
 
 object VideoQueueManager {
-    const val PREFS_NAME = "auradroid_prefs"
-    private const val KEY_UPLOADED_SET = "uploaded_videos"
 
-    /**
-     * User Customizable Setting: Should we upload Newest Video First (true) or Oldest Video First (false)?
-     */
-    fun isUploadNewestFirst(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean("upload_newest_first", true)
+    private const val PREFS_NAME = "auradroid_video_queue_prefs"
+    private const val KEY_CUSTOM_FOLDER_URI = "custom_folder_uri"
+    private const val KEY_UPLOAD_NEWEST_FIRST = "upload_newest_first"
+    private const val KEY_UPLOADED_IDS = "uploaded_video_ids_json"
+    private const val KEY_CURRENT_EPISODE = "story_current_episode"
+    private const val KEY_STORY_MODE = "story_continuity_mode"
+    private const val KEY_CHARACTER_LOCK = "story_character_visual_lock"
+    private const val KEY_ARC_HISTORY = "story_arc_history_json"
+
+    private val FORBIDDEN_POLICY_WORDS = setOf(
+        "boy", "boys", "girl", "girls", "child", "children", "kid", "kids",
+        "minor", "minors", "baby", "babies", "toddler", "teen", "teenager",
+        "youngster", "skin", "nude", "naked", "blood", "gore"
+    )
+
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun setCustomFolderUri(context: Context, uriString: String?) {
+        prefs(context).edit().putString(KEY_CUSTOM_FOLDER_URI, uriString ?: "").apply()
+    }
+
+    fun getCustomFolderUri(context: Context): String? {
+        val raw = prefs(context).getString(KEY_CUSTOM_FOLDER_URI, "") ?: ""
+        return if (raw.isBlank()) null else raw
+    }
+
+    fun getFolderDisplayLabel(context: Context): String {
+        val customUri = getCustomFolderUri(context)
+        if (customUri.isNullOrBlank()) {
+            return "Default: /Download/AuraDroid_Flow_Videos"
+        }
+        return try {
+            val parsed = Uri.parse(customUri)
+            val doc = DocumentFile.fromTreeUri(context, parsed)
+            val folderName = doc?.name ?: parsed.lastPathSegment ?: "Custom Folder"
+            "SAF Folder: $folderName ($customUri)"
+        } catch (e: Exception) {
+            "SAF Folder: $customUri"
+        }
     }
 
     fun setUploadNewestFirst(context: Context, newestFirst: Boolean) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean("upload_newest_first", newestFirst).apply()
+        prefs(context).edit().putBoolean(KEY_UPLOAD_NEWEST_FIRST, newestFirst).apply()
     }
 
-    fun getVideoFilesInFolder(folderPath: String, newestFirst: Boolean = false): List<File> {
-        val dir = File(folderPath)
-        if (!dir.exists() || !dir.isDirectory) return emptyList()
-        val files = dir.listFiles { file ->
-            file.isFile && file.extension.lowercase() in listOf("mp4", "mov", "mkv", "webm")
-        } ?: return emptyList()
-
-        return if (newestFirst) {
-            files.sortedByDescending { it.lastModified() }
-        } else {
-            files.sortedBy { it.lastModified() }
-        }
+    fun isUploadNewestFirst(context: Context): Boolean {
+        return prefs(context).getBoolean(KEY_UPLOAD_NEWEST_FIRST, true)
     }
 
-    fun getUploadedSet(context: Context): Set<String> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getStringSet(KEY_UPLOADED_SET, emptySet()) ?: emptySet()
+    fun getDefaultDownloadDir(context: Context): File {
+        val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val auraDir = File(publicDownloads, "AuraDroid_Flow_Videos")
+        if (!auraDir.exists()) auraDir.mkdirs()
+        if (auraDir.exists() && auraDir.canWrite()) return auraDir
+        val fallback = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "AuraDroid_Flow_Videos")
+        if (!fallback.exists()) fallback.mkdirs()
+        return fallback
     }
 
-    /**
-     * Respects the user's customization choice (Newest First vs Oldest First)
-     */
-    fun getNextPendingVideo(context: Context, folderPath: String): File? {
-        val preferNewest = isUploadNewestFirst(context)
-        val allVideos = getVideoFilesInFolder(folderPath, newestFirst = preferNewest)
-        val uploaded = getUploadedSet(context)
-        return allVideos.firstOrNull { it.absolutePath !in uploaded && it.name !in uploaded }
-    }
-
-    fun findNewlyDownloadedVideo(sinceTimestampMs: Long, targetFolder: String): File? {
-        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val targetDir = File(targetFolder)
-        if (!targetDir.exists()) targetDir.mkdirs()
-
-        val candidates = mutableListOf<File>()
-        listOf(downloadDir, targetDir).forEach { dir ->
-            dir?.listFiles { f ->
-                f.isFile &&
-                f.extension.lowercase() in listOf("mp4", "webm", "mov") &&
-                f.lastModified() >= sinceTimestampMs &&
-                f.length() > 40_000L
-            }?.let { candidates.addAll(it) }
-        }
-
-        val newest = candidates.maxByOrNull { it.lastModified() } ?: return null
-        if (newest.parentFile?.absolutePath != targetDir.absolutePath) {
-            val destFile = File(targetDir, newest.name)
-            return try {
-                newest.copyTo(destFile, overwrite = true)
-                destFile
-            } catch (e: Exception) {
-                newest
-            }
-        }
-        return newest
-    }
-
-    fun getDownloadedFilesReport(targetFolder: String): String {
-        val targetDir = File(targetFolder)
-        if (!targetDir.exists()) targetDir.mkdirs()
-        val files = getVideoFilesInFolder(targetFolder, newestFirst = true)
-        if (files.isEmpty()) {
-            return "📂 फोल्डर ($targetFolder) अभी खाली है।\n\nजब Google Flow या ब्राउज़र से कोई वीडियो डाउनलोड होगी, तो वह यहाँ दिखेगी।"
-        }
-        val sdf = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
-        return files.mapIndexed { idx, file ->
-            val sizeMb = String.format(Locale.US, "%.2f MB", file.length() / (1024.0 * 1024.0))
-            val dateStr = sdf.format(Date(file.lastModified()))
-            "${idx + 1}. 🎬 ${file.name}\n    Size: $sizeMb • $dateStr"
-        }.joinToString("\n\n")
-    }
-
-    fun markVideoUploaded(context: Context, videoFile: File) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val current = getUploadedSet(context).toMutableSet()
-        current.add(videoFile.absolutePath)
-        current.add(videoFile.name)
-        prefs.edit().putStringSet(KEY_UPLOADED_SET, current).apply()
-    }
-
-    fun resetUploadedHistory(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().remove(KEY_UPLOADED_SET).apply()
-    }
-
-    fun recordLearnedLesson(context: Context, lesson: String, domain: String = "GLOBAL") {
-        val clean = lesson.trim()
-        if (clean.length < 6) return
-        try {
-            val db = AuraBrainDatabase(context).writableDatabase
-            val cv = ContentValues().apply {
-                put("domain", domain.uppercase())
-                put("rule_learned", clean)
-                put("timestamp", System.currentTimeMillis())
-            }
-            db.insertWithOnConflict("episodic_memory", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
-        } catch (_: Exception) {}
-    }
-
-    fun getLearnedLessonsSummary(context: Context, domainFilter: String? = null): String {
+    fun saveVideoBytesToStorage(
+        context: Context,
+        bytes: ByteArray,
+        prefix: String = "AuraDroid_Flow"
+    ): File? {
+        if (bytes.size < 1024) return null
         return try {
-            val db = AuraBrainDatabase(context).readableDatabase
-            val list = mutableListOf<String>()
-            val cursor = if (domainFilter.isNullOrBlank()) {
-                db.rawQuery("SELECT domain, rule_learned FROM episodic_memory ORDER BY timestamp DESC LIMIT 25", null)
-            } else {
-                db.rawQuery(
-                    "SELECT domain, rule_learned FROM episodic_memory WHERE domain = ? OR domain = 'GLOBAL' OR domain = 'ANDROID_UI' ORDER BY timestamp DESC LIMIT 25",
-                    arrayOf(domainFilter.uppercase())
-                )
+            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val fileName = "\${prefix}_\${stamp}.mp4"
+            val targetDir = getDefaultDownloadDir(context)
+            val outFile = File(targetDir, fileName)
+            FileOutputStream(outFile).use { fos ->
+                fos.write(bytes)
+                fos.flush()
             }
-            cursor.use { c ->
-                while (c.moveToNext()) {
-                    val dom = c.getString(0) ?: "AI"
-                    val rule = c.getString(1) ?: ""
-                    list.add("[$dom] $rule")
+            val customUriStr = getCustomFolderUri(context)
+            if (!customUriStr.isNullOrBlank()) {
+                try {
+                    val treeUri = Uri.parse(customUriStr)
+                    val treeDoc = DocumentFile.fromTreeUri(context, treeUri)
+                    val newDoc = treeDoc?.createFile("video/mp4", fileName)
+                    if (newDoc != null) {
+                        context.contentResolver.openOutputStream(newDoc.uri)?.use { os ->
+                            os.write(bytes)
+                            os.flush()
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+            outFile
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getUploadedIdsSet(context: Context): MutableSet<String> {
+        val raw = prefs(context).getString(KEY_UPLOADED_IDS, "[]") ?: "[]"
+        val result = mutableSetOf<String>()
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                val item = arr.optString(i)
+                if (item.isNotBlank()) result.add(item)
+            }
+        } catch (_: Exception) {}
+        return result
+    }
+
+    fun markVideoAsUploaded(context: Context, item: QueuedVideoItem) {
+        val current = getUploadedIdsSet(context)
+        current.add(item.id)
+        current.add(item.displayName)
+        val arr = JSONArray()
+        current.forEach { arr.put(it) }
+        prefs(context).edit().putString(KEY_UPLOADED_IDS, arr.toString()).apply()
+    }
+
+    fun listCandidateVideos(context: Context): List<QueuedVideoItem> {
+        val uploadedIds = getUploadedIdsSet(context)
+        val candidates = mutableListOf<QueuedVideoItem>()
+        val seenNames = mutableSetOf<String>()
+
+        val customUriStr = getCustomFolderUri(context)
+        if (!customUriStr.isNullOrBlank()) {
+            try {
+                val treeUri = Uri.parse(customUriStr)
+                val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
+                if (rootDoc != null && rootDoc.exists()) {
+                    for (doc in rootDoc.listFiles()) {
+                        val name = doc.name ?: continue
+                        val lower = name.lowercase(Locale.US)
+                        val isVideo = lower.endsWith(".mp4") or lower.endsWith(".webm") or lower.endsWith(".mov")
+                        if (doc.isFile && isVideo && doc.length() > 50_000L) {
+                            val id = doc.uri.toString()
+                            if (!uploadedIds.contains(id) && !uploadedIds.contains(name)) {
+                                candidates.add(
+                                    QueuedVideoItem(id, name, null, doc.uri, doc.lastModified(), doc.length())
+                                )
+                                seenNames.add(name)
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        val dirsToScan = listOf(
+            getDefaultDownloadDir(context),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
+        )
+
+        for (dir in dirsToScan) {
+            if (dir != null && dir.exists() && dir.isDirectory) {
+                val files = dir.listFiles() ?: continue
+                for (f in files) {
+                    val lower = f.name.lowercase(Locale.US)
+                    val isVideo = lower.endsWith(".mp4") or lower.endsWith(".webm") or lower.endsWith(".mov")
+                    if (f.isFile && isVideo && f.length() > 50_000L) {
+                        val id = f.absolutePath
+                        if (!uploadedIds.contains(id) && !uploadedIds.contains(f.name) && !seenNames.contains(f.name)) {
+                            candidates.add(
+                                QueuedVideoItem(id, f.name, f, null, f.lastModified(), f.length())
+                            )
+                            seenNames.add(f.name)
+                        }
+                    }
                 }
             }
-            if (list.isEmpty()) "No prior lessons recorded." else list.joinToString("\n")
-        } catch (e: Exception) {
-            "No prior lessons."
+        }
+
+        return if (isUploadNewestFirst(context)) {
+            candidates.sortedByDescending { it.lastModified }
+        } else {
+            candidates.sortedBy { it.lastModified }
         }
     }
 
-    fun savePinnedFlowUrl(context: Context, url: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString("pinned_flow_url", url.trim()).apply()
+    fun getNextVideoForUpload(context: Context): QueuedVideoItem? =
+        listCandidateVideos(context).firstOrNull()
+
+    fun ensureLocalCacheFile(context: Context, item: QueuedVideoItem): File? {
+        if (item.localFile != null && item.localFile.exists() && item.localFile.canRead()) {
+            return item.localFile
+        }
+        val safUri = item.safUri ?: return null
+        return try {
+            val cacheDir = File(context.cacheDir, "upload_staging")
+            if (!cacheDir.exists()) cacheDir.mkdirs()
+            val safeName = item.displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val stagedFile = File(cacheDir, safeName)
+            context.contentResolver.openInputStream(safUri)?.use { input ->
+                FileOutputStream(stagedFile).use { output -> input.copyTo(output) }
+            }
+            if (stagedFile.exists() && stagedFile.length() > 10_000L) stagedFile else null
+        } catch (e: Exception) {
+            null
+        }
     }
 
-    fun getPinnedFlowUrl(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString("pinned_flow_url", "https://labs.google/fx/tools/flow") ?: "https://labs.google/fx/tools/flow"
+    fun getDownloadedVideosReport(context: Context): String {
+        val list = listCandidateVideos(context)
+        if (list.isEmpty()) {
+            return "No unuploaded MP4 videos found in queue.\nFolder: \${getFolderDisplayLabel(context)}"
+        }
+        val sb = StringBuilder()
+        sb.append("Queued Videos (\${list.size}) • Order: ")
+        sb.append(if (isUploadNewestFirst(context)) "Newest First\n\n" else "Oldest First\n\n")
+        list.take(15).forEachIndexed { idx, item ->
+            val mb = String.format(Locale.US, "%.2f MB", item.sizeBytes.toDouble() / (1024.0 * 1024.0))
+            sb.append("\${idx + 1}. \${item.displayName} ($mb)\n")
+        }
+        return sb.toString().trim()
     }
 
-    fun getFlowTopic(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(
-                "flow_topic",
-                "Cinematic 8-second hyper-realistic story of a futuristic cybernetic explorer in a glowing sci-fi world and story and hindi voice and dialog"
-            ) ?: ""
+    fun extractRepresentativeFrames(context: Context, videoFile: File): List<Bitmap> {
+        val frames = mutableListOf<Bitmap>()
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(videoFile.absolutePath)
+            val durationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            val durationMs = durationStr?.toLongOrNull() ?: 8000L
+            val firstTimeUs = (durationMs * 200L).coerceAtLeast(500_000L)
+            val secondTimeUs = (durationMs * 700L).coerceAtLeast(1_500_000L)
+            retriever.getFrameAtTime(firstTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let {
+                frames.add(scaleFrameForVision(it))
+            }
+            retriever.getFrameAtTime(secondTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)?.let {
+                frames.add(scaleFrameForVision(it))
+            }
+        } catch (_: Exception) {
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+        return frames
     }
 
-    fun getDailyVideoLimit(context: Context): Int {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt("daily_video_limit", 1).coerceIn(1, 5)
+    private fun scaleFrameForVision(src: Bitmap): Bitmap {
+        val maxDim = 640
+        val w = src.width
+        val h = src.height
+        if (w <= maxDim && h <= maxDim) return src
+        val ratio = w.toFloat() / h.toFloat()
+        val newW: Int
+        val newH: Int
+        if (w > h) {
+            newW = maxDim
+            newH = (maxDim / ratio).toInt().coerceAtLeast(1)
+        } else {
+            newH = maxDim
+            newW = (maxDim * ratio).toInt().coerceAtLeast(1)
+        }
+        return Bitmap.createScaledBitmap(src, newW, newH, true)
     }
 
-    fun getHighModelName(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString("high_model_name", "gemini-2.5-pro") ?: "gemini-2.5-pro"
+    fun sanitizePolicySafePrompt(rawPrompt: String, characterLock: String = ""): String {
+        val defaultHero = "adult futuristic cybernetic tech explorer with glowing cyan visor"
+        val safeHero = if (characterLock.isBlank()) defaultHero else sanitizeWordsOnly(characterLock)
+        var cleaned = sanitizeWordsOnly(rawPrompt)
+        if (!cleaned.lowercase(Locale.US).contains("adult")) {
+            cleaned = "Cinematic 9:16 vertical sci-fi scene featuring an $safeHero. $cleaned"
+        }
+        return cleaned.replace(Regex("\\s+"), " ").trim()
     }
 
-    fun isAutoHighModelEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean("auto_high_model", true)
+    private fun sanitizeWordsOnly(text: String): String {
+        val tokens = text.split(" ")
+        return tokens.map { token ->
+            val bare = token.lowercase(Locale.US).replace(Regex("[^a-z]"), "")
+            if (FORBIDDEN_POLICY_WORDS.contains(bare)) "adult cybernetic explorer" else token
+        }.joinToString(" ")
     }
 
-    fun isGoogleSearchGroundingEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean("google_search_grounding", true)
+    fun getStoryArcState(context: Context): StoryArcState {
+        val p = prefs(context)
+        val ep = p.getInt(KEY_CURRENT_EPISODE, 1).coerceAtLeast(1)
+        val mode = p.getString(KEY_STORY_MODE, "SERIAL") ?: "SERIAL"
+        val charLock = p.getString(
+            KEY_CHARACTER_LOCK,
+            "Adult futuristic cybernetic tech explorer wearing matte-black nano armor and glowing cyan visor"
+        ) ?: "Adult futuristic cybernetic tech explorer"
+        val rawArr = p.getString(KEY_ARC_HISTORY, "[]") ?: "[]"
+        val sb = StringBuilder()
+        try {
+            val arr = JSONArray(rawArr)
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                sb.append("Ep \${obj.optInt("ep")}: \${obj.optString("summary")}\n")
+            }
+        } catch (_: Exception) {}
+        val historyText = if (sb.isEmpty()) {
+            "Current Episode: $ep • Ready to start new episodic story arc."
+        } else {
+            sb.toString().trim()
+        }
+        return StoryArcState(ep, mode, charLock, historyText)
     }
 
-    fun isRealWebTouchEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean("real_web_touch", true)
+    fun saveStorySettings(context: Context, storyMode: String, characterVisualLock: String) {
+        val safeLock = sanitizeWordsOnly(characterVisualLock)
+        prefs(context).edit()
+            .putString(KEY_STORY_MODE, storyMode)
+            .putString(KEY_CHARACTER_LOCK, safeLock)
+            .apply()
     }
 
-    fun saveMemoryVault(context: Context, memoryText: String) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString("memory_vault", memoryText.trim()).apply()
+    fun recordCompletedEpisode(context: Context, episodeNumber: Int, episodeSummary: String) {
+        val p = prefs(context)
+        val rawArr = p.getString(KEY_ARC_HISTORY, "[]") ?: "[]"
+        val arr = try { JSONArray(rawArr) } catch (_: Exception) { JSONArray() }
+        val entry = JSONObject().apply {
+            put("ep", episodeNumber)
+            put("summary", episodeSummary.take(220))
+            put("time", System.currentTimeMillis())
+        }
+        arr.put(entry)
+        p.edit()
+            .putInt(KEY_CURRENT_EPISODE, episodeNumber + 1)
+            .putString(KEY_ARC_HISTORY, arr.toString())
+            .apply()
     }
 
-    fun getMemoryVault(context: Context): String {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(
-                "memory_vault",
-                "Favorite Video Topic: Futuristic Sci-Fi & Cybernetic Worlds\nPreferred Language: Hindi + English"
-            ) ?: ""
-    }
-
-    fun isScreenVisionEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean("use_screen_vision", true)
-    }
-
-    fun is24HourUnstoppableEnabled(context: Context): Boolean {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getBoolean("unstoppable_24h", true)
-    }
-
-    fun getStepDelayMs(context: Context): Long {
-        val sec = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt("step_delay_sec", 3).coerceIn(1, 30)
-        return sec * 1000L
-    }
-
-    fun appendLog(context: Context, message: String) {
-        val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-        val line = "[$time] $message"
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val oldLogs = prefs.getString("live_logs", "") ?: ""
-        val updated = (oldLogs.lines().takeLast(60) + line).joinToString("\n").trim()
-        prefs.edit().putString("live_logs", updated).apply()
-        MainActivity.onLogUpdated?.invoke(updated)
-    }
-
-    fun clearLogs(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val msg = "[System] Logs cleared."
-        prefs.edit().putString("live_logs", msg).apply()
-        MainActivity.onLogUpdated?.invoke(msg)
+    fun resetStoryArc(context: Context) {
+        prefs(context).edit()
+            .putInt(KEY_CURRENT_EPISODE, 1)
+            .putString(KEY_ARC_HISTORY, "[]")
+            .apply()
     }
 }
