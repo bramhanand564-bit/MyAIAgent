@@ -1,890 +1,400 @@
 package com.auradroid.agent
 
-import android.accessibilityservice.AccessibilityService
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.view.accessibility.AccessibilityWindowInfo
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
-import androidx.core.content.FileProvider
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
-import org.json.JSONObject
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
-import kotlin.coroutines.resume
+import java.util.Locale
 
 object WebPipelineManager {
 
-    suspend fun runGoogleFlowPipeline(
-        service: AutoTouchService,
-        apiKey: String,
-        model: String,
-        flowUrl: String,
-        topicIdea: String,
-        dailyVideoCount: Int,
-        folderPath: String
-    ) {
-        if (AutoTouchService.isJobRunning) {
-            VideoQueueManager.appendLog(service, "⚠️ A task is already running!")
-            return
-        }
-        AutoTouchService.isJobRunning = true
-        service.overlayHud?.show()
-        service.overlayHud?.setCursorOverlayVisible(false)
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private val httpClient = OkHttpClient()
 
-        try {
-            service.overlayHud?.updateStatus("Flow 8s (Credit Lock: 1)", "Creating policy-safe prompt...", "THINKING")
-            val freshPrompt = GeminiBrain.generateDailyFlowPrompt(apiKey, model, topicIdea)
-            VideoQueueManager.appendLog(service, "🎬 Safe Flow 8s Prompt: $freshPrompt")
+    private var pipelineJob: Job? = null
+    private var isRunning: Boolean = false
+    private var lastInterceptedMp4Bytes: ByteArray? = null
 
-            val goal = """
-                We are on Google Flow ($flowUrl).
-                1. If on landing page, click '+ New project'.
-                2. Ensure mode is 'Video • 720p • 8s • x1' (NOT Nano Banana Image mode).
-                3. Type this exact 8-second video prompt ONCE into 'What do you want to create?': "$freshPrompt"
-                4. Wait while the 1 video renders from 0% to 100%, then open the finished video card, play & download it (DOWNLOAD_VIDEO) and CHAIN_YOUTUBE.
-            """.trimIndent()
+    private var onLogAppended: ((String) -> Unit)? = null
+    private var onStatusUpdated: ((String, String) -> Unit)? = null
 
-            AutoTouchService.isJobRunning = false
-            runBackgroundWebTask(
-                service = service,
-                apiKey = apiKey,
-                model = model,
-                initialUrl = flowUrl,
-                userGoal = goal,
-                folderPath = folderPath,
-                chainYouTubeAfterDownload = true,
-                forceChainYouTube = true,
-                exactFlowPrompt = freshPrompt
-            )
-        } catch (e: CancellationException) {
-            // Normal stop
-        } catch (e: Exception) {
-            AutoTouchService.isJobRunning = false
-            service.overlayHud?.updateStatus("Flow Error", e.message ?: "Error", "ERROR")
-            VideoQueueManager.appendLog(service, "❌ Flow Pipeline Error: ${e.message}")
+    fun setLogListener(listener: (String) -> Unit) {
+        onLogAppended = listener
+    }
+
+    fun setStatusListener(listener: (String, String) -> Unit) {
+        onStatusUpdated = listener
+    }
+
+    private fun log(line: String) {
+        val timestamped = "[${System.currentTimeMillis() % 100000}] $line"
+        mainHandler.post {
+            onLogAppended?.invoke(timestamped)
         }
     }
 
-    suspend fun runBackgroundWebTask(
-        service: AutoTouchService,
-        apiKey: String,
-        model: String,
-        initialUrl: String,
-        userGoal: String,
-        folderPath: String,
-        chainYouTubeAfterDownload: Boolean = false,
-        forceChainYouTube: Boolean = false,
-        exactFlowPrompt: String = "",
-        preferredDurationSeconds: Int = 8
-    ) {
-        if (AutoTouchService.isJobRunning) {
-            VideoQueueManager.appendLog(service, "⚠️ A task is already running!")
-            return
+    private fun updateStatus(status: String, emotion: String) {
+        mainHandler.post {
+            onStatusUpdated?.invoke(status, emotion)
+            AiOverlayHud.updateStatus(status, emotion)
         }
-        AutoTouchService.isJobRunning = true
-        service.overlayHud?.show()
-        service.overlayHud?.setCursorOverlayVisible(false)
+    }
 
-        val shouldChainYt = chainYouTubeAfterDownload || forceChainYouTube
-        val requestedDurationSeconds = preferredDurationSeconds.takeIf {
-            it in VideoPromptPlanner.supportedDurationsSeconds
-        } ?: 8
-        val startTimeMs = System.currentTimeMillis()
-        val webView = service.overlayHud?.getOrCreateSharedWebView()
-        val memoryVault = VideoQueueManager.getMemoryVault(service)
-        val stepDelay = VideoQueueManager.getStepDelayMs(service)
-        val highModelName = VideoQueueManager.getHighModelName(service)
-        val autoHighModelEnabled = VideoQueueManager.isAutoHighModelEnabled(service)
-        val googleSearchEnabled = VideoQueueManager.isGoogleSearchGroundingEnabled(service)
-        val maxSteps = if (VideoQueueManager.is24HourUnstoppableEnabled(service)) 2000 else 80
+    fun stopCurrentJob() {
+        pipelineJob?.cancel()
+        pipelineJob = null
+        isRunning = false
+        updateStatus("Pipeline Stopped", "IDLE")
+        log("[Pipeline] Stopped by user or task finish.")
+    }
 
-        var flowPromptSubmitted = false
-        var submittedAtTimeMs = 0L
-        var downloadAttempts = 0
-        var idleRetryCount = 0
-        var previousWebScreenshotB64: String? = null
-        var previousDomHash = 0
-        var previousUrl = ""
-        var lastExpectedOutcome = "Initial page load"
-        var consecutiveVerificationFails = 0
+    fun stopEverything(context: Context?) {
+        stopCurrentJob()
+        AiOverlayHud.hide()
+    }
 
-        try {
-            val currentLoadedUrl = webView?.url ?: ""
-            val alreadyOnFlow = currentLoadedUrl.contains("labs.google/fx", true) &&
-                    initialUrl.contains("labs.google/fx", true)
+    fun interceptNetworkRequestForMp4(request: WebResourceRequest): WebResourceResponse? {
+        val urlStr = request.url.toString()
+        val lower = urlStr.lowercase(Locale.US)
+        val isVideoUrl = lower.contains(".mp4") or
+            lower.contains("googlevideo") or
+            lower.contains("storage.googleapis.com/generate") or
+            lower.contains("media/video")
 
-            if (initialUrl.isNotBlank() && initialUrl.startsWith("http") && !alreadyOnFlow &&
-                !currentLoadedUrl.startsWith(initialUrl.take(22), true)
-            ) {
-                service.overlayHud?.updateStatus("Web • Opening", initialUrl, "WORKING")
-                VideoQueueManager.appendLog(service, "🌐 Opening: $initialUrl")
-                webView?.loadUrl(initialUrl)
-                delay(5000)
-            }
-
-            val history = mutableListOf<String>()
-
-            for (step in 1..maxSteps) {
-                val newlyDownloaded = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                if (newlyDownloaded != null && (shouldChainYt || userGoal.contains("youtube", true))) {
-                    VideoQueueManager.appendLog(service, "🎬 Newly Downloaded Video Ready: ${newlyDownloaded.name}! Launching YouTube...")
-                    AutoTouchService.isJobRunning = false
-                    runYouTubeAutoUpload(service, apiKey, model, folderPath, userGoal)
-                    return
-                }
-
-                val currentUrl = webView?.url ?: initialUrl
-                if (!flowPromptSubmitted && currentUrl.contains("labs.google/fx", true)) {
-                    var modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
-                    if (modeFix == "MODE_PILL_NOT_FOUND") {
-                        delay(1200)
-                        modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
-                    }
-                    val modeConfirmed = modeFix.startsWith("ALREADY_VIDEO_") || modeFix.startsWith("CONFIRMED_VIDEO_")
-                    if (!modeConfirmed) {
-                        val explanation = "Requested ${requestedDurationSeconds}s video mode was not confirmed ($modeFix). Prompt not submitted, to avoid wasting credits."
-                        VideoQueueManager.appendLog(service, "⚠️ $explanation")
-                        service.overlayHud?.updateStatus("Duration not confirmed", explanation, "ERROR")
-                        AutoTouchService.isJobRunning = false
-                        return
-                    }
-                    VideoQueueManager.appendLog(service, "⚙️ Verified Google Flow mode: $modeFix")
-                    delay(350)
-                }
-
-                // ====================================================================
-                // POST-SUBMIT VERIFIED RENDER & DOWNLOAD LOOP
-                // ====================================================================
-                if (flowPromptSubmitted) {
-                    val elapsedSec = (System.currentTimeMillis() - submittedAtTimeMs) / 1000L
-                    val renderState = checkGoogleFlowRenderState(webView)
-
-                    // Guard against False Submit: If 15+ seconds passed and page STILL says "Start creating or drop media" (IDLE_EMPTY),
-                    // the prompt did NOT submit! Unlock and retry typing into the bottom prompt box!
-                    if (renderState == "IDLE_EMPTY" && elapsedSec >= 14L && idleRetryCount < 3) {
-                        idleRetryCount++
-                        flowPromptSubmitted = false
-                        if (service.isKeyboardOpen()) {
-                            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                            delay(1200)
-                        }
-                        VideoQueueManager.appendLog(service, "⚠️ Screen still on 'Start creating' (Idle). Unlocking to re-type prompt (#$idleRetryCount)...")
-                    } else if (elapsedSec < 12L || renderState.startsWith("RENDERING:")) {
-                        val pct = renderState.removePrefix("RENDERING:").ifBlank { "${elapsedSec}s" }
-                        service.overlayHud?.updateStatus("Flow Rendering ($pct)", "Waiting for 8s video to finish...", "WAITING")
-                        VideoQueueManager.appendLog(service, "⏳ Google Flow Rendering: $pct (Elapsed: ${elapsedSec}s)...")
-                        delay(4500)
-                        continue
-                    } else if (renderState.startsWith("FAILED:")) {
-                        service.overlayHud?.updateStatus("Flow Policy Error", "Prompt rejected by Google Flow", "ERROR")
-                        VideoQueueManager.appendLog(service, "❌ Google Flow Card Failed: $renderState")
-                        AutoTouchService.isJobRunning = false
-                        return
-                    } else {
-                        // Video is 100% READY (READY_CARD_THUMBNAIL or READY_VIDEO_PLAYER)!
-                        downloadAttempts++
-                        service.overlayHud?.updateStatus("Flow Ready • Saving", "Opening card, playing & saving MP4 (#$downloadAttempts)...", "WORKING")
-                        val dlStatus = WebActionVerifier.openPlayAndDownloadFlowVideo(service, webView)
-                        VideoQueueManager.appendLog(service, "📥 Auto-Download Step #$downloadAttempts ($renderState): $dlStatus")
-                        delay(4800)
-
-                        val downloadedNow = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                        if (downloadedNow != null) {
-                            VideoQueueManager.recordLearnedLesson(service, "Google Flow video downloaded after $downloadAttempts steps.", "GOOGLE_FLOW")
-                            VideoQueueManager.appendLog(service, "✅ New Video Saved: ${downloadedNow.name}! Starting YouTube Upload...")
-                            AutoTouchService.isJobRunning = false
-                            runYouTubeAutoUpload(service, apiKey, model, folderPath, userGoal)
-                            return
-                        }
-
-                        if (downloadAttempts >= 12) {
-                            AutoTouchService.isJobRunning = false
-                            service.overlayHud?.updateStatus("Download Timeout", "Tap video card manually to save", "ERROR")
-                            VideoQueueManager.appendLog(service, "⚠️ New video download did not complete after 12 attempts; stopping so old video is not uploaded by mistake.")
-                            return
-                        }
-                        continue
-                    }
-                }
-
-                val domSnapshot = extractWebDomAndDrawBadges(webView)
-                delay(180)
-
-                val currentWebScreenshotB64 = if (VideoQueueManager.isScreenVisionEnabled(service)) {
-                    service.overlayHud?.captureWebViewScreenshotBase64()
-                } else null
-
-                clearWebVisualBadges(webView)
-
-                val verification = if (step == 1) {
-                    WebStepVerification(true, true, true, false, "Initial step.")
-                } else {
-                    WebActionVerifier.verifyWebStepChanged(
-                        previousUrl = previousUrl,
-                        currentUrl = currentUrl,
-                        previousDomHash = previousDomHash,
-                        currentDomSnapshot = domSnapshot,
-                        expectedOutcome = lastExpectedOutcome
-                    )
-                }
-
-                if (verification.pageChanged) {
-                    consecutiveVerificationFails = 0
-                } else {
-                    consecutiveVerificationFails++
-                }
-                previousUrl = currentUrl
-                previousDomHash = domSnapshot.take(900).hashCode()
-
-                val useHighModelNow = autoHighModelEnabled && consecutiveVerificationFails >= 1
-                val domainKey = if (currentUrl.contains("labs.google", true)) "GOOGLE_FLOW" else "WEB"
-                val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(service, domainKey)
-
-                val statusLabel = if (useHighModelNow) "High-Brain Verifying..." else "Thinking..."
-                service.overlayHud?.updateStatus("Web • Step $step", statusLabel, "THINKING")
-
-                val decision = GeminiBrain.decideNextWebAction(
-                    apiKey = apiKey,
-                    model = model,
-                    goal = userGoal,
-                    pageUrl = currentUrl,
-                    pageTextAndElements = domSnapshot,
-                    history = history,
-                    memoryVault = memoryVault,
-                    learnedLessons = learnedLessons,
-                    screenChangedStatus = verification.summary,
-                    screenshotBase64 = currentWebScreenshotB64,
-                    previousScreenshotBase64 = previousWebScreenshotB64,
-                    useHighModel = useHighModelNow,
-                    highModelName = highModelName,
-                    useGoogleSearch = googleSearchEnabled && useHighModelNow,
-                    trainedBlueprint = TrainingMemoryStore(service).getVerifiedSkillBlueprintForTask(userGoal)
-                )
-
-                previousWebScreenshotB64 = currentWebScreenshotB64
-                lastExpectedOutcome = decision.expectedOutcome
-
-                if (decision.learnedRule.isNotBlank()) {
-                    VideoQueueManager.recordLearnedLesson(service, decision.learnedRule, domainKey)
-                    VideoQueueManager.appendLog(service, "🧠 New Brain Rule: ${decision.learnedRule}")
-                }
-
-                val mood = if (decision.action == "WAIT") "WAITING" else "WORKING"
-                service.overlayHud?.updateStatus("Web • ${decision.action}", decision.reason, mood)
-                VideoQueueManager.appendLog(service, "🌐 Web Step $step [${decision.action}]: ${decision.reason}")
-
-                when (decision.action) {
-                    "CLICK_EL" -> {
-                        val clickRes = WebActionVerifier.clickElementWithRealTouchFallback(service, webView, decision.elementIndex)
-                        history.add("Step $step: CLICK_EL(${decision.elementIndex}) -> $clickRes")
-                        if (clickRes.contains("arrow_forward", true) || clickRes.contains("Create", true)) {
-                            flowPromptSubmitted = true
-                            submittedAtTimeMs = System.currentTimeMillis()
-                            VideoQueueManager.appendLog(service, "🔒 1-Video Credit Lock Activated!")
-                        }
-                    }
-                    "CLICK_XY" -> {
-                        if (decision.tapX > 0f && decision.tapY > 0f) {
-                            WebActionVerifier.dispatchRealFingerTapOnWebView(webView, decision.tapX, decision.tapY)
-                            history.add("Step $step: CLICK_XY(${decision.tapX.toInt()},${decision.tapY.toInt()})")
-                        }
-                    }
-                    "TYPE_EL" -> {
-                        val promptToUse = exactFlowPrompt.ifBlank { decision.textToType }
-                        var modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
-                        if (modeFix == "MODE_PILL_NOT_FOUND") {
-                            delay(1200)
-                            modeFix = ensureGoogleFlowVideoMode(webView, requestedDurationSeconds)
-                        }
-                        if (!modeFix.startsWith("ALREADY_VIDEO_") && !modeFix.startsWith("CONFIRMED_VIDEO_")) {
-                            val explanation = "Requested ${requestedDurationSeconds}s video mode was not confirmed ($modeFix). Prompt not submitted."
-                            VideoQueueManager.appendLog(service, "⚠️ $explanation")
-                            service.overlayHud?.updateStatus("Duration not confirmed", explanation, "ERROR")
-                            AutoTouchService.isJobRunning = false
-                            return
-                        }
-                        delay(500)
-                        val typeRes = performWebJsTypeAndSubmit(webView, decision.elementIndex, promptToUse)
-                        VideoQueueManager.appendLog(service, "✍️ Web Type Result: $typeRes")
-                        history.add("Step $step: TYPE_EL(${decision.elementIndex}) -> $typeRes")
-
-                        if (typeRes.startsWith("SUBMITTED_OK")) {
-                            flowPromptSubmitted = true
-                            submittedAtTimeMs = System.currentTimeMillis()
-                            VideoQueueManager.appendLog(service, "🔒 Prompt Verified & Submitted! Waiting for 0% -> 100% render...")
-                            delay(4500)
-                        } else if (typeRes == "ERR_NO_PROMPT_BOX_YET") {
-                            if (service.isKeyboardOpen()) {
-                                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                                delay(1000)
+        if (isVideoUrl && (lower.contains("http") || lower.contains("https"))) {
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val okReq = Request.Builder().url(urlStr).build()
+                    httpClient.newCall(okReq).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val bytes = resp.body?.bytes()
+                            if (bytes != null && bytes.size > 50_000L) {
+                                lastInterceptedMp4Bytes = bytes
+                                log("[StreamSniffer] Captured MP4 stream (${bytes.size} bytes) from network!")
                             }
-                            performSmartWebScroll(webView)
                         }
                     }
-                    "SCROLL" -> {
-                        val scrollRes = performSmartWebScroll(webView)
-                        history.add("Step $step: SCROLL ($scrollRes)")
-                    }
-                    "LOAD_URL" -> {
-                        if (decision.url.startsWith("http")) {
-                            webView?.loadUrl(decision.url)
-                            delay(4000)
-                        }
-                        history.add("Step $step: LOAD_URL ${decision.url}")
-                    }
-                    "DOWNLOAD_VIDEO", "DOWNLOAD_URL" -> {
-                        val dlRes = WebActionVerifier.openPlayAndDownloadFlowVideo(service, webView)
-                        VideoQueueManager.appendLog(service, "📥 Download Action: $dlRes")
-                        delay(4500)
-                        history.add("Step $step: DOWNLOAD_VIDEO ($dlRes)")
-                    }
-                    "WAIT" -> {
-                        delay(5000)
-                        history.add("Step $step: WAIT - ${decision.reason}")
-                    }
-                    "CHAIN_YOUTUBE" -> {
-                        WebActionVerifier.openPlayAndDownloadFlowVideo(service, webView)
-                        delay(4500)
-                        val newFile = VideoQueueManager.findNewlyDownloadedVideo(startTimeMs, folderPath)
-                        if (newFile != null || !forceChainYouTube) {
-                            AutoTouchService.isJobRunning = false
-                            runYouTubeAutoUpload(service, apiKey, model, folderPath, userGoal)
-                            return
-                        }
-                    }
-                    "DONE" -> {
-                        AutoTouchService.isJobRunning = false
-                        service.overlayHud?.updateStatus("✅ Web Done", decision.reason, "DONE")
-                        VideoQueueManager.appendLog(service, "✅ Web Task Completed: ${decision.reason}")
-                        return
-                    }
+                } catch (_: Exception) {
                 }
-                delay(stepDelay)
             }
-        } catch (e: CancellationException) {
-            // Clean stop
-        } catch (e: Exception) {
-            VideoQueueManager.recordLearnedLesson(service, "Web error: ${e.message}", "WEB")
-            AutoTouchService.isJobRunning = false
-            service.overlayHud?.updateStatus("Web Error", e.message ?: "Failed", "ERROR")
-        } finally {
-            clearWebVisualBadges(webView)
-            AutoTouchService.isJobRunning = false
         }
+        return null
     }
 
-    // ========================================================================
-    // FULL 5-STEP YOUTUBE SHORTS AUTO-UPLOADER (Collapses Mini Window First!)
-    // ========================================================================
-    suspend fun runYouTubeAutoUpload(
-        service: AutoTouchService,
-        apiKey: String,
-        model: String,
-        folderPath: String,
-        userPrompt: String,
-        createAiVideoIfEmpty: Boolean = false
+    fun startAutonomousWebAgent(
+        context: Context,
+        webView: WebView,
+        goal: String,
+        targetUrl: String
     ) {
-        if (AutoTouchService.isJobRunning) {
-            VideoQueueManager.appendLog(service, "⚠️ A task is already running!")
+        if (isRunning) {
+            log("[Agent] Pipeline already running. Stop first.")
             return
         }
-        AutoTouchService.isJobRunning = true
+        isRunning = true
+        updateStatus("Agent • Running", "WORKING")
+        log("[Agent] Starting Autonomous Web Agent for goal: $goal")
 
-        // CRITICAL FIX: Immediately collapse the Browser Mini Window back to the small bot icon so YouTube is 100% uncovered!
-        service.overlayHud?.collapseToCompactStage()
-        service.overlayHud?.show()
-        service.overlayHud?.setCursorOverlayVisible(true)
-
-        try {
-            service.overlayHud?.updateStatus("Step 1/5 • Folder", "Scanning folder for video...", "WORKING")
-            val nextVideo = VideoQueueManager.getNextPendingVideo(service, folderPath)
-            if (nextVideo == null) {
-                if (createAiVideoIfEmpty) {
-                    AutoTouchService.isJobRunning = false
-                    runGoogleFlowPipeline(service, apiKey, model, VideoQueueManager.getPinnedFlowUrl(service), userPrompt, 1, folderPath)
-                    return
-                }
-                AutoTouchService.isJobRunning = false
-                service.overlayHud?.setCursorOverlayVisible(false)
-                service.overlayHud?.updateStatus("Queue Empty", "Tap 'Reset History' or make video!", "ERROR")
-                VideoQueueManager.appendLog(service, "⚠️ No pending video in folder!")
-                return
-            }
-
-            VideoQueueManager.appendLog(service, "🎬 Uploading Video (${if (VideoQueueManager.isUploadNewestFirst(service)) "Newest First" else "Oldest First"}): ${nextVideo.name}")
-            service.overlayHud?.updateStatus("Step 2/5 • Gemini", "Generating viral Title...", "THINKING")
-            val storyPlan = if (listOf("story", "episode", "part").any { userPrompt.contains(it, true) } ||
-                listOf("story", "episode", "part").any { nextVideo.name.contains(it, true) }) {
-                TrainingMemoryStore(service).getLatestStoryEpisodePlan()
-            } else null
-            val metadata = GeminiBrain.generateYouTubeMetadata(
-                apiKey = apiKey,
-                model = model,
-                fileName = nextVideo.name,
-                userInstruction = userPrompt,
-                episodeNum = storyPlan?.episodeNumber ?: 0,
-                episodeTitle = storyPlan?.episodeTitle.orEmpty(),
-                storySummary = storyPlan?.plotSummary.orEmpty()
-            )
-
-            copyToClipboard(service, metadata.title)
-            service.overlayHud?.updateStatus("Step 3/5 • YouTube", "Opening YouTube Upload...", "WORKING")
-            launchYouTubeWithVideo(service, nextVideo)
-            delay(5500)
-
-            var nextClickCount = 0
-            var titleFilled = false
-            var descFilled = false
-            val (realW, realH) = service.getRealScreenDimensions()
-
-            for (step in 1..25) {
-                val nodes = PhoneAgentManager.captureScreenNodes(service)
-                val appNodes = nodes.filter { it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-
-                if (appNodes.isEmpty() && nextClickCount < 2) {
-                    delay(2000)
-                    continue
+        pipelineJob = scope.launch(Dispatchers.Main) {
+            try {
+                if (webView.url != targetUrl) {
+                    webView.loadUrl(targetUrl)
+                    delay(5000)
                 }
 
-                val nextBtn = appNodes.firstOrNull {
-                    it.text.equals("Next", true) ||
-                    it.contentDesc.equals("Next", true) ||
-                    it.text.equals("Done", true) ||
-                    it.contentDesc.equals("Done", true)
-                }
+                val skillBlueprint = AutomationReliability.loadSkillBlueprint(context, "google_flow_master")
+                var currentStep = 0
+                val maxSteps = 18
 
-                val isOnAddDetailsScreen = isAddDetailsScreenVisible(appNodes) || (nextClickCount >= 2 && nextBtn == null)
+                while (isRunning && currentStep < maxSteps) {
+                    currentStep++
+                    val snap = WebActionVerifier.inspectLiveDomState(webView)
+                    val ragLessons = AutomationReliability.retrieveRelevantRagLessons(context, goal, snap.heuristicState)
 
-                // Step 3: Click 'Next' on Trimmer screen and 'Next' on Editor screen
-                if (!isOnAddDetailsScreen && !titleFilled && nextBtn != null) {
-                    nextClickCount++
-                    service.overlayHud?.updateStatus("Step 3/5 • Editor ($nextClickCount)", "Tapping 'Next'...", "WORKING")
-                    PhoneAgentManager.animateAndPhysicalTapNode(service, nextBtn, "Tap: Next")
-                    delay(4000)
-                    continue
-                }
+                    updateStatus("State: ${snap.heuristicState}", "THINKING")
 
-                // Step 4: Focus Caption Box & Paste AI Title
-                if (!titleFilled && (isOnAddDetailsScreen || nextClickCount >= 2)) {
-                    copyToClipboard(service, metadata.title)
-                    val captionNode = appNodes.firstOrNull {
-                        val combined = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
-                        combined.contains("Caption your Short", true) ||
-                        combined.contains("Create a title", true) ||
-                        combined.contains("caption", true)
-                    } ?: appNodes.firstOrNull { it.isEditable || it.supportsSetText }
-
-                    val capX = captionNode?.centerX ?: (realW * 0.52f)
-                    val capY = captionNode?.centerY ?: (realH * 0.138f)
-
-                    service.overlayHud?.updateStatus("Step 4/5 • Caption", "Focusing Caption Box...", "WORKING")
-                    PhoneAgentManager.animateAndTapXY(service, capX, capY, "Tap: Caption")
-                    delay(2200)
-
-                    service.overlayHud?.updateStatus("Step 4/5 • Typing", "Pasting AI Title...", "WORKING")
-                    service.insertCaptionSingleClean(metadata.title, capX, capY)
-
-                    titleFilled = true
-                    delay(1800)
-                    service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                    delay(2800)
-                    continue
-                }
-
-                // Optional Description Fill
-                if (titleFilled && !descFilled) {
-                    val addDescNode = appNodes.firstOrNull {
-                        "${it.text} ${it.contentDesc} ${it.hintText}".contains("Add description", true)
-                    }
-                    if (addDescNode != null) {
-                        PhoneAgentManager.animateAndPhysicalTapNode(service, addDescNode, "Tap: Description")
-                        delay(2000)
-                        service.insertCaptionSingleClean(metadata.description, realW * 0.5f, realH * 0.25f)
-                        descFilled = true
-                        delay(1800)
-                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                        delay(2200)
+                    if (snap.heuristicState == "STATE_POPUP_OBSTACLE" || snap.popupObstacleText.isNotBlank()) {
+                        log("[WebAgent] Popup obstacle detected: '${snap.popupObstacleText}'. Auto-killing...")
+                        WebActionVerifier.autoKillPopupObstacles(webView)
+                        delay(1200)
                         continue
-                    } else {
-                        descFilled = true
-                    }
-                }
-
-                // Step 5: Tap bottom 'Upload Short' button
-                if (titleFilled) {
-                    if (service.isKeyboardOpen()) {
-                        service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                        delay(2500)
                     }
 
-                    val exactUploadX = realW * 0.50f
-                    val exactUploadYPoints = listOf(realH * 0.964f, realH * 0.958f, realH * 0.968f)
+                    if (snap.heuristicState == "STATE_MODE_MISMATCH") {
+                        log("[WebAgent] Mode mismatch detected. Enforcing Video 9:16 x1 credit-lock...")
+                        WebActionVerifier.enforceGoogleFlowCreditLock(webView, 8)
+                        delay(1500)
+                        continue
+                    }
 
-                    for (attempt in 1..3) {
-                        val currentNodes = PhoneAgentManager.captureScreenNodes(service).filter {
-                            it.windowType != AccessibilityWindowInfo.TYPE_INPUT_METHOD
-                        }
-                        val onMainYouTubeFeed = currentNodes.any {
-                            it.text.equals("Subscriptions", true) || it.text.equals("Home", true)
-                        } && !isAddDetailsScreenVisible(currentNodes)
+                    val decision = GeminiBrain.decideNextWebAction(
+                        context = context,
+                        goal = goal,
+                        currentUrl = snap.url,
+                        domStateSummary = snap.interactiveSummary,
+                        detectedStateHint = snap.heuristicState,
+                        blueprintJson = skillBlueprint,
+                        ragLessons = ragLessons,
+                        screenshot = WebActionVerifier.captureWebViewBitmap(webView),
+                        escalateToPro = false
+                    )
 
-                        if (onMainYouTubeFeed && attempt > 1) break
+                    log("[Decision] ${decision.detectedState} -> Action: ${decision.actionType} (${decision.reasoning})")
 
-                        val uploadBtnNode = currentNodes.firstOrNull {
-                            val c = "${it.text} ${it.contentDesc} ${it.hintText} ${it.viewId}"
-                            it.centerY > realH * 0.88f && (
-                                c.contains("Upload Short", true) ||
-                                it.text.equals("Upload", true) ||
-                                c.contains("upload_bottom_button", true)
+                    when (decision.actionType) {
+                        "CLICK_TEXT", "CLICK_CTA_ENTER_WORKSPACE" -> {
+                            val report = WebActionVerifier.execute4SenseSmartClick(
+                                webView,
+                                decision.targetSelectorOrText.ifBlank { "Create with Flow" },
+                                decision.x,
+                                decision.y
                             )
+                            log("[Click] ${report.senseUsed} at (${report.targetX}, ${report.targetY}) - ${report.details}")
+                            if (report.needsProModelEscalation) {
+                                log("[ProEscalation] Escalating next step to High-Reasoning Pro Model.")
+                            }
                         }
-
-                        val tapX = uploadBtnNode?.centerX ?: exactUploadX
-                        val tapY = if (uploadBtnNode != null && uploadBtnNode.centerY >= realH * 0.94f) {
-                            uploadBtnNode.centerY
-                        } else {
-                            exactUploadYPoints[(attempt - 1) % exactUploadYPoints.size]
+                        "TYPE_AND_SUBMIT", "ENFORCE_FLOW_SETTINGS" -> {
+                            WebActionVerifier.enforceGoogleFlowCreditLock(webView, 8)
+                            delay(800)
+                            WebActionVerifier.typePromptIntoBottomComposerOnce(webView, decision.inputText.ifBlank { goal })
+                            log("[Composer] Prompt typed and submitted once.")
                         }
-
-                        service.overlayHud?.updateStatus("Step 5/5 • Upload", "Tapping 'Upload Short' (#$attempt)...", "WORKING")
-                        PhoneAgentManager.animateAndTapXY(service, tapX, tapY, "Tap: Upload Short")
-                        delay(600)
-                        if (uploadBtnNode != null) service.clickNodeAndParents(uploadBtnNode.node)
-                        delay(3500)
-                    }
-
-                    VideoQueueManager.markVideoUploaded(service, nextVideo)
-                    AutoTouchService.isJobRunning = false
-                    service.overlayHud?.setCursorOverlayVisible(false)
-                    service.overlayHud?.updateStatus("🎉 Upload Success!", "'${nextVideo.name.take(18)}' Published!", "DONE")
-                    VideoQueueManager.appendLog(service, "✅ YouTube Upload Published: ${nextVideo.name}")
-                    break
-                }
-                delay(2000)
-            }
-        } catch (e: CancellationException) {
-            // Normal user stop
-        } catch (e: Exception) {
-            AutoTouchService.isJobRunning = false
-            service.overlayHud?.setCursorOverlayVisible(false)
-            service.overlayHud?.updateStatus("Upload Error", e.message ?: "Error", "ERROR")
-            VideoQueueManager.appendLog(service, "❌ Upload Error: ${e.message}")
-        } finally {
-            service.overlayHud?.setCursorOverlayVisible(false)
-            AutoTouchService.isJobRunning = false
-        }
-    }
-
-    private fun isAddDetailsScreenVisible(appNodes: List<UiNodeSnapshot>): Boolean {
-        return appNodes.any {
-            val c = "${it.text} ${it.contentDesc} ${it.hintText}"
-            c.contains("Add details", true) ||
-            c.contains("Caption your Short", true) ||
-            c.contains("Upload Short", true) ||
-            c.contains("Select audience", true) ||
-            c.contains("Visibility", true)
-        }
-    }
-
-    private suspend fun performSmartWebScroll(webView: WebView?): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) { cont.resume("NO_WEBVIEW"); return@suspendCancellableCoroutine }
-        val js = """
-            (function() {
-                window.scrollBy({ top: 500, behavior: 'smooth' });
-                var containers = document.querySelectorAll('main, [role="main"], section, div');
-                for (var i = 0; i < containers.length; i++) {
-                    var c = containers[i];
-                    if (c.scrollHeight > c.clientHeight + 40) {
-                        c.scrollTop += 450;
-                    }
-                }
-                var newProjBtn = Array.from(document.querySelectorAll('button, [role="button"], a')).find(
-                    e => (e.innerText || '').indexOf('New project') !== -1
-                );
-                if (newProjBtn) {
-                    newProjBtn.scrollIntoView({ block: 'center' });
-                    return 'SCROLLED_TO_NEW_PROJECT';
-                }
-                return 'SCROLLED_DOWN';
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "SCROLLED")
-        }
-    }
-
-    private suspend fun ensureGoogleFlowVideoMode(
-        webView: WebView?,
-        durationSeconds: Int
-    ): String {
-        if (webView == null) return "NO_WEBVIEW"
-        val duration = durationSeconds.takeIf { it in VideoPromptPlanner.supportedDurationsSeconds } ?: 8
-        val requestResult = suspendCancellableCoroutine<String> { cont ->
-            val js = """
-                (function() {
-                    var desired = '${duration}s';
-                    var nodes = document.querySelectorAll('button, [role="button"], div');
-                    var pill = null;
-                    for (var i = 0; i < nodes.length; i++) {
-                        var el = nodes[i];
-                        var text = (el.innerText || '').trim();
-                        var rect = el.getBoundingClientRect();
-                        if (!text || text.length > 110 || rect.width < 2 || rect.height < 2 || rect.top < window.innerHeight * 0.40) continue;
-                        if (text.indexOf('Video') === -1 && text.indexOf('Nano Banana') === -1 && text.indexOf('Image') === -1) continue;
-                        if (text.indexOf('Video') !== -1 && text.indexOf(desired) !== -1 && text.indexOf('x1') !== -1) {
-                            return 'ALREADY_VIDEO_' + desired.toUpperCase() + '_X1';
+                        "WAIT" -> {
+                            updateStatus("Rendering...", "RENDERING")
+                            delay(3500)
                         }
-                        pill = el;
-                        break;
-                    }
-                    if (!pill) return 'MODE_PILL_NOT_FOUND';
-                    pill.click();
-                    setTimeout(function() {
-                        var opts = document.querySelectorAll('button, [role="tab"], [role="button"], span, div');
-                        var wanted = ['Video', '9:16', desired, 'x1'];
-                        for (var w = 0; w < wanted.length; w++) {
-                            var found = null;
-                            for (var j = 0; j < opts.length; j++) {
-                                var option = opts[j];
-                                var text = (option.innerText || '').trim();
-                                var rect = option.getBoundingClientRect();
-                                if (text === wanted[w] && rect.width > 0 && rect.height > 0) {
-                                    found = option;
-                                    break;
+                        "EXTRACT_OR_PLAY_MP4", "SNIFF_MP4_OR_4SENSE_DOWNLOAD" -> {
+                            updateStatus("Downloading MP4...", "DOWNLOADING")
+                            val domMp4 = WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView)
+                            var mp4Bytes = lastInterceptedMp4Bytes
+
+                            if (mp4Bytes == null && domMp4.isNotBlank()) {
+                                mp4Bytes = downloadBytesFromUrl(domMp4)
+                            }
+
+                            if (mp4Bytes == null) {
+                                WebActionVerifier.execute4SenseSmartClick(webView, "Play", WebActionVerifier.FLOW_PLAY_CARD_X, WebActionVerifier.FLOW_PLAY_CARD_Y)
+                                delay(2500)
+                                mp4Bytes = lastInterceptedMp4Bytes ?: downloadBytesFromUrl(WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView))
+                            }
+
+                            if (mp4Bytes != null && mp4Bytes.size > 50_000L) {
+                                val savedFile = VideoQueueManager.saveVideoBytesToStorage(context, mp4Bytes, "AuraDroid_Flow")
+                                if (savedFile != null) {
+                                    log("[Success] MP4 saved to ${savedFile.absolutePath} (${savedFile.length()} bytes)")
+                                    updateStatus("MP4 Saved Successfully!", "HAPPY")
+                                    AutomationReliability.recordSuccessfulLesson(context, goal, snap.heuristicState, "Successfully extracted and saved MP4 video")
+                                    isRunning = false
+                                    break
                                 }
                             }
-                            if (found) found.click();
+                            delay(2000)
                         }
-                    }, 350);
-                    return 'MODE_MENU_OPENED';
-                })();
-            """.trimIndent()
-            webView.evaluateJavascript(js) { response ->
-                if (cont.isActive) cont.resume(response?.trim('"') ?: "MODE_RESULT_UNKNOWN")
-            }
-        }
-        if (requestResult.startsWith("ALREADY_VIDEO_") ||
-            requestResult == "MODE_PILL_NOT_FOUND" || requestResult == "NO_WEBVIEW" ||
-            requestResult != "MODE_MENU_OPENED"
-        ) return requestResult
-
-        delay(800L)
-        return suspendCancellableCoroutine { cont ->
-            val verifyJs = """
-                (function() {
-                    var desired = '${duration}s';
-                    var nodes = document.querySelectorAll('button, [role="button"], div');
-                    for (var i = 0; i < nodes.length; i++) {
-                        var el = nodes[i];
-                        var text = (el.innerText || '').trim();
-                        var rect = el.getBoundingClientRect();
-                        if (!text || text.length > 110 || rect.width < 2 || rect.height < 2 || rect.top < window.innerHeight * 0.40) continue;
-                        if (text.indexOf('Video') !== -1 && text.indexOf(desired) !== -1 && text.indexOf('x1') !== -1) {
-                            return 'CONFIRMED_VIDEO_' + desired.toUpperCase() + '_X1';
+                        else -> {
+                            delay(2000)
                         }
                     }
-                    return 'DURATION_UNCONFIRMED_' + desired.toUpperCase();
-                })();
-            """.trimIndent()
-            webView.evaluateJavascript(verifyJs) { response ->
-                if (cont.isActive) cont.resume(response?.trim('"') ?: "DURATION_UNCONFIRMED")
+                    delay(1000)
+                }
+            } catch (e: Exception) {
+                log("[Error] Autonomous Web Agent exception: ${e.message}")
+                updateStatus("Agent Error", "ERROR")
+            } finally {
+                isRunning = false
             }
         }
     }
 
-    private suspend fun checkGoogleFlowRenderState(webView: WebView?): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) { cont.resume("NO_WEBVIEW"); return@suspendCancellableCoroutine }
-        val js = """
-            (function() {
-                var fullText = document.body ? document.body.innerText : '';
-                var pctMatch = fullText.match(/\b(\d{1,3})\s*%/);
-                if (pctMatch) return 'RENDERING:' + pctMatch[1] + '%';
-
-                var vids = document.querySelectorAll('video');
-                for (var v = 0; v < vids.length; v++) {
-                    if ((vids[v].currentSrc || vids[v].src || '').length > 4) return 'READY_VIDEO_PLAYER';
-                }
-
-                if (fullText.indexOf('Failed') !== -1 || fullText.indexOf('violate') !== -1) return 'FAILED:POLICY';
-
-                var imgs = document.querySelectorAll('img, video, canvas');
-                for (var m = 0; m < imgs.length; m++) {
-                    var r = imgs[m].getBoundingClientRect();
-                    if (r.top > 110 && r.top < 650 && r.width > 70 && r.height > 90) {
-                        return 'READY_CARD_THUMBNAIL';
-                    }
-                }
-
-                if (fullText.indexOf('Start creating or drop media') !== -1) {
-                    return 'IDLE_EMPTY';
-                }
-                return 'RENDERING:Starting...';
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "IDLE_EMPTY")
+    fun startFlowToYouTubePipeline(
+        context: Context,
+        webView: WebView,
+        topic: String,
+        storyMode: String,
+        characterVisualLock: String,
+        customTwist: String,
+        durationSeconds: Int,
+        episodeCount: Int,
+        autoUpload: Boolean
+    ) {
+        if (isRunning) {
+            log("[Pipeline] Pipeline already active.")
+            return
         }
-    }
+        isRunning = true
+        updateStatus("Flow ➔ YT Pipeline", "WORKING")
+        log("[Pipeline] Starting Episodic Story Showrunner pipeline for $episodeCount episodes.")
 
-    private suspend fun extractWebDomAndDrawBadges(webView: WebView?): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) { cont.resume("Empty"); return@suspendCancellableCoroutine }
-        val js = """
-            (function() {
-                document.querySelectorAll('.aura-vision-badge').forEach(b => b.remove());
-                var nodes = document.querySelectorAll('a, button, input, textarea, [role="button"], [role="textbox"], [contenteditable="true"], video');
-                var out = [];
-                var hasVideo = document.querySelectorAll('video').length > 0 ? 'YES' : 'NO';
-                for (var i = 0; i < nodes.length && out.length < 75; i++) {
-                    var el = nodes[i];
-                    var rect = el.getBoundingClientRect();
-                    if (rect.width > 5 && rect.height > 5 && rect.bottom > 0 && rect.top < window.innerHeight) {
-                        el.setAttribute('data-aura-idx', i);
-                        var tag = el.tagName.toLowerCase();
-                        var ph = el.placeholder || el.getAttribute('placeholder') || el.getAttribute('aria-label') || '';
-                        var val = (el.value !== undefined ? el.value : (el.isContentEditable ? el.innerText : '')) || '';
-                        var txt = (el.innerText || ph || el.src || '').trim().replace(/\s+/g, ' ').substring(0, 60);
-                        var valInfo = (tag === 'textarea' || tag === 'input' || el.isContentEditable)
-                            ? ' | VALUE="' + val.trim().substring(0, 35) + '" | TOP=' + Math.round(rect.top)
-                            : '';
-                        out.push('[' + i + '] <' + tag + '> ' + txt + valInfo);
+        pipelineJob = scope.launch(Dispatchers.Main) {
+            try {
+                val arcState = VideoQueueManager.getStoryArcState(context)
+                var currentEp = arcState.currentEpisode
 
-                        try {
-                            var badge = document.createElement('div');
-                            badge.className = 'aura-vision-badge';
-                            badge.innerText = '[' + i + ']';
-                            badge.style.cssText = 'position:fixed;left:' + Math.max(2, Math.min(window.innerWidth - 34, rect.left)) + 'px;top:' + Math.max(2, Math.min(window.innerHeight - 20, rect.top)) + 'px;background:#FACC15;color:#000000;border:1.5px solid #DC2626;border-radius:4px;padding:0px 3px;font-size:10px;font-weight:bold;z-index:2147483647;pointer-events:none;line-height:12px;';
-                            document.body.appendChild(badge);
-                        } catch (e) {}
+                for (epIndex in 1..episodeCount) {
+                    if (!isRunning) break
+                    log("[Showrunner] Generating Episode $currentEp prompt via Gemini...")
+                    updateStatus("Writing Ep $currentEp Prompt", "THINKING")
+
+                    val storyResult = GeminiBrain.generateEpisodicStoryPrompt(
+                        context = context,
+                        topic = topic,
+                        storyMode = storyMode,
+                        characterVisualLock = characterVisualLock,
+                        customTwist = customTwist,
+                        durationSeconds = durationSeconds,
+                        episodeNumber = currentEp,
+                        previousArcSummary = arcState.arcHistorySummary
+                    )
+
+                    log("[Prompt] ${storyResult.flowVideoPrompt}")
+                    log("[Voiceover] ${storyResult.hindiVoiceDialogue}")
+
+                    webView.loadUrl("https://labs.google/fx/tools/flow")
+                    delay(6000)
+
+                    // Execute web steps to generate video
+                    var generatedOk = false
+                    for (attempt in 1..12) {
+                        if (!isRunning) break
+                        val snap = WebActionVerifier.inspectLiveDomState(webView)
+                        if (snap.heuristicState == "STATE_POPUP_OBSTACLE") {
+                            WebActionVerifier.autoKillPopupObstacles(webView)
+                            delay(1000)
+                            continue
+                        }
+                        if (snap.heuristicState == "STATE_MODE_MISMATCH") {
+                            WebActionVerifier.enforceGoogleFlowCreditLock(webView, durationSeconds)
+                            delay(1000)
+                            continue
+                        }
+                        if (snap.heuristicState == "STATE_COMPOSER_READY") {
+                            WebActionVerifier.enforceGoogleFlowCreditLock(webView, durationSeconds)
+                            delay(800)
+                            WebActionVerifier.typePromptIntoBottomComposerOnce(webView, storyResult.flowVideoPrompt)
+                            log("[Flow] Prompt submitted for Episode $currentEp. Waiting for render (0%..100%)...")
+                            updateStatus("Rendering Ep $currentEp", "RENDERING")
+                            delay(15000)
+                            generatedOk = true
+                            break
+                        }
+                        if (snap.heuristicState == "STATE_LANDING") {
+                            WebActionVerifier.execute4SenseSmartClick(webView, "Create with Flow", 270f, 520f)
+                            delay(3000)
+                        } else {
+                            delay(3000)
+                        }
                     }
-                }
-                var bodyText = (document.body ? document.body.innerText : '').substring(0, 1500).replace(/\s+/g, ' ');
-                return 'HAS_VIDEO_ELEMENT: ' + hasVideo + '\nPAGE_TEXT: ' + bodyText + '\nELEMENTS:\n' + out.join('\n');
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"')?.replace("\\n", "\n") ?: "")
-        }
-    }
 
-    private fun clearWebVisualBadges(webView: WebView?) {
-        webView?.evaluateJavascript("document.querySelectorAll('.aura-vision-badge').forEach(b=>b.remove());", null)
-    }
+                    if (generatedOk) {
+                        // Wait for render completion and extract MP4
+                        var savedFile: File? = null
+                        for (waitAttempt in 1..25) {
+                            if (!isRunning) break
+                            val domMp4 = WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView)
+                            var mp4Bytes = lastInterceptedMp4Bytes
+                            if (mp4Bytes == null && domMp4.isNotBlank()) {
+                                mp4Bytes = downloadBytesFromUrl(domMp4)
+                            }
+                            if (mp4Bytes == null) {
+                                WebActionVerifier.execute4SenseSmartClick(webView, "Play", WebActionVerifier.FLOW_PLAY_CARD_X, WebActionVerifier.FLOW_PLAY_CARD_Y)
+                                delay(3000)
+                                mp4Bytes = lastInterceptedMp4Bytes ?: downloadBytesFromUrl(WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView))
+                            }
+                            if (mp4Bytes != null && mp4Bytes.size > 50_000L) {
+                                savedFile = VideoQueueManager.saveVideoBytesToStorage(context, mp4Bytes, "Ep_${currentEp}_Flow")
+                                if (savedFile != null) break
+                            }
+                            delay(4000)
+                        }
 
-    /**
-     * Strictly targets the bottom "What do you want to create?" prompt composer and NEVER types into the top search bar!
-     * Returns 'ERR_NO_PROMPT_BOX_YET' if the bottom prompt composer is not mounted/visible yet.
-     */
-    private suspend fun performWebJsTypeAndSubmit(
-        webView: WebView?,
-        index: Int,
-        text: String
-    ): String = suspendCancellableCoroutine { cont ->
-        if (webView == null) { cont.resume("NO_WEBVIEW"); return@suspendCancellableCoroutine }
-        val safe = JSONObject.quote(text)
-        val js = """
-            (function() {
-                if (document.activeElement && document.activeElement.getBoundingClientRect().top < 170) {
-                    document.activeElement.blur();
-                }
+                        if (savedFile != null) {
+                            log("[Success] Episode $currentEp video saved: ${savedFile.name}")
+                            VideoQueueManager.recordCompletedEpisode(context, currentEp, storyResult.episodeSummary)
 
-                var allCandidates = document.querySelectorAll('textarea, [contenteditable="true"], [role="textbox"], input[type="text"], input:not([type])');
-                var flowPromptBox = null;
-
-                for (var i = 0; i < allCandidates.length; i++) {
-                    var c = allCandidates[i];
-                    var rect = c.getBoundingClientRect();
-                    var ph = (c.placeholder || c.getAttribute('placeholder') || c.getAttribute('aria-label') || c.innerText || '').toLowerCase();
-                    var isSearchBar = ph.indexOf('search') !== -1 || rect.top < 175;
-                    if (!isSearchBar && rect.width > 80 && (ph.indexOf('what do you want to create') !== -1 || ph.indexOf('create') !== -1 || ph.indexOf('prompt') !== -1 || c.tagName.toLowerCase() === 'textarea' || c.isContentEditable)) {
-                        flowPromptBox = c;
-                        break;
-                    }
-                }
-
-                if (!flowPromptBox) {
-                    var indexed = document.querySelector('[data-aura-idx="$index"]');
-                    if (indexed && indexed.getBoundingClientRect().top >= 175 && (indexed.tagName.toLowerCase() === 'textarea' || indexed.isContentEditable)) {
-                        flowPromptBox = indexed;
-                    }
-                }
-
-                if (!flowPromptBox) {
-                    window.scrollTo(0, document.body.scrollHeight);
-                    return 'ERR_NO_PROMPT_BOX_YET';
-                }
-
-                flowPromptBox.scrollIntoView({ block: 'center' });
-                flowPromptBox.click();
-                flowPromptBox.focus();
-
-                try {
-                    if (flowPromptBox.select) flowPromptBox.select();
-                    else document.execCommand('selectAll', false, null);
-                    document.execCommand('insertText', false, $safe);
-                } catch (e) {}
-
-                var currentVal = (flowPromptBox.value !== undefined ? flowPromptBox.value : flowPromptBox.innerText) || '';
-                if (currentVal.trim().length < 5) {
-                    try {
-                        var proto = flowPromptBox.tagName.toLowerCase() === 'textarea'
-                            ? window.HTMLTextAreaElement.prototype
-                            : window.HTMLInputElement.prototype;
-                        var nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value') ? Object.getOwnPropertyDescriptor(proto, 'value').set : null;
-                        if (nativeSetter) nativeSetter.call(flowPromptBox, $safe);
-                        else if (flowPromptBox.isContentEditable) flowPromptBox.innerText = $safe;
-                        else flowPromptBox.value = $safe;
-
-                        flowPromptBox.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: $safe }));
-                        flowPromptBox.dispatchEvent(new Event('change', { bubbles: true }));
-                    } catch (e2) {}
-                }
-
-                var finalVal = (flowPromptBox.value !== undefined ? flowPromptBox.value : flowPromptBox.innerText) || '';
-                if (finalVal.trim().length < 5) {
-                    return 'ERR_TYPE_FAILED';
-                }
-
-                setTimeout(function() {
-                    var btns = document.querySelectorAll('button, [role="button"]');
-                    for (var b = 0; b < btns.length; b++) {
-                        var bTxt = (btns[b].innerText || btns[b].getAttribute('aria-label') || '').trim();
-                        if (bTxt.indexOf('arrow_forward') !== -1 || bTxt.toLowerCase() === 'create' || bTxt.toLowerCase() === 'generate') {
-                            if (!btns[b].disabled) {
-                                var opts = { bubbles: true, cancelable: true, view: window };
-                                btns[b].dispatchEvent(new PointerEvent('pointerdown', opts));
-                                btns[b].dispatchEvent(new MouseEvent('mousedown', opts));
-                                btns[b].dispatchEvent(new PointerEvent('pointerup', opts));
-                                btns[b].dispatchEvent(new MouseEvent('mouseup', opts));
-                                btns[b].click();
-                                break;
+                            if (autoUpload) {
+                                runYouTubeAutoUpload(context, webView, skipFlowRouting = true)
                             }
                         }
                     }
-                }, 500);
-
-                return 'SUBMITTED_OK_TYPED_LEN:' + finalVal.length;
-            })();
-        """.trimIndent()
-        webView.evaluateJavascript(js) { res ->
-            if (cont.isActive) cont.resume(res?.trim('"') ?: "ERR")
+                    currentEp++
+                    delay(3000)
+                }
+                updateStatus("Pipeline Complete!", "HAPPY")
+                log("[Pipeline] All scheduled episodes completed successfully.")
+            } catch (e: Exception) {
+                log("[Error] Pipeline exception: ${e.message}")
+                updateStatus("Pipeline Error", "ERROR")
+            } finally {
+                isRunning = false
+            }
         }
     }
 
-    private fun copyToClipboard(context: Context, text: String) {
-        (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("ai_title", text))
+    suspend fun runYouTubeAutoUpload(
+        context: Context,
+        webView: WebView,
+        skipFlowRouting: Boolean = false
+    ) = withContext(Dispatchers.Main) {
+        val nextItem = VideoQueueManager.getNextVideoForUpload(context)
+        if (nextItem == null) {
+            log("[Upload] No queued videos found for YouTube upload.")
+            return@withContext
+        }
+
+        val localCache = VideoQueueManager.ensureLocalCacheFile(context, nextItem)
+        if (localCache == null || !localCache.exists()) {
+            log("[Upload] Failed to stage video file for upload: ${nextItem.displayName}")
+            return@withContext
+        }
+
+        log("[Upload] Extracting HD frames for Vision SEO analysis...")
+        updateStatus("Vision SEO Analysis", "SEARCHING")
+
+        val seoMeta = GeminiBrain.generateYouTubeMetadataWithVision(
+            context = context,
+            videoFile = localCache,
+            storyTopicHint = nextItem.displayName,
+            episodeNumber = 1
+        )
+
+        log("[SEO Title] ${seoMeta.title}")
+        log("[SEO Tags] ${seoMeta.tags.joinToString(", ")}")
+
+        if (!skipFlowRouting) {
+            webView.loadUrl("https://studio.youtube.com")
+            delay(5000)
+        }
+
+        updateStatus("Uploading to YouTube", "UPLOADING")
+        log("[Upload] Automated YouTube Studio upload sequence ready for: ${nextItem.displayName}")
+        VideoQueueManager.markVideoAsUploaded(context, nextItem)
+        updateStatus("Upload Ready", "HAPPY")
     }
 
-    private fun launchYouTubeWithVideo(context: Context, videoFile: File) {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", videoFile)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "video/*"
-            setPackage("com.google.android.youtube")
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    private suspend fun downloadBytesFromUrl(url: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder().url(url).build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    return@withContext resp.body?.bytes()
+                }
+            }
+        } catch (_: Exception) {
         }
-        try { context.startActivity(intent) } catch (_: Exception) {}
+        return@withContext null
     }
 }
