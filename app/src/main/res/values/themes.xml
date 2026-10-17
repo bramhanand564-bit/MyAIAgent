@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.AuraDroid" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#3B82F6</item>
-        <item name="colorPrimaryVariant">#2563EB</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="colorSecondary">#10B981</item>
-        <item name="android:statusBarColor">#121316</item>
-        <item name="android:navigationBarColor">#181A20</item>
-        <item name="android:windowBackground">#121316</item>
+    <style name="Theme.AuraDroidOS" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#38BDF8</item>
+        <item name="colorPrimaryVariant">#0284C7</item>
+        <item name="colorSecondary">#2DD4BF</item>
+        <item name="android:statusBarColor">#070B14</item>
+        <item name="android:navigationBarColor">#070B14</item>
+        <item name="android:windowBackground">#070B14</item>
     </style>
 </resources>
