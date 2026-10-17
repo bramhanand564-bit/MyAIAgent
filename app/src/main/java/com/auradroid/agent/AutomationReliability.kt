@@ -166,7 +166,7 @@ object AutomationReliability {
         try {
             db.rawQuery("SELECT fact_text FROM personal_memories ORDER BY timestamp DESC LIMIT 20", null).use { cursor ->
                 while (cursor.moveToNext()) {
-                    sb.append("• \${cursor.getString(0)}\n")
+                    sb.append("• ${cursor.getString(0)}\n")
                 }
             }
         } catch (_: Exception) {
