@@ -34,7 +34,89 @@ class AutoTouchService : AccessibilityService() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        event ?: return
+        if (!AutomationReliability.isPassiveTeachModeEnabled(this)) return
+
+        val packageName = event.packageName?.toString().orEmpty()
+        if (packageName.isBlank() || packageName == this.packageName) return
+        val eventKind = when (event.eventType) {
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> "VIEW_CLICKED"
+            AccessibilityEvent.TYPE_VIEW_SELECTED -> "VIEW_SELECTED"
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> "VIEW_SCROLLED"
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "WINDOW_STATE_CHANGED"
+            else -> return
+        }
+
+        val source = event.source
+        var root: AccessibilityNodeInfo? = null
+        try {
+            root = rootInActiveWindow
+            val node = source ?: root ?: return
+            // Never learn typed contents from password, editable, email, phone, or payment fields.
+            val sourceClass = node.className?.toString().orEmpty()
+            val rawLabel = (node.text?.toString().orEmpty() + " " +
+                node.contentDescription?.toString().orEmpty()).trim()
+            val sensitive = node.isPassword || node.isEditable ||
+                sourceClass.contains("EditText", ignoreCase = true) ||
+                Regex("(?i)(password|passcode|\\bpin\\b|\\botp\\b|email|phone|bank|account number|credit card|debit card|cvv|security code)")
+                    .containsMatchIn(rawLabel)
+            if (sensitive) return
+
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            if (rect.width() <= 0 || rect.height() <= 0) return
+            val centerX = (rect.left + rect.right) / 2f
+            val centerY = (rect.top + rect.bottom) / 2f
+            val safeLabel = rawLabel.replace(Regex("\\s+"), " ").take(80)
+            val screenSignature = buildPrivacySafeScreenSignature(root ?: node)
+            AutomationReliability.recordShadowTeachEvent(
+                context = this,
+                packageName = packageName,
+                eventType = eventKind,
+                screenSignature = screenSignature,
+                boundsText = "${rect.left},${rect.top},${rect.right},${rect.bottom}",
+                centerX = centerX,
+                centerY = centerY,
+                labelText = safeLabel
+            )
+        } catch (_: Exception) {
+            // Passive training is best-effort and must never interrupt normal accessibility.
+        } finally {
+            try { source?.recycle() } catch (_: Exception) {}
+            try { root?.recycle() } catch (_: Exception) {}
+        }
+    }
+
+    private fun buildPrivacySafeScreenSignature(root: AccessibilityNodeInfo): String {
+        val fragments = mutableListOf<String>()
+        fun walk(node: AccessibilityNodeInfo?, depth: Int) {
+            if (node == null || depth > 7 || fragments.size >= 40) return
+            fragments.add(node.className?.toString().orEmpty())
+            fragments.add(if (node.isClickable) "click" else "")
+            fragments.add(if (node.isScrollable) "scroll" else "")
+            if (!node.isPassword && !node.isEditable) {
+                val label = (node.text?.toString().orEmpty() + " " +
+                    node.contentDescription?.toString().orEmpty()).trim()
+                if (label.isNotBlank() &&
+                    !Regex("(?i)(password|passcode|\\bpin\\b|\\botp\\b|email|phone|bank|account number|credit card|debit card|cvv|security code)")
+                        .containsMatchIn(label)) {
+                    // Keep only a hash: raw screen text is never written to training storage.
+                    fragments.add(label.hashCode().toString())
+                }
+            }
+            for (i in 0 until node.childCount) {
+                if (fragments.size >= 40) break
+                val child = try { node.getChild(i) } catch (_: Exception) { null }
+                try { walk(child, depth + 1) } finally {
+                    try { child?.recycle() } catch (_: Exception) {}
+                }
+            }
+        }
+        walk(root, 0)
+        return "${root.packageName ?: "unknown"}:${fragments.joinToString("|").hashCode().toUInt().toString(16)}"
+    }
+
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
