@@ -896,44 +896,6 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
         }
     }
 
-    fun saveLearningKeyframe(
-        context: Context,
-        appNameOrPackage: String,
-        bitmap: Bitmap,
-        frameIndex: Int
-    ): String? {
-        val folder = appMemoryFolder(context, appNameOrPackage)
-        val destination = File(folder, "training_frame_${System.currentTimeMillis()}_${frameIndex.coerceAtLeast(0)}.jpg")
-        return if (saveBitmapJpeg(bitmap, destination)) destination.absolutePath else null
-    }
-
-    fun saveVideoTrainingRecord(
-        context: Context,
-        appNameOrPackage: String,
-        userDescription: String,
-        analysis: String,
-        keyframePaths: List<String>
-    ): Boolean {
-        val folder = appMemoryFolder(context, appNameOrPackage)
-        val stamp = System.currentTimeMillis()
-        return try {
-            val paths = JSONArray()
-            keyframePaths.take(12).forEach { paths.put(File(it).name) }
-            val record = JSONObject()
-                .put("actor", "VIDEO_TRAINING")
-                .put("app", appNameOrPackage.take(200))
-                .put("userDescription", userDescription.take(1200))
-                .put("analysis", analysis.take(12000))
-                .put("keyframes", paths)
-                .put("createdAt", stamp)
-            File(folder, "video_training_${stamp}.json").writeText(record.toString(2), Charsets.UTF_8)
-            recordSuccessfulLesson(context, userDescription, appNameOrPackage, analysis)
-            true
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     /**
      * Loads a small set of old correction frames only when a caller detects a stall.
      * Callers own and must recycle returned bitmaps.
