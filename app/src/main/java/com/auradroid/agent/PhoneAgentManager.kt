@@ -178,6 +178,7 @@ object PhoneAgentManager {
                 val saved = AutomationReliability.saveHumanCorrection(
                     context = context.applicationContext,
                     packageName = packageName,
+                    taskGoal = activeGoal,
                     beforeScreenshot = before,
                     targetCenterX = centerX,
                     targetCenterY = centerY,
@@ -225,21 +226,36 @@ object PhoneAgentManager {
         val goal = activeGoal
         scope.launch {
             try {
-                val analysis = GeminiBrain.analyzeTrainingVideoFrames(
+                // Prefer the existing database-backed analyzer so it can compare every stored
+                // BEFORE and AFTER correction image for this app, in chronological order.
+                val databaseAnalysis = AutomationReliability.analyzeHumanCorrectionsAndSaveGoldenFix(
                     context = context.applicationContext,
-                    appName = appName,
-                    userDescription = "Completed task: $goal. Completion evidence: $completionReason. " +
-                        "Human correction details: $notes",
-                    frames = frames
+                    packageName = appName,
+                    taskGoal = goal
                 )
+                val analysis = if (databaseAnalysis.isNotBlank()) {
+                    databaseAnalysis
+                } else {
+                    // If the local memory database is unavailable, still use the in-memory
+                    // screenshots from this task rather than losing the learned correction.
+                    GeminiBrain.analyzeTrainingVideoFrames(
+                        context = context.applicationContext,
+                        appName = appName,
+                        userDescription = "Completed task: $goal. Completion evidence: $completionReason. " +
+                            "Human correction details: $notes",
+                        frames = frames
+                    )
+                }
                 val saved = AutomationReliability.saveGoldenFix(
-                    context.applicationContext,
-                    appName,
-                    goal,
-                    analysis
+                    context = context.applicationContext,
+                    appNameOrPackage = appName,
+                    goal = goal,
+                    analysis = analysis
                 )
-                emitLog(if (saved) "[Memory] Post-task Golden Fix saved for $appName."
-                    else "[Memory] Post-task analysis ran but Golden Fix could not be saved.")
+                emitLog(
+                    if (saved) "[Memory] Post-task Golden Fix saved for $appName."
+                    else "[Memory] Post-task analysis ran but Golden Fix could not be saved."
+                )
             } catch (error: Exception) {
                 emitLog("[Memory] Post-task Golden Fix analysis failed: ${error.message ?: "unknown error"}")
             } finally {
