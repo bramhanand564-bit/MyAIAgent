@@ -85,6 +85,51 @@ object PhoneAgentManager {
         }
     }
 
+    /**
+     * Safety gate for the irreversible final YouTube action.
+     * Review Mode must never press Publish. Auto-Publish is allowed only when the
+     * accessibility tree explicitly exposes Public as selected/checked.
+     */
+    private fun guardYouTubePublishClick(
+        context: Context,
+        goal: String,
+        action: String,
+        x: Float,
+        y: Float,
+        uiTree: String
+    ): String? {
+        if (action != "CLICK" || !NativeYouTubeUploader.isYouTubeAutomationGoal(goal)) return null
+
+        val nodePattern = Regex(
+            """(?:BTN|TXT|INPUT)\["(.*?)"\]@\((-?[0-9.]+),(-?[0-9.]+)\) selected=(true|false) checked=(true|false)"""
+        )
+        val nearest = nodePattern.findAll(uiTree).mapNotNull { match ->
+            val label = match.groupValues[1]
+            val cx = match.groupValues[2].toFloatOrNull() ?: return@mapNotNull null
+            val cy = match.groupValues[3].toFloatOrNull() ?: return@mapNotNull null
+            val distance = kotlin.math.hypot((cx - x).toDouble(), (cy - y).toDouble())
+            Triple(label, distance, match.groupValues)
+        }.minByOrNull { it.second } ?: return null
+
+        val label = nearest.first
+        // Only protect clearly labeled final actions; intermediate Next/Continue steps remain available.
+        if (!Regex("""\b(publish|post now)\b""", RegexOption.IGNORE_CASE).containsMatchIn(label)) return null
+        if (!NativeYouTubeUploader.isAutoPublishPublicEnabled(context)) {
+            return "Review Mode blocked the final Publish/Post action. The video has not been published by Nax Bot."
+        }
+
+        val publicSelected = nodePattern.findAll(uiTree).any { match ->
+            val visibleLabel = match.groupValues[1]
+            val selected = match.groupValues[4].equals("true", ignoreCase = true)
+            val checked = match.groupValues[5].equals("true", ignoreCase = true)
+            visibleLabel.contains("public", ignoreCase = true) && (selected || checked)
+        }
+        if (!publicSelected) {
+            return "Public visibility could not be verified from the live Accessibility UI tree. Publish was blocked; review YouTube visibility manually."
+        }
+        return null
+    }
+
     private fun sampledFingerprint(bitmap: Bitmap?): Int? {
         if (bitmap == null || bitmap.isRecycled || bitmap.width < 1 || bitmap.height < 1) return null
         return try {
@@ -398,6 +443,27 @@ object PhoneAgentManager {
                     val y = decision.y.coerceIn(0.5f, (screenHeight - 0.5f).coerceAtLeast(0.5f))
                     val endX = decision.endX.coerceIn(0.5f, (screenWidth - 0.5f).coerceAtLeast(0.5f))
                     val endY = decision.endY.coerceIn(0.5f, (screenHeight - 0.5f).coerceAtLeast(0.5f))
+                    val publishGuardMessage = guardYouTubePublishClick(
+                        context = context.applicationContext,
+                        goal = goal,
+                        action = action,
+                        x = x,
+                        y = y,
+                        uiTree = uiTree
+                    )
+                    if (!publishGuardMessage.isNullOrBlank()) {
+                        completionReason = publishGuardMessage
+                        emitLog("[YouTube Guard] $publishGuardMessage")
+                        emitStatus("YouTube needs review", "ERROR")
+                        try {
+                            onTaskCompletion?.invoke(activeGoal, completionReason, uiTree)
+                        } catch (callbackError: Exception) {
+                            emitLog("[VLA] Completion-report callback failed: ${callbackError.message ?: "unknown error"}")
+                        }
+                        scheduleGoldenFixAnalysis(context, completionReason)
+                        break
+                    }
+
                     emitLog("[VLA] $action at (${x.toInt()}, ${y.toInt()}): ${decision.reason}")
 
                     val succeeded = when (action) {
