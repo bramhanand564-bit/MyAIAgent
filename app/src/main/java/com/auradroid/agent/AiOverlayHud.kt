@@ -20,6 +20,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.webkit.WebView
 import android.widget.Button
 import android.widget.FrameLayout
@@ -781,44 +782,131 @@ class NaxBotFaceView(context: Context) : View(context) {
 
 class TapRippleOverlayView(context: Context) : View(context) {
 
-    private val tapPoint = PointF(-100f, -100f)
-    private var rippleProgress: Float = 0f
-    private var tapLabel: String = ""
+    private val handPoint = PointF(-100f, -100f)
+    private val trailPoints = ArrayDeque<PointF>()
+    private var rippleProgress = 0f
+    private var holdProgress = 0f
+    private var handScale = 1f
+    private var actionMode = "TAP"
+    private var tapLabel = ""
+    private var handColor = Color.parseColor("#38BDF8")
     private var activeAnimator: ValueAnimator? = null
+    private var glideAnimator: ValueAnimator? = null
+    private var handScaleAnimator: ValueAnimator? = null
+    private var trailAnimator: ValueAnimator? = null
 
-    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#6638BDF8")
+        style = Paint.Style.STROKE
+        strokeWidth = 13f
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#38BDF8")
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+    }
+    private val palmPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#F8FAFC")
+        style = Paint.Style.FILL
+    }
+    private val fingerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#F8FAFC")
+        style = Paint.Style.FILL
+    }
+    private val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#38BDF8")
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+    }
+    private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#38BDF8")
+        style = Paint.Style.STROKE
+        strokeWidth = 9f
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val holdArcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#38BDF8")
         style = Paint.Style.STROKE
         strokeWidth = 6f
+        strokeCap = Paint.Cap.ROUND
     }
-
-    private val centerDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#2DD4BF")
-        style = Paint.Style.FILL
-    }
-
     private val labelBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#D90F172A")
         style = Paint.Style.FILL
     }
-
     private val labelTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textSize = 28f
     }
+    private val palmRect = RectF()
 
     fun triggerTapRipple(x: Float, y: Float, label: String, colorHex: String) {
-        tapPoint.set(x, y)
         tapLabel = label.take(28)
-        try {
-            ringPaint.color = Color.parseColor(colorHex)
-        } catch (_: Exception) {
-            ringPaint.color = Color.parseColor("#38BDF8")
-        }
+        handColor = try { Color.parseColor(colorHex) } catch (_: Exception) { Color.parseColor("#38BDF8") }
+        actionMode = if (label.contains("HOLD", true)) "HOLD" else if (label.contains("SWIPE", true)) "SWIPE" else "TAP"
+        animateHandTo(x, y, actionMode)
+        if (actionMode == "TAP") startTapAnimation()
+        invalidate()
+    }
 
-        activeAnimator?.cancel()
-        activeAnimator = ValueAnimator.ofFloat(0.1f, 1.0f).apply {
-            duration = 650L
+    fun animateHandTo(x: Float, y: Float, mode: String = "TAP") {
+        actionMode = mode.uppercase(Locale.US)
+        tapLabel = mode.take(28)
+        glideAnimator?.cancel()
+        val fromX = if (handPoint.x < 0f) x else handPoint.x
+        val fromY = if (handPoint.y < 0f) y else handPoint.y
+        glideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 240L
+            interpolator = OvershootInterpolator(0.8f)
+            addUpdateListener { animator ->
+                val t = animator.animatedValue as Float
+                handPoint.set(fromX + (x - fromX) * t, fromY + (y - fromY) * t)
+                invalidate()
+            }
+            start()
+        }
+        if (actionMode == "HOLD") {
+            handScale = 0.82f
+            holdProgress = 0f
+            activeAnimator?.cancel()
+            activeAnimator = ValueAnimator.ofFloat(0f, 360f).apply {
+                duration = 750L
+                addUpdateListener {
+                    holdProgress = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+        } else if (actionMode == "TAP") {
+            startTapAnimation()
+        }
+    }
+
+    fun animateSwipe(startX: Float, startY: Float, endX: Float, endY: Float) {
+        actionMode = "SWIPE"
+        tapLabel = "SWIPE"
+        trailPoints.clear()
+        trailPoints.add(PointF(startX, startY))
+        glideAnimator?.cancel()
+        glideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 320L
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener {
+                val t = it.animatedValue as Float
+                val x = startX + (endX - startX) * t
+                val y = startY + (endY - startY) * t
+                handPoint.set(x, y)
+                trailPoints.add(PointF(x, y))
+                while (trailPoints.size > 18) trailPoints.removeFirst()
+                invalidate()
+            }
+            start()
+        }
+        trailAnimator?.cancel()
+        trailAnimator = ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 420L
             addUpdateListener {
                 rippleProgress = it.animatedValue as Float
                 invalidate()
@@ -827,32 +915,124 @@ class TapRippleOverlayView(context: Context) : View(context) {
         }
     }
 
+    private fun startTapAnimation() {
+        actionMode = "TAP"
+        rippleProgress = 0f
+        activeAnimator?.cancel()
+        activeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 650L
+            addUpdateListener {
+                rippleProgress = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+        handScaleAnimator?.cancel()
+        handScaleAnimator = ValueAnimator.ofFloat(1f, 0.80f, 1f).apply {
+            duration = 220L
+            addUpdateListener {
+                handScale = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
     fun clearRipples() {
         activeAnimator?.cancel()
+        glideAnimator?.cancel()
+        handScaleAnimator?.cancel()
+        trailAnimator?.cancel()
         rippleProgress = 0f
-        tapPoint.set(-100f, -100f)
+        holdProgress = 0f
+        handScale = 1f
+        handPoint.set(-100f, -100f)
+        trailPoints.clear()
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (rippleProgress <= 0.01f || (tapPoint.x < 0f)) return
-
-        val alpha = ((1.0f - rippleProgress) * 255).toInt().coerceIn(0, 255)
-        ringPaint.alpha = alpha
-        centerDotPaint.alpha = alpha
-
-        val radius = 18f + (rippleProgress * 64f)
-        canvas.drawCircle(tapPoint.x, tapPoint.y, radius, ringPaint)
-        canvas.drawCircle(tapPoint.x, tapPoint.y, 10f, centerDotPaint)
-
-        if (tapLabel.isNotBlank()) {
-            val textWidth = labelTextPaint.measureText(tapLabel)
-            val left = (tapPoint.x - textWidth / 2f - 14f).coerceAtLeast(10f)
-            val top = (tapPoint.y - radius - 48f).coerceAtLeast(20f)
-            val rect = RectF(left, top, left + textWidth + 28f, top + 40f)
-            canvas.drawRoundRect(rect, 12f, 12f, labelBgPaint)
-            canvas.drawText(tapLabel, left + 14f, top + 29f, labelTextPaint)
+        if (handPoint.x < 0f || handPoint.y < 0f) return
+        when (actionMode) {
+            "SWIPE" -> drawCometTrail(canvas)
+            "HOLD" -> drawHoldProgress(canvas)
+            else -> drawTapRipples(canvas)
         }
+        drawBaymaxHand(canvas)
+        if (tapLabel.isNotBlank()) drawLabel(canvas)
+    }
+
+    private fun drawBaymaxHand(canvas: Canvas) {
+        val save = canvas.save()
+        canvas.scale(handScale, handScale, handPoint.x, handPoint.y)
+        val palmWidth = 54f
+        val palmHeight = 48f
+        val fingerWidth = 14f
+        val fingerHeight = 29f
+        val left = handPoint.x - palmWidth / 2f
+        val top = handPoint.y - 6f
+        val right = handPoint.x + palmWidth / 2f
+        val bottom = top + palmHeight
+
+        val fingers = arrayOf(
+            RectF(left + 4f, top - fingerHeight + 8f, left + 4f + fingerWidth, top + 13f),
+            RectF(handPoint.x - fingerWidth / 2f, top - fingerHeight, handPoint.x + fingerWidth / 2f, top + 12f),
+            RectF(right - 4f - fingerWidth, top - fingerHeight + 7f, right - 4f, top + 13f)
+        )
+        fingers.forEach { rect ->
+            canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, glowPaint)
+            canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, fingerPaint)
+            canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, outlinePaint)
+        }
+
+        palmRect.set(left, top, right, bottom)
+        canvas.drawRoundRect(palmRect, 23f, 23f, glowPaint)
+        canvas.drawRoundRect(palmRect, 23f, 23f, palmPaint)
+        canvas.drawRoundRect(palmRect, 23f, 23f, outlinePaint)
+
+        val thumb = RectF(left - 8f, top + 13f, left + 13f, top + 33f)
+        canvas.drawRoundRect(thumb, 10f, 10f, palmPaint)
+        canvas.drawRoundRect(thumb, 10f, 10f, outlinePaint)
+        canvas.restoreToCount(save)
+    }
+
+    private fun drawTapRipples(canvas: Canvas) {
+        if (rippleProgress <= 0.01f) return
+        for (ring in 0..2) {
+            val progress = ((rippleProgress + ring * 0.22f) % 1f)
+            val radius = 18f + progress * 76f
+            ripplePaint.alpha = ((1f - progress) * 220f).toInt().coerceIn(0, 220)
+            ripplePaint.strokeWidth = 4f - progress * 1.5f
+            canvas.drawCircle(handPoint.x, handPoint.y, radius, ripplePaint)
+        }
+    }
+
+    private fun drawHoldProgress(canvas: Canvas) {
+        val radius = 47f
+        val rect = RectF(handPoint.x - radius, handPoint.y - radius, handPoint.x + radius, handPoint.y + radius)
+        holdArcPaint.alpha = 235
+        canvas.drawArc(rect, -90f, holdProgress.coerceIn(0f, 360f), false, holdArcPaint)
+    }
+
+    private fun drawCometTrail(canvas: Canvas) {
+        if (trailPoints.size < 2) return
+        val points = trailPoints.toList()
+        for (index in 1 until points.size) {
+            val p0 = points[index - 1]
+            val p1 = points[index]
+            trailPaint.alpha = (40 + 200 * index / points.size).coerceIn(0, 240)
+            trailPaint.strokeWidth = 2f + 7f * index / points.size
+            canvas.drawLine(p0.x, p0.y, p1.x, p1.y, trailPaint)
+        }
+    }
+
+    private fun drawLabel(canvas: Canvas) {
+        val textWidth = labelTextPaint.measureText(tapLabel)
+        val left = (handPoint.x - textWidth / 2f - 14f).coerceIn(8f, (width - textWidth - 36f).coerceAtLeast(8f))
+        val top = (handPoint.y - 105f).coerceAtLeast(12f)
+        val rect = RectF(left, top, left + textWidth + 28f, top + 40f)
+        canvas.drawRoundRect(rect, 12f, 12f, labelBgPaint)
+        canvas.drawText(tapLabel, left + 14f, top + 29f, labelTextPaint)
     }
 }
