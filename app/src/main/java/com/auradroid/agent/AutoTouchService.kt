@@ -209,6 +209,103 @@ class AutoTouchService : AccessibilityService() {
         }
     }
 
+    fun findBottomNodeCenterByExactLabel(
+        label: String,
+        minimumTopFraction: Float = 0.65f
+    ): PointCenter? {
+        val target = label.trim().lowercase(Locale.US)
+        if (target.isBlank()) return null
+        val root = rootInActiveWindow ?: return null
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        fun findBottom(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
+            if (node == null || depth > 14) return null
+            val text = node.text?.toString().orEmpty().trim().lowercase(Locale.US)
+            val desc = node.contentDescription?.toString().orEmpty().trim().lowercase(Locale.US)
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            val matches = text == target || desc == target
+            if (matches && rect.top >= screenHeight * minimumTopFraction &&
+                rect.width() > 8 && rect.height() > 8) {
+                return AccessibilityNodeInfo.obtain(node)
+            }
+            for (index in 0 until node.childCount) {
+                val child = try { node.getChild(index) } catch (_: Exception) { null }
+                if (child != null) {
+                    try {
+                        val found = findBottom(child, depth + 1)
+                        if (found != null) return found
+                    } finally {
+                        child.recycle()
+                    }
+                }
+            }
+            return null
+        }
+        return try {
+            val node = findBottom(root, 0) ?: return null
+            try {
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.width() <= 0 || rect.height() <= 0) null
+                else PointCenter((rect.left + rect.right) / 2f, (rect.top + rect.bottom) / 2f)
+            } finally {
+                node.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    fun clickBottomExactLabel(
+        label: String,
+        minimumTopFraction: Float = 0.65f
+    ): Boolean {
+        val target = label.trim().lowercase(Locale.US)
+        if (target.isBlank()) return false
+        val root = rootInActiveWindow ?: return false
+        val (_, screenHeight) = getRealScreenDimensions()
+        fun findBottom(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
+            if (node == null || depth > 14) return null
+            val text = node.text?.toString().orEmpty().trim().lowercase(Locale.US)
+            val desc = node.contentDescription?.toString().orEmpty().trim().lowercase(Locale.US)
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            if ((text == target || desc == target) &&
+                rect.top >= screenHeight * minimumTopFraction &&
+                rect.width() > 8 && rect.height() > 8) {
+                return AccessibilityNodeInfo.obtain(node)
+            }
+            for (index in 0 until node.childCount) {
+                val child = try { node.getChild(index) } catch (_: Exception) { null }
+                if (child != null) {
+                    try {
+                        val found = findBottom(child, depth + 1)
+                        if (found != null) return found
+                    } finally {
+                        child.recycle()
+                    }
+                }
+            }
+            return null
+        }
+        try {
+            val node = findBottom(root, 0) ?: return false
+            try {
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                val cx = (rect.left + rect.right) / 2f
+                val cy = (rect.top + rect.bottom) / 2f
+                AiOverlayHud.moveBotAndShowTap(cx, cy, label.take(18))
+                if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                return performHumanTap(cx, cy, GESTURE_TAP_MS)
+            } finally {
+                node.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
     private fun findExactNodeRecursive(
         node: AccessibilityNodeInfo?,
         labels: Set<String>,
