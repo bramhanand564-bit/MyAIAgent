@@ -1,7 +1,6 @@
 package com.auradroid.agent
 
 import android.app.AlarmManager
-import android.app.BroadcastOptions
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -128,7 +127,7 @@ class DailyYouTubeUploadReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.stat_sys_upload)
+            .setSmallIcon(context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_menu_upload)
             .setContentTitle("Nax Bot • Daily YouTube Upload")
             .setContentText("Your next queued video is ready. Tap to prepare it with vision SEO.")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
