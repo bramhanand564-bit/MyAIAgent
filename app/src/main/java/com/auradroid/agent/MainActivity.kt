@@ -17,7 +17,6 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.speech.tts.TextToSpeech
-import android.speech.tts.TextToSpeech
 import android.view.MotionEvent
 import android.view.View
 import android.webkit.CookieManager
