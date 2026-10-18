@@ -59,8 +59,7 @@ class AutoTouchService : AccessibilityService() {
                 node.contentDescription?.toString().orEmpty()).trim()
             val sensitive = node.isPassword || node.isEditable ||
                 sourceClass.contains("EditText", ignoreCase = true) ||
-                Regex("(?i)(password|passcode|\\bpin\\b|\\botp\\b|email|phone|bank|account number|credit card|debit card|cvv|security code)")
-                    .containsMatchIn(rawLabel)
+                containsSensitiveLabel(rawLabel)
             if (sensitive) return
 
             val rect = Rect()
@@ -99,8 +98,7 @@ class AutoTouchService : AccessibilityService() {
                 val label = (node.text?.toString().orEmpty() + " " +
                     node.contentDescription?.toString().orEmpty()).trim()
                 if (label.isNotBlank() &&
-                    !Regex("(?i)(password|passcode|\\bpin\\b|\\botp\\b|email|phone|bank|account number|credit card|debit card|cvv|security code)")
-                        .containsMatchIn(label)) {
+                    !containsSensitiveLabel(label)) {
                     // Keep only a hash: raw screen text is never written to training storage.
                     fragments.add(label.hashCode().toString())
                 }
@@ -114,7 +112,7 @@ class AutoTouchService : AccessibilityService() {
             }
         }
         walk(root, 0)
-        return "${root.packageName ?: "unknown"}:${fragments.joinToString("|").hashCode().toUInt().toString(16)}"
+        return "${root.packageName ?: "unknown"}:${fragments.joinToString(",").hashCode().toUInt().toString(16)}"
     }
 
     fun currentPrivacySafeScreenSignature(): String {
@@ -173,7 +171,7 @@ class AutoTouchService : AccessibilityService() {
             }
             val cx = (rect.left.toFloat() + rect.right.toFloat()) / 2.0f
             val cy = (rect.top.toFloat() + rect.bottom.toFloat()) / 2.0f
-            outLines.add("$tag[\"$label\"]@($cx,$cy)")
+            outLines.add("$tag[\"$label\"]@($cx,$cy) selected=${node.isSelected} checked=${node.isChecked}")
         }
         for (i in 0 until node.childCount) {
             if (outLines.size >= 55) break
@@ -192,6 +190,22 @@ class AutoTouchService : AccessibilityService() {
                     val matched = findNodeByTextRecursive(root, targetText.lowercase(Locale.US))
                     if (matched != null) {
                         try {
+                            val toggleKind = toggleKindForLabel(targetText)
+                            val visibleState = (matched.text?.toString().orEmpty() + " " +
+                                matched.contentDescription?.toString().orEmpty()).lowercase(Locale.US)
+                            val alreadyActive = when (toggleKind) {
+                                "LIKE" -> matched.isSelected || matched.isChecked ||
+                                    visibleState.contains("liked") || visibleState.contains("unlike")
+                                "FOLLOW" -> matched.isSelected || matched.isChecked ||
+                                    visibleState.contains("following") || visibleState.contains("unfollow")
+                                "SUBSCRIBE" -> matched.isSelected || matched.isChecked ||
+                                    visibleState.contains("subscribed") || visibleState.contains("unsubscribe")
+                                else -> false
+                            }
+                            if (toggleKind != null && alreadyActive) {
+                                // Report success without toggling an already-active control off.
+                                return true
+                            }
                             val rect = Rect()
                             matched.getBoundsInScreen(rect)
                             if (rect.width() > 8 && rect.height() > 8) {
@@ -235,6 +249,27 @@ class AutoTouchService : AccessibilityService() {
     }
 
     data class PointCenter(val x: Float, val y: Float)
+
+    private fun containsSensitiveLabel(rawLabel: String): Boolean {
+        val label = rawLabel.lowercase(Locale.US)
+        val sensitiveTerms = listOf(
+            "password", "passcode", "email", "phone", "bank", "account number",
+            "credit card", "debit card", "cvv", "security code"
+        )
+        if (sensitiveTerms.any { label.contains(it) }) return true
+        return Regex("\\bpin\\b").containsMatchIn(label) ||
+            Regex("\\botp\\b").containsMatchIn(label)
+    }
+
+    private fun toggleKindForLabel(rawLabel: String): String? {
+        val label = rawLabel.lowercase(Locale.US)
+        return when {
+            label.contains("like") || label.contains("heart") -> "LIKE"
+            label.contains("follow") -> "FOLLOW"
+            label.contains("subscribe") -> "SUBSCRIBE"
+            else -> null
+        }
+    }
 
     private fun findNodeByTextRecursive(node: AccessibilityNodeInfo?, targetLower: String): AccessibilityNodeInfo? {
         if (node == null || targetLower.isBlank()) return null
