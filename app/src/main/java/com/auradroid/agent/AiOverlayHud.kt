@@ -259,7 +259,13 @@ object AiOverlayHud {
     fun updateTaskProgress(activeStep: String, completed: Int, total: Int) {
         val safeTotal = total.coerceAtLeast(0)
         val safeCompleted = completed.coerceIn(0, safeTotal)
-        updateStatus("$safeCompleted/$safeTotal • ${activeStep.take(24)}",
+        val remaining = (safeTotal - safeCompleted).coerceAtLeast(0)
+        val status = if (safeTotal == 0) {
+            activeStep.take(36)
+        } else {
+            "$safeCompleted/$safeTotal • $remaining left • ${activeStep.take(12)}"
+        }
+        updateStatus(status,
             if (safeCompleted >= safeTotal && safeTotal > 0) "HAPPY" else "WORKING")
     }
 
