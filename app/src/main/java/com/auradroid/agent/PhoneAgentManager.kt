@@ -11,6 +11,11 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
 
+data class PhoneTaskProgressItem(
+    val title: String,
+    val state: String
+)
+
 object PhoneAgentManager {
     private const val PREFS_NAME = "auradroid_phone_calibration_prefs"
     private const val KEY_CALIBRATED_SKILLS = "calibrated_phone_skills_csv"
@@ -20,22 +25,31 @@ object PhoneAgentManager {
     private var isPhoneAgentRunning: Boolean = false
     private var onLog: ((String) -> Unit)? = null
     private var onStatus: ((String, String) -> Unit)? = null
+    private var onProgress: ((String, List<PhoneTaskProgressItem>, Int, Int) -> Unit)? = null
 
     private fun missionStepKind(step: TaskMicroStep): String {
         val title = step.title.uppercase(Locale.US)
         val combined = (step.title + " " + step.goal).lowercase(Locale.US)
         return when {
-            title.contains("SHARE") -> "SHARE_VIDEO"
+            title.contains("BOTTOM SEND") || title.contains("TAP SEND BUTTON") -> "SHARE_SEND"
+            title.contains("SHARE") && (title.contains("FRIEND") || title.contains("RECIPIENT")) -> "SHARE_RECIPIENT"
+            title.contains("CLOSE COMMENTS") || title.contains("CLOSE COMMENT") -> "CLOSE_COMMENTS"
+            title.contains("COMMENTS") && title.contains("POST") -> "COMMENT_VIDEO"
             title.contains("COMMENT") -> "COMMENT_VIDEO"
             title.contains("LIKE") || title.contains("HEART") -> "LIKE_VIDEO"
-            title.contains("PLAY") -> "PLAY_VIDEO"
-            title.contains("SEARCH") || title.contains("FIND") -> "SEARCH"
-            title.contains("OPEN_APP") || title.contains("LAUNCH") -> "OPEN_APP"
-            combined.contains("share with") || combined.contains("send the video") -> "SHARE_VIDEO"
+            title.contains("1ST VIDEO") || title.contains("FIRST VIDEO") || title.contains("PLAY_VIDEO") -> "PLAY_VIDEO"
+            title.contains("TOP SEARCH") || title.contains("SEARCH QUERY") -> "SEARCH_QUERY"
+            title.contains("NAVIGATE") && title.contains("SEARCH") -> "NAVIGATE_SEARCH"
+            title.contains("OPEN INSTAGRAM") || title.contains("OPEN APP") -> "OPEN_APP"
+            combined.contains("bottom send button") -> "SHARE_SEND"
+            combined.contains("share sheet") && combined.contains("select the") -> "SHARE_RECIPIENT"
+            combined.contains("close the comment sheet") -> "CLOSE_COMMENTS"
             combined.contains("comment") -> "COMMENT_VIDEO"
             combined.contains("like the") || combined.contains("heart button") -> "LIKE_VIDEO"
-            combined.contains("play") || combined.contains("playing") -> "PLAY_VIDEO"
-            combined.contains("search") || combined.contains("find") -> "SEARCH"
+            combined.contains("first video") || combined.contains("first matching video") -> "PLAY_VIDEO"
+            combined.contains("search bar") && combined.contains("type exactly") -> "SEARCH_QUERY"
+            combined.contains("navigate to instagram search") -> "NAVIGATE_SEARCH"
+            combined.contains("open the instagram") -> "OPEN_APP"
             else -> "OTHER"
         }
     }
@@ -99,22 +113,82 @@ object PhoneAgentManager {
                 rationale.contains("click the send button")))
     }
 
+    private fun isShareRecipientTarget(targetLabel: String, requestedRecipient: String): Boolean {
+        val label = targetLabel.trim().lowercase(Locale.US)
+        val recipient = requestedRecipient.trim().lowercase(Locale.US)
+        if (label.isBlank() || recipient.isBlank()) return false
+        val shortName = recipient.substringBefore("_").substringBefore(".")
+        return label.contains(recipient) || (shortName.length >= 3 && label.contains(shortName))
+    }
+
     private fun extractCommentText(goal: String): String {
-        val lower = goal.lowercase(Locale.US)
-        val markerIndex = lower.indexOf("comment")
+        val markerIndex = goal.indexOf("comment", ignoreCase = true)
         if (markerIndex >= 0) {
-            val section = goal.substring((markerIndex + "comment".length).coerceAtMost(goal.length))
-            val match = Regex("[\"']([^\"']{1,100})[\"']").find(section)
-            if (!match?.groupValues?.getOrNull(1).isNullOrBlank()) {
-                return match?.groupValues?.getOrNull(1)?.trim().orEmpty()
-            }
+            val commentClause = goal.substring((markerIndex + "comment".length).coerceAtMost(goal.length))
+            val match = Regex("[\\"']([^\\"']{1,100})[\\"']").find(commentClause)
+            val quoted = match?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            if (quoted.isNotBlank()) return quoted
         }
         return if (markerIndex >= 0) "Nice" else ""
+    }
+
+    private fun extractSearchQuery(goal: String): String {
+        val markerIndex = goal.indexOf("search", ignoreCase = true)
+        if (markerIndex < 0) return ""
+        var value = goal.substring((markerIndex + "search".length).coerceAtMost(goal.length)).trim()
+        val first = value.firstOrNull()
+        if (first == '"' || first == '\'') {
+            val end = value.indexOf(first, 1)
+            if (end > 1) return value.substring(1, end).trim()
+        }
+        val stops = listOf(",", " then ", " and then ", " play ", " watch ", " like ", " comment ", " share ")
+        var end = value.length
+        for (stop in stops) {
+            val at = value.indexOf(stop, ignoreCase = true)
+            if (at >= 0 && at < end) end = at
+        }
+        value = value.substring(0, end).trim().trimEnd('.', ':', ';')
+        return value.trim().trim('"', '\'')
+    }
+
+    private fun extractShareTarget(goal: String): String {
+        val markerIndex = goal.indexOf("share with", ignoreCase = true)
+            .takeIf { it >= 0 } ?: goal.indexOf("send to", ignoreCase = true)
+        if (markerIndex < 0) return ""
+        val markerLength = if (goal.regionMatches(markerIndex, "share with", 0, 10, true)) 10 else 7
+        var value = goal.substring((markerIndex + markerLength).coerceAtMost(goal.length)).trim()
+        val first = value.firstOrNull()
+        if (first == '"' || first == '\'') {
+            val end = value.indexOf(first, 1)
+            if (end > 1) return value.substring(1, end).trim()
+        }
+        val stops = listOf(",", ".", ";", " then ", " and then ", " using ")
+        var end = value.length
+        for (stop in stops) {
+            val at = value.indexOf(stop, ignoreCase = true)
+            if (at >= 0 && at < end) end = at
+        }
+        return value.substring(0, end).trim().trim('"', '\'')
     }
 
     fun setListeners(logListener: (String) -> Unit, statusListener: (String, String) -> Unit) {
         onLog = logListener
         onStatus = statusListener
+    }
+
+    fun setProgressListener(
+        listener: ((String, List<PhoneTaskProgressItem>, Int, Int) -> Unit)?
+    ) {
+        onProgress = listener
+    }
+
+    private fun emitMissionProgress(
+        heading: String,
+        steps: List<PhoneTaskProgressItem>,
+        completed: Int,
+        total: Int
+    ) {
+        mainHandler.post { onProgress?.invoke(heading, steps, completed, total) }
     }
 
     private fun emitLog(message: String) {
@@ -149,6 +223,7 @@ object PhoneAgentManager {
         isPhoneAgentRunning = false
         AiOverlayHud.restorePodAfterTextInput()
         AiOverlayHud.setCursorOverlayVisible(false)
+        AiOverlayHud.setPhoneVisionTaskActive(false)
         emitStatus("Phone Agent Idle", "IDLE")
         emitLog("[PhoneAgent] Stopped.")
     }
