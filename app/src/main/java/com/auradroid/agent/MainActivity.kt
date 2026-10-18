@@ -9,12 +9,14 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeech
 import android.view.MotionEvent
 import android.view.View
@@ -39,7 +41,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -158,6 +162,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCopyLogs: Button
     private lateinit var btnClearLogs: Button
     private lateinit var tvConsoleLogs: TextView
+    private lateinit var cbVoiceFeedbackChat: CheckBox
+    private lateinit var cbVoiceFeedbackSettings: CheckBox
+    private var syncingVoiceFeedback = false
+    private var voiceTts: TextToSpeech? = null
 
     private var isDesktopMode: Boolean = false
     private var isLiveTeachRecording: Boolean = false
@@ -261,6 +269,12 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Storage permissions updated!", Toast.LENGTH_SHORT).show()
     }
 
+    private val memoryVideoLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) processMemoryTrainingVideo(uri)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -275,6 +289,7 @@ class MainActivity : AppCompatActivity() {
         setupTabNavigation()
         setupListeners()
         loadInitialState()
+        initializeVoiceFeedback()
 
         handleIncomingScheduledIntent(intent)
     }
@@ -641,6 +656,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         cbVoiceFeedbackChat.setOnCheckedChangeListener { _, enabled ->
+            if (!syncingVoiceFeedback) setVoiceFeedbackEnabled(enabled)
+        }
+        cbVoiceFeedbackSettings.setOnCheckedChangeListener { _, enabled ->
+            if (!syncingVoiceFeedback) setVoiceFeedbackEnabled(enabled)
+        }
+
+        cbVoiceFeedbackChat.setOnCheckedChangeListener { _, enabled ->
             if (!syncingVoiceSettings) setVoiceFeedbackEnabled(enabled, sourceIsChat = true)
         }
         cbVoiceFeedbackSettings.setOnCheckedChangeListener { _, enabled ->
@@ -848,6 +870,15 @@ class MainActivity : AppCompatActivity() {
         btnPickTrainScreenshots.setOnClickListener {
             screenshotTrainerLauncher.launch("image/*")
         }
+        btnPickMemoryVideo.setOnClickListener {
+            val description = etMemoryChatMessage.text.toString().trim()
+            if (description.isBlank()) {
+                etMemoryChatMessage.error = "Describe what this video teaches Nax Bot"
+                etMemoryChatMessage.requestFocus()
+            } else {
+                memoryVideoLauncher.launch("video/mp4")
+            }
+        }
 
         btnStartLiveTeach.setOnClickListener {
             toggleLiveTeachMode()
@@ -1043,6 +1074,193 @@ class MainActivity : AppCompatActivity() {
                         goal = plan.targetGoal
                     )
                 }
+            }
+        }
+    }
+
+
+    private companion object {
+        const val VOICE_PREFS = "auradroid_voice_feedback"
+        const val KEY_VOICE_ENABLED = "voice_feedback_enabled"
+    }
+
+    private fun initializeVoiceFeedback() {
+        voiceTts = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val engine = voiceTts
+                if (engine != null) {
+                    val result = engine.setLanguage(Locale("en", "IN"))
+                    if (result == TextToSpeech.LANG_MISSING_DATA ||
+                        result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        engine.setLanguage(Locale("hi", "IN"))
+                    }
+                }
+            }
+        }
+        if (!isVoiceFeedbackEnabled()) voiceTts?.stop()
+    }
+
+    private fun isVoiceFeedbackEnabled(): Boolean =
+        getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_VOICE_ENABLED, false)
+
+    private fun setVoiceFeedbackEnabled(enabled: Boolean) {
+        getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply()
+        syncingVoiceFeedback = true
+        if (cbVoiceFeedbackChat.isInitialized) cbVoiceFeedbackChat.isChecked = enabled
+        if (cbVoiceFeedbackSettings.isInitialized) cbVoiceFeedbackSettings.isChecked = enabled
+        updateVoiceFeedbackLabels(enabled)
+        syncingVoiceFeedback = false
+        if (enabled) speakVoiceFeedback("Boss, voice feedback on hai.")
+        else voiceTts?.stop()
+    }
+
+    private fun updateVoiceFeedbackLabels(enabled: Boolean) {
+        val label = if (enabled) "🔊 Voice Feedback: ON" else "🔊 Voice Feedback: OFF"
+        if (cbVoiceFeedbackChat.isInitialized) cbVoiceFeedbackChat.text = label
+        if (cbVoiceFeedbackSettings.isInitialized) cbVoiceFeedbackSettings.text = label
+    }
+
+    private fun speakVoiceFeedback(text: String) {
+        if (!isVoiceFeedbackEnabled()) {
+            voiceTts?.stop()
+            return
+        }
+        val clean = text.trim().take(700)
+        if (clean.isBlank()) return
+        mainThreadRun {
+            val engine = voiceTts ?: return@mainThreadRun
+            engine.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "nax_voice_feedback")
+        }
+    }
+
+    private fun speakTaskStatus(status: String) {
+        if (!isVoiceFeedbackEnabled()) {
+            voiceTts?.stop()
+            return
+        }
+        val lower = status.lowercase(Locale.US)
+        val phrase = when {
+            lower.contains("task complete") -> "Boss, task complete ho gaya."
+            lower.contains("accessibility") -> "Boss, AutoTouch accessibility service enable kijiye."
+            lower.contains("error") || lower.contains("stuck") ->
+                "Boss, yahan atak gaya hoon. Aap screen par correction karke madad karein."
+            lower.contains("tapped") -> "Boss, screen par tap kar diya."
+            lower.contains("typed") -> "Boss, text enter kar diya."
+            lower.contains("swiped") -> "Boss, screen scroll kar raha hoon."
+            lower.contains("pressed back") -> "Boss, back ja raha hoon."
+            lower.contains("pressed home") -> "Boss, home screen khol raha hoon."
+            lower.contains("observing") -> "Boss, screen ko dhyan se dekh raha hoon."
+            lower.contains("upload") -> "Boss, upload process chal raha hai."
+            lower.contains("search") -> "Boss, search kar raha hoon."
+            else -> ""
+        }
+        if (phrase.isNotBlank()) speakVoiceFeedback(phrase)
+    }
+
+    private fun mainThreadRun(action: () -> Unit) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) action()
+        else android.os.Handler(android.os.Looper.getMainLooper()).post(action)
+    }
+
+    private fun inferMemoryAppName(description: String): String {
+        val lower = description.lowercase(Locale.US)
+        return when {
+            lower.contains("instagram") || lower.contains("reel") -> "Instagram"
+            lower.contains("youtube") || lower.contains("yt studio") -> "YouTube"
+            lower.contains("whatsapp") || lower.contains("wa ") -> "WhatsApp"
+            lower.contains("telegram") -> "Telegram"
+            lower.contains("chrome") || lower.contains("browser") -> "Chrome"
+            else -> "General"
+        }
+    }
+
+    private fun processMemoryTrainingVideo(uri: Uri) {
+        val description = etMemoryChatMessage.text.toString().trim()
+        if (description.isBlank()) {
+            etMemoryChatMessage.error = "Describe this recording first"
+            return
+        }
+        val appName = inferMemoryAppName(description)
+        btnPickMemoryVideo.isEnabled = false
+        tvMemoryVideoStatus.text = "Reading video metadata and extracting keyframes..."
+        lifecycleScope.launch {
+            var frames = emptyList<android.graphics.Bitmap>()
+            var savedPaths = emptyList<String>()
+            try {
+                frames = withContext(Dispatchers.IO) {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(this@MainActivity, uri)
+                        val durationMs = retriever.extractMetadata(
+                            MediaMetadataRetriever.METADATA_KEY_DURATION
+                        )?.toLongOrNull()?.coerceAtLeast(1L) ?: 1L
+                        val percentages = listOf(8L, 28L, 50L, 72L, 92L)
+                        percentages.mapIndexedNotNull { index, percentage ->
+                            val frameTimeUs = durationMs * 1000L * percentage / 100L
+                            try {
+                                retriever.getFrameAtTime(
+                                    frameTimeUs,
+                                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                                )?.let { bitmap ->
+                                    val path = AutomationReliability.saveLearningKeyframe(
+                                        this@MainActivity,
+                                        appName,
+                                        bitmap,
+                                        index
+                                    )
+                                    if (path != null) {
+                                        synchronized(this@MainActivity) {
+                                            savedPaths = savedPaths + path
+                                        }
+                                    }
+                                    bitmap
+                                }
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    } finally {
+                        try { retriever.release() } catch (_: Exception) {}
+                    }
+                }
+                if (frames.isEmpty()) {
+                    tvMemoryVideoStatus.text = "No readable keyframes found in this video."
+                    return@launch
+                }
+                tvMemoryVideoStatus.text = "Analyzing ${frames.size} keyframes with the high-reasoning model..."
+                val analysis = GeminiBrain.analyzeTrainingVideoFrames(
+                    context = this@MainActivity,
+                    appName = appName,
+                    userDescription = description,
+                    frames = frames
+                )
+                val saved = AutomationReliability.saveVideoTrainingRecord(
+                    context = this@MainActivity,
+                    appNameOrPackage = appName,
+                    userDescription = description,
+                    analysis = analysis,
+                    keyframePaths = savedPaths
+                )
+                tvMemoryVideoStatus.text = if (saved) {
+                    "Learned and saved to Memory/$appName/\n\n$analysis"
+                } else {
+                    "Analysis finished, but memory could not be saved.\n\n$analysis"
+                }
+                appendConsoleLog(if (saved) "[Memory] Video learning stored for $appName."
+                    else "[Memory] Video analyzed but saving failed for $appName.")
+                appendChatLine("🧠 Memory Studio: $analysis")
+                refreshRagVaultViewer()
+                speakVoiceFeedback("Boss, video learning analysis complete ho gaya.")
+            } catch (error: Exception) {
+                tvMemoryVideoStatus.text = "Video learning failed: ${error.message ?: error.javaClass.simpleName}"
+                appendConsoleLog("[Memory] Video learning failed: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                frames.forEach {
+                    try { if (!it.isRecycled) it.recycle() } catch (_: Exception) {}
+                }
+                btnPickMemoryVideo.isEnabled = true
             }
         }
     }
