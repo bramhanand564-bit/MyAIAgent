@@ -331,7 +331,7 @@ object PhoneAgentManager {
                             escalateToPro = false,
                             screenWidthPx = screenWidth,
                             screenHeightPx = screenHeight,
-                            screenCalibration = touchService.getDeviceScreenCalibration()
+                            screenCalibration = touchService.getScreenCalibrationSummary()
                         )
                     } finally {
                         try { if (screenshot != null && !screenshot.isRecycled) screenshot.recycle() } catch (_: Exception) {}
