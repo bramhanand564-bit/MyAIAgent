@@ -13,6 +13,13 @@ Native Android AI phone-automation prototype built with Kotlin. The goal is to l
 - A success report only when the UI gives usable completion evidence.
 - GitHub Actions builds a debug APK artifact.
 
+## Current implementation status
+
+- The public auto-publish switch is OFF by default and requires an explicit confirmation.
+- Review Mode blocks the final Publish/Post action. Auto-Publish also requires Accessibility UI evidence that Public is selected; when this cannot be verified, the agent pauses for review.
+- Gemini metadata generation fails closed instead of substituting a generic made-up title when the model response is invalid.
+- The daily YouTube feature is currently notification-triggered; the user must tap the reminder to start the UI workflow. Fully unattended daily posting and real-device reliability testing remain future milestones.
+
 ## Important limitations
 
 UI automation requires the phone to be on and the relevant app UI to be accessible. A phone powered off cannot perform screen taps. CAPTCHA, 2FA, unexpected permission dialogs or unclear upload results should pause the agent for the user. APK build success does not replace testing on a real Android phone.
