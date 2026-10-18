@@ -16,11 +16,6 @@ data class PhoneTaskProgressItem(
     val state: String
 )
 
-data class PhoneTaskProgressItem(
-    val title: String,
-    val state: String
-)
-
 object PhoneAgentManager {
     private const val PREFS_NAME = "auradroid_phone_calibration_prefs"
     private const val KEY_CALIBRATED_SKILLS = "calibrated_phone_skills_csv"
@@ -122,7 +117,7 @@ object PhoneAgentManager {
         val markerIndex = goal.indexOf("comment", ignoreCase = true)
         if (markerIndex >= 0) {
             val commentClause = goal.substring((markerIndex + "comment".length).coerceAtMost(goal.length))
-            val match = Regex("[\\"']([^\\"']{1,100})[\\"']").find(commentClause)
+            val match = Regex("""["']([^"']{1,100})["']""").find(commentClause)
             val quoted = match?.groupValues?.getOrNull(1)?.trim().orEmpty()
             if (quoted.isNotBlank()) return quoted
         }
