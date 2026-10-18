@@ -1,6 +1,7 @@
 package com.auradroid.agent
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.CancellationException
@@ -9,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /**
@@ -21,6 +23,11 @@ object PhoneAgentManager {
 
     private var agentJob: Job? = null
     @Volatile private var isPhoneAgentRunning = false
+    @Volatile private var taskIsStuck = false
+    @Volatile private var activeTaskGoal: String = ""
+    @Volatile private var activeAppPackage: String = ""
+    @Volatile private var lastHumanCorrectionAt: Long = 0L
+    private var lastObservedFrame: Bitmap? = null
 
     private var onLog: ((String) -> Unit)? = null
     private var onStatus: ((String, String) -> Unit)? = null
@@ -45,10 +52,88 @@ object PhoneAgentManager {
         }
     }
 
+    fun isTaskRunning(): Boolean = isPhoneAgentRunning
+
+    fun isTaskStuck(): Boolean = isPhoneAgentRunning && taskIsStuck
+
+    private fun rememberObservedFrame(bitmap: Bitmap?) {
+        val copy = try {
+            bitmap?.takeUnless { it.isRecycled }?.copy(Bitmap.Config.ARGB_8888, true)
+        } catch (_: Exception) {
+            null
+        }
+        val old = lastObservedFrame
+        lastObservedFrame = copy
+        try { old?.recycle() } catch (_: Exception) {}
+    }
+
+    private fun clearObservedFrame() {
+        val old = lastObservedFrame
+        lastObservedFrame = null
+        try { old?.recycle() } catch (_: Exception) {}
+    }
+
+    /**
+     * Accessibility's TYPE_VIEW_CLICKED event gives the activated node bounds rather than raw
+     * finger coordinates. Persist the bounds center with that limitation made explicit.
+     */
+    fun recordHumanCorrection(
+        context: Context,
+        packageName: String,
+        centerX: Float,
+        centerY: Float,
+        boundsText: String,
+        buttonLabel: String
+    ) {
+        if (!isTaskRunning() || !isTaskStuck()) return
+        val now = System.currentTimeMillis()
+        if (now - lastHumanCorrectionAt < 1500L) return
+        lastHumanCorrectionAt = now
+
+        val before = try {
+            lastObservedFrame?.takeUnless { it.isRecycled }?.copy(Bitmap.Config.ARGB_8888, true)
+        } catch (_: Exception) { null }
+        val goal = activeTaskGoal
+        scope.launch {
+            var after: Bitmap? = null
+            try {
+                delay(450L)
+                after = AutoTouchService.instance?.captureScreenBitmapSuspend()
+                val saved = withContext(Dispatchers.IO) {
+                    AutomationReliability.saveHumanCorrectionEpisode(
+                        context = context.applicationContext,
+                        packageName = packageName,
+                        taskGoal = goal,
+                        beforeFrame = before,
+                        afterFrame = after,
+                        tapX = centerX,
+                        tapY = centerY,
+                        boundsText = boundsText,
+                        buttonLabel = buttonLabel
+                    )
+                }
+                if (saved) {
+                    emitLog("[VisualMemory] Saved HUMAN_CORRECTION for ${packageName} at (${centerX.toInt()}, ${centerY.toInt()}). The coordinate is the accessibility node center.")
+                } else {
+                    emitLog("[VisualMemory] Could not save the human-correction screenshots.")
+                }
+            } catch (error: Exception) {
+                emitLog("[VisualMemory] Capture error: ${error.message ?: error.javaClass.simpleName}")
+            } finally {
+                try { before?.recycle() } catch (_: Exception) {}
+                try { after?.recycle() } catch (_: Exception) {}
+            }
+        }
+    }
+
     fun stopPhoneAgent() {
         isPhoneAgentRunning = false
+        taskIsStuck = false
+        activeTaskGoal = ""
+        activeAppPackage = ""
         agentJob?.cancel()
         agentJob = null
+        clearObservedFrame()
         AiOverlayHud.restorePodAfterTextInput()
         AiOverlayHud.setCursorOverlayVisible(false)
         AiOverlayHud.setPhoneVisionTaskActive(false)
@@ -76,6 +161,11 @@ object PhoneAgentManager {
         }
 
         isPhoneAgentRunning = true
+        taskIsStuck = false
+        activeTaskGoal = goal.trim()
+        activeAppPackage = touchService.currentForegroundPackageName()
+        lastHumanCorrectionAt = 0L
+        clearObservedFrame()
         AiOverlayHud.setCursorOverlayVisible(true)
         AiOverlayHud.setPhoneVisionTaskActive(true)
         AiOverlayHud.collapseToCompactStage()
@@ -85,6 +175,9 @@ object PhoneAgentManager {
         agentJob = scope.launch(Dispatchers.Main) {
             val history = mutableListOf<String>()
             var iteration = 0
+            var lastSignature = ""
+            var repeatedScreenCount = 0
+            var memoryLoadedForSignature = ""
 
             try {
                 while (isPhoneAgentRunning) {
@@ -92,11 +185,43 @@ object PhoneAgentManager {
                     emitStatus("Observing screen • $iteration", "THINKING")
 
                     val screenshot = touchService.captureScreenBitmapSuspend()
+                    if (screenshot != null) rememberObservedFrame(screenshot)
                     val uiTree = touchService.dumpUiTreeSummary()
                     val dimensions = touchService.getRealScreenDimensions()
                     val screenWidth = dimensions.first.toInt().coerceAtLeast(1)
                     val screenHeight = dimensions.second.toInt().coerceAtLeast(1)
+                    val screenSignature = touchService.currentPrivacySafeScreenSignature()
+                    if (screenSignature.isNotBlank() && screenSignature == lastSignature) {
+                        repeatedScreenCount += 1
+                    } else {
+                        repeatedScreenCount = 0
+                        taskIsStuck = false
+                        memoryLoadedForSignature = ""
+                    }
+                    if (screenSignature.isNotBlank()) lastSignature = screenSignature
+                    if (repeatedScreenCount >= 3) {
+                        taskIsStuck = true
+                    }
 
+                    val ragLessons = if (taskIsStuck) {
+                        if (memoryLoadedForSignature.isBlank()) {
+                            memoryLoadedForSignature = withContext(Dispatchers.IO) {
+                                AutomationReliability.retrieveVisualMemoryForStuck(
+                                    context.applicationContext,
+                                    touchService.currentForegroundPackageName(),
+                                    goal
+                                )
+                            }
+                            if (memoryLoadedForSignature.isNotBlank()) {
+                                emitLog("[VisualMemory] Loaded app-specific Golden Fix because the screen appears stuck.")
+                            }
+                        }
+                        memoryLoadedForSignature
+                    } else {
+                        ""
+                    }
+
+                    val calibration = touchService.getScreenCalibrationSummary()
                     val decision = try {
                         GeminiBrain.decideNextUiAction(
                             context = context,
@@ -104,10 +229,11 @@ object PhoneAgentManager {
                             uiTreeSummary = uiTree,
                             screenshot = screenshot,
                             historySummary = history.takeLast(5).joinToString("\n"),
-                            ragLessons = "",
+                            ragLessons = ragLessons,
                             escalateToPro = false,
                             screenWidthPx = screenWidth,
-                            screenHeightPx = screenHeight
+                            screenHeightPx = screenHeight,
+                            screenCalibration = calibration
                         )
                     } finally {
                         try {
@@ -123,6 +249,19 @@ object PhoneAgentManager {
                         history.add("DONE: ${decision.reason}")
                         emitLog("[VLA] Goal completed by visual assessment: ${decision.reason}")
                         emitStatus("Task Complete!", "HAPPY")
+                        val completedPackage = touchService.currentForegroundPackageName()
+                            .ifBlank { activeAppPackage }
+                        val completedGoal = goal
+                        scope.launch(Dispatchers.IO) {
+                            val goldenFix = AutomationReliability.analyzeHumanCorrectionsAndSaveGoldenFix(
+                                context.applicationContext,
+                                completedPackage,
+                                completedGoal
+                            )
+                            if (goldenFix.isNotBlank()) {
+                                emitLog("[VisualMemory] Post-task deep analysis saved a Golden Fix for $completedPackage.")
+                            }
+                        }
                         break
                     }
 
@@ -182,6 +321,10 @@ object PhoneAgentManager {
                 emitStatus("Phone Agent Error", "ERROR")
             } finally {
                 isPhoneAgentRunning = false
+                taskIsStuck = false
+                activeTaskGoal = ""
+                activeAppPackage = ""
+                clearObservedFrame()
                 AiOverlayHud.restorePodAfterTextInput()
                 AiOverlayHud.setCursorOverlayVisible(false)
                 AiOverlayHud.setPhoneVisionTaskActive(false)
