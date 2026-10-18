@@ -121,7 +121,8 @@ object PhoneAgentManager {
                     val currentMicroStep = microPlan[activePlanIndex]
                     if (lastAnnouncedPlanIndex != activePlanIndex) {
                         lastAnnouncedPlanIndex = activePlanIndex
-                        emitLog("[Checklist] ${completedPlanSteps.size}/${microPlan.size} complete • NOW: ${currentMicroStep.title}")
+                        val remainingSteps = (microPlan.size - completedPlanSteps.size).coerceAtLeast(0)
+                        emitLog("[Checklist] ${completedPlanSteps.size}/${microPlan.size} complete • ${remainingSteps} left • NOW: ${currentMicroStep.title}")
                     }
                     AiOverlayHud.updateTaskProgress(currentMicroStep.title, completedPlanSteps.size, microPlan.size)
 
