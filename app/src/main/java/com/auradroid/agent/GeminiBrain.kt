@@ -1091,34 +1091,44 @@ Respond ONLY with JSON:
 }
 """.trimIndent()
 
+        if (frames.isEmpty()) {
+            return YouTubeSeoMetadata(title = "", description = "", tags = emptyList())
+        }
+
         try {
-            val (rawResp, _) = callGeminiWithFallback(context, prompt, frames, preferPro = false, taskType = "HIGH_BRAIN_VISION")
-            val obj = extractCleanJsonObject(rawResp)
-        if (obj != null) {
-            val title = obj.optString("title", "Aakhri Darwaze Ka Rahasya 😱 Part ${episodeNumber} #shorts #viral")
-            val desc = obj.optString(
-                "description",
-                "Kya aapne notice kiya 5th second par kya dikha? Comment mein batayein! 🔥\n\n#shorts #viral #trending #scifi #story"
+            val (rawResp, _) = callGeminiWithFallback(
+                context,
+                prompt,
+                frames,
+                preferPro = false,
+                taskType = "HIGH_BRAIN_VISION"
             )
-            val tagsList = mutableListOf<String>()
+            val obj = extractCleanJsonObject(rawResp) ?: return YouTubeSeoMetadata(
+                title = "",
+                description = "",
+                tags = emptyList()
+            )
+
+            val title = obj.optString("title", "").trim()
+            val description = obj.optString("description", "").trim()
+            if (title.isBlank() || description.isBlank()) {
+                return YouTubeSeoMetadata(title = "", description = "", tags = emptyList())
+            }
+
+            val tags = mutableListOf<String>()
             val arr = obj.optJSONArray("tags")
             if (arr != null) {
                 for (i in 0 until arr.length()) {
-                    val t = arr.optString(i)
-                    if (t.isNotBlank()) tagsList.add(t)
+                    val tag = arr.optString(i).trim()
+                    if (tag.isNotBlank()) tags.add(tag)
                 }
             }
-            if (tagsList.isEmpty()) {
-                tagsList.addAll(listOf("shorts", "viral", "trending", "scifistory", "hindishorts"))
-            }
-            return YouTubeSeoMetadata(title = title.take(95), description = desc, tags = tagsList)
-        }
 
-        return YouTubeSeoMetadata(
-            title = "Is Rahasya Ne Sabko Hila Diya 😱 Part ${episodeNumber} #shorts #viral",
-            description = "Part ${episodeNumber + 1} ke liye Subscribe karein aur comment mein 'PART ${episodeNumber + 1}' likhein! ⚡\n\n#shorts #viral #kahani #scifi #trending",
-            tags = listOf("shorts", "viral", "trending", "scifi", "hindikahani")
-        )
+            return YouTubeSeoMetadata(
+                title = title.take(95),
+                description = description.take(5000),
+                tags = tags.distinct().take(20)
+            )
         } finally {
             frames.forEach { bitmap ->
                 try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Exception) {}
