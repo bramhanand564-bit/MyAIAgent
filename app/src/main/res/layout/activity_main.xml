@@ -738,10 +738,43 @@
                             android:layout_height="42dp"
                             android:layout_marginTop="6dp"
                             android:backgroundTint="#0D9488"
-                            android:text="📤 Upload Next Video from Folder (Vision Frame SEO)"
+                            android:text="📤 Upload Next Video via YouTube App + Vision SEO"
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp" />
+
+                        <Button
+                            android:id="@+id/btnConfirmVideoUploaded"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:layout_marginTop="6dp"
+                            android:backgroundTint="#15803D"
+                            android:text="✅ Confirm Last Video Uploaded"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp" />
+
+                        <Button
+                            android:id="@+id/btnScheduleDailyYouTube"
+                            android:layout_width="match_parent"
+                            android:layout_height="40dp"
+                            android:layout_marginTop="6dp"
+                            android:backgroundTint="#4F46E5"
+                            android:text="🗓 Schedule Daily YouTube Upload Reminder"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp" />
+
+                        <Button
+                            android:id="@+id/btnCancelDailyYouTube"
+                            android:layout_width="match_parent"
+                            android:layout_height="36dp"
+                            android:layout_marginTop="4dp"
+                            android:backgroundTint="#334155"
+                            android:text="Cancel Daily Reminder"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -1175,6 +1208,42 @@
                             android:textAllCaps="false"
                             android:textColor="#FFFFFF"
                             android:textSize="12sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbUseNativeExecution"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:buttonTint="#38BDF8"
+                            android:text="Use Native Android Accessibility Engine"
+                            android:textColor="#E2E8F0"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="36dp"
+                            android:text="Uses real on-screen controls and touch coordinates instead of the embedded stealth WebView."
+                            android:textColor="#94A3B8"
+                            android:textSize="11sp" />
+
+                        <CheckBox
+                            android:id="@+id/cbPassiveTeachMode"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:buttonTint="#2DD4BF"
+                            android:text="Enable Passive Shadow Teach Mode"
+                            android:textColor="#E2E8F0"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="36dp"
+                            android:text="Opt-in only. Saves safe click points and hashed screen signatures; never saves screenshots or typed field contents."
+                            android:textColor="#94A3B8"
+                            android:textSize="11sp" />
 
                         <LinearLayout
                             android:layout_width="match_parent"
