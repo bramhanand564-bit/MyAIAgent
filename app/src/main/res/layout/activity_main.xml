@@ -753,6 +753,26 @@
                             android:textColor="#FFFFFF"
                             android:textSize="12sp" />
 
+                        <CheckBox
+                            android:id="@+id/cbAutoPublishPublic"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:buttonTint="#F59E0B"
+                            android:checked="false"
+                            android:text="Enable Auto-Publish as Public"
+                            android:textColor="#FDE68A"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginEnd="4dp"
+                            android:text="OFF = stop for review before Publish. ON = allow Nax Bot to publish after it verifies metadata and Public visibility. Phone must be on and YouTube UI accessible."
+                            android:textColor="#94A3B8"
+                            android:textSize="11sp" />
+
                         <Button
                             android:id="@+id/btnConfirmVideoUploaded"
                             android:layout_width="match_parent"
