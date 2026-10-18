@@ -1026,29 +1026,49 @@ Respond ONLY with a valid JSON object:
 
         return listOf(
             TaskMicroStep(
-                title = "SEARCH",
-                goal = "In the requested social app, open the app if needed and search for \"$searchQuery\". Submit the query and wait for matching video or reel results. Do not like, comment, or share during this step.",
-                verificationHint = "The requested query is visible in search and matching video or reel results are shown."
+                title = "Open Instagram App",
+                goal = "Open the Instagram Android app. If Instagram is already the foreground app, do not relaunch it; finish this step and preserve the current session.",
+                verificationHint = "Instagram is the current foreground app."
             ),
             TaskMicroStep(
-                title = "PLAY_VIDEO",
-                goal = "Open the first matching video or reel for \"$searchQuery\" and verify that its playback screen is open. Do not repeat Search if results have already opened.",
-                verificationHint = "The first matching video or reel is open and visibly playing or its playback screen is active."
+                title = "Navigate to Search / Explore Tab",
+                goal = "Navigate to Instagram Search or Explore. If a Reel player, comment sheet, share sheet, or profile page hides the bottom navigation, press Back no more than two times with an 800 ms pause until the Search tab or Search bar is visible. Then tap the bottom Search or Explore tab.",
+                verificationHint = "The Search or Explore screen is visible, with a Search bar or bottom Search navigation."
             ),
             TaskMicroStep(
-                title = "LIKE_VIDEO",
-                goal = "Like the currently open video exactly once. If UI state, selected state, or its label already says Liked or Unlike, do not tap the heart again; that step is already complete.",
-                verificationHint = "The Like control is selected, is labeled Liked or Unlike, or the like action was successfully performed once."
+                title = "Tap Top Search Bar and Type Query",
+                goal = "Tap the top Search bar, clear any old query, type exactly \"$searchQuery\", and submit with the keyboard Search action or the exact Search suggestion. Do not reuse a prior result grid without submitting this query.",
+                verificationHint = "The exact query \"$searchQuery\" is submitted and matching search results are visible."
             ),
             TaskMicroStep(
-                title = "COMMENT_VIDEO",
-                goal = "Submit the exact comment \"$commentText\" to the currently open video once. Verify that the submitted comment appears in the visible comment list. Do not submit it twice.",
-                verificationHint = "The submitted comment text is visible as a comment, not only in the input field."
+                title = "Tap 1st Video in Grid",
+                goal = "Open the first video or Reel thumbnail in the results grid for \"$searchQuery\". Never tap Meta AI summary text, Ask anything, or a More link. Ignore those summary nodes and select a clickable image or video grid card whose top is below 35 percent of the real screen height and whose width is at least 40 percent of screen width.",
+                verificationHint = "The selected result is open in its Reel or video player."
             ),
             TaskMicroStep(
-                title = "SHARE_VIDEO",
-                goal = "Share the currently open video with the contact \"$shareTarget\". Select the matching account and tap Send once. A Sent confirmation or successful Send click completes this step; never send it twice.",
-                verificationHint = "The intended contact is selected and Send was successfully clicked, or a Sent confirmation is visible."
+                title = "Tap Like Button Once",
+                goal = "Like the current Reel exactly once. UI-node bounds and selected state take priority. If the control is already selected, labeled Liked or Unlike, or otherwise visibly active, do not tap it again.",
+                verificationHint = "The Like control is active or the one permitted Like tap has been accepted."
+            ),
+            TaskMicroStep(
+                title = "Open Comments, Type Comment and Tap Post",
+                goal = "Open comments for the current Reel, enter the exact comment \"$commentText\", and tap Post once. Check whether that exact comment is already visible first. Never duplicate a comment submission.",
+                verificationHint = "The exact comment \"$commentText\" is visible in the comment list, not just in the input field."
+            ),
+            TaskMicroStep(
+                title = "Close Comments Sheet",
+                goal = "Close the comment sheet by pressing Android Back exactly once. Do not return to the previous Reel or leave the app.",
+                verificationHint = "The comment sheet has closed and the same Reel is visible again."
+            ),
+            TaskMicroStep(
+                title = "Tap Share and Select Friend",
+                goal = "Open the Share sheet for the current Reel, search for and select the intended recipient \"$shareTarget\", and wait until the recipient is selected. Do not tap Send during this step.",
+                verificationHint = "The intended recipient \"$shareTarget\" is selected in the Share sheet and the Send button is available."
+            ),
+            TaskMicroStep(
+                title = "Tap Bottom Send Button and Finish Mission",
+                goal = "Tap the exact visible Send button in the Share sheet using its AccessibilityNodeInfo bounds, not a guessed coordinate. Once Send is clicked for the selected recipient, mark this final step done immediately and end the mission without global screen verification or another loop iteration.",
+                verificationHint = "The exact Send button has been clicked once for the selected recipient, or an explicit Sent confirmation is visible."
             )
         )
     }
