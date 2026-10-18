@@ -26,8 +26,10 @@ object WebPipelineManager {
     private val httpClient = OkHttpClient()
 
     private var pipelineJob: Job? = null
-    private var isRunning: Boolean = false
-    private var lastInterceptedMp4Bytes: ByteArray? = null
+    @Volatile private var isRunning: Boolean = false
+    @Volatile private var isFlowCaptureActive: Boolean = false
+    @Volatile private var captureEpoch: Long = 0L
+    @Volatile private var lastInterceptedMp4Bytes: ByteArray? = null
 
     private var onLogAppended: ((String) -> Unit)? = null
     private var onStatusUpdated: ((String, String) -> Unit)? = null
@@ -54,7 +56,20 @@ object WebPipelineManager {
         }
     }
 
+    private fun beginFlowVideoCapture() {
+        captureEpoch += 1L
+        lastInterceptedMp4Bytes = null
+        isFlowCaptureActive = true
+    }
+
+    private fun endFlowVideoCapture() {
+        isFlowCaptureActive = false
+        captureEpoch += 1L
+        lastInterceptedMp4Bytes = null
+    }
+
     fun stopCurrentJob() {
+        endFlowVideoCapture()
         pipelineJob?.cancel()
         pipelineJob = null
         isRunning = false
@@ -68,28 +83,55 @@ object WebPipelineManager {
     }
 
     fun interceptNetworkRequestForMp4(request: WebResourceRequest): WebResourceResponse? {
+        if (!isFlowCaptureActive) return null
         val urlStr = request.url.toString()
         val lower = urlStr.lowercase(Locale.US)
         val isVideoUrl = lower.contains(".mp4") or
             lower.contains("googlevideo") or
             lower.contains("storage.googleapis.com/generate") or
             lower.contains("media/video")
+        if (!isVideoUrl || !(lower.startsWith("http://") || lower.startsWith("https://"))) return null
 
-        if (isVideoUrl && (lower.contains("http") || lower.contains("https"))) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    val okReq = Request.Builder().url(urlStr).build()
-                    httpClient.newCall(okReq).execute().use { resp ->
-                        if (resp.isSuccessful) {
-                            val bytes = resp.body?.bytes()
-                            if (bytes != null && bytes.size > 50_000L) {
-                                lastInterceptedMp4Bytes = bytes
-                                log("[StreamSniffer] Captured MP4 stream (${bytes.size} bytes) from network!")
+        val requestEpoch = captureEpoch
+        scope.launch(Dispatchers.IO) {
+            try {
+                val okReq = Request.Builder().url(urlStr).build().get().build()
+                httpClient.newCall(okReq).execute().use { resp ->
+                    if (!resp.isSuccessful || !isFlowCaptureActive || requestEpoch != captureEpoch) return@use
+                    val body = resp.body ?: return@use
+                    // Protect low-memory devices from unexpectedly large or endless media responses.
+                    val declaredLength = body.contentLength()
+                    val maxCaptureBytes = 180L * 1024L * 1024L
+                    if (declaredLength > maxCaptureBytes) {
+                        log("[StreamSniffer] Skipped oversized stream (${declaredLength / (1024L * 1024L)} MB); waiting for the direct video URL.")
+                        return@use
+                    }
+                    val buffer = java.io.ByteArrayOutputStream(
+                        if (declaredLength in 1L..maxCaptureBytes) declaredLength.toInt() else 64 * 1024
+                    )
+                    val chunk = ByteArray(64 * 1024)
+                    var total = 0L
+                    body.byteStream().use { input ->
+                        while (true) {
+                            if (!isFlowCaptureActive || requestEpoch != captureEpoch) return@use
+                            val read = input.read(chunk)
+                            if (read < 0) break
+                            total += read
+                            if (total > maxCaptureBytes) {
+                                log("[StreamSniffer] Aborted stream above 180 MB memory limit.")
+                                return@use
                             }
+                            buffer.write(chunk, 0, read)
                         }
                     }
-                } catch (_: Exception) {
+                    val bytes = buffer.toByteArray()
+                    if (bytes.size > 50_000 && isFlowCaptureActive && requestEpoch == captureEpoch) {
+                        lastInterceptedMp4Bytes = bytes
+                        log("[StreamSniffer] Captured MP4 stream (${bytes.size} bytes) for the active episode.")
+                    }
                 }
+            } catch (_: Exception) {
+                // The DOM download path remains available when a signed URL cannot be fetched here.
             }
         }
         return null
@@ -101,6 +143,7 @@ object WebPipelineManager {
         goal: String,
         targetUrl: String
     ) {
+        endFlowVideoCapture()
         if (isRunning) {
             log("[Agent] Pipeline already running. Stop first.")
             return
@@ -235,6 +278,7 @@ object WebPipelineManager {
             log("[Pipeline] Pipeline already active.")
             return
         }
+        endFlowVideoCapture()
         isRunning = true
         updateStatus("Flow ➔ YT Pipeline", "WORKING")
         log("[Pipeline] Starting Episodic Story Showrunner pipeline for $episodeCount episodes.")
@@ -263,6 +307,7 @@ object WebPipelineManager {
                     log("[Prompt] ${storyResult.flowVideoPrompt}")
                     log("[Voiceover] ${storyResult.hindiVoiceDialogue}")
 
+                    beginFlowVideoCapture()
                     webView.loadUrl("https://labs.google/fx/tools/flow")
                     delay(6000)
 
@@ -327,6 +372,7 @@ object WebPipelineManager {
 
                         }
                     }
+                    endFlowVideoCapture()
                     currentEp++
                     delay(3000)
                 }
@@ -343,6 +389,7 @@ object WebPipelineManager {
                 log("[Error] Pipeline exception: ${e.message}")
                 updateStatus("Pipeline Error", "ERROR")
             } finally {
+                endFlowVideoCapture()
                 isRunning = false
             }
         }
