@@ -1150,7 +1150,7 @@ Respond ONLY with JSON:
 
         if (!hasTimeTrigger) return null
 
-        val minRegex = Regex("(\\d{1,3})\\s*(minute|min)\\s*baad")
+        val minRegex = Regex("(\\d{1,3})\\s*min(?:ute)?\\s*baad")
         val minMatch = minRegex.find(lower)
         if (minMatch != null) {
             val mins = minMatch.groupValues[1].toIntOrNull() ?: 5
@@ -1158,7 +1158,7 @@ Respond ONLY with JSON:
             return Pair(triggerAt, "In ${mins} minutes")
         }
 
-        val hourRegex = Regex("(\\d{1,2})(?::(\\d{2}))?\\s*(baje|am|pm)?")
+        val hourRegex = Regex("(\\d{1,2})(?::(\\d{2}))?\\s*(baje|[ap]m)?")
         val matches = hourRegex.findAll(lower).toList()
         for (m in matches) {
             var hour = m.groupValues[1].toIntOrNull() ?: continue
