@@ -1145,7 +1145,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="⚙️ Cognitive AI Engine (Auto Fallback 3.8 ➔ 2.5)"
+                            android:text="⚙️ Cognitive AI Engine (Gemini 3.8 Flash + Pro fallback)"
                             android:textColor="#38BDF8"
                             android:textSize="14sp"
                             android:textStyle="bold" />
@@ -1193,7 +1193,7 @@
                                 android:hint="High-Brain Model"
                                 android:inputType="text"
                                 android:paddingHorizontal="8dp"
-                                android:text="gemini-3.8-pro"
+                                android:text="gemini-3.1-pro-preview"
                                 android:textColor="#FFFFFF"
                                 android:textSize="12sp" />
                         </LinearLayout>
