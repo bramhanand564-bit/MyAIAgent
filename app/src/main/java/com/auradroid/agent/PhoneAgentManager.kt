@@ -119,7 +119,7 @@ object PhoneAgentManager {
                     if (!isPhoneAgentRunning) break
 
                     val action = decision.action.trim().uppercase(Locale.US)
-                    if (action == "DONE" || decision.isDone) {
+                    if (action == "DONE") {
                         history.add("DONE: ${decision.reason}")
                         emitLog("[VLA] Goal completed by visual assessment: ${decision.reason}")
                         emitStatus("Task Complete!", "HAPPY")
@@ -192,9 +192,6 @@ object PhoneAgentManager {
                 AiOverlayHud.setCursorOverlayVisible(false)
                 AiOverlayHud.setPhoneVisionTaskActive(false)
                 AiOverlayHud.collapseToCompactStage()
-                if (agentJob?.isActive == true) {
-                    emitStatus("Phone Agent Idle", "IDLE")
-                }
             }
         }
     }
