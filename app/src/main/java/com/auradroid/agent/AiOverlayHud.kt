@@ -155,6 +155,7 @@ object AiOverlayHud {
 
     fun setEmotion(emotion: BotEmotion) {
         currentEmotion = emotion
+        if (emotion == BotEmotion.IDLE) ghostControlsExpanded = false
         mainHandler.post {
             faceView?.setBotEmotion(emotion)
             if (emotion == BotEmotion.IDLE && !phoneVisionTaskActive) {
@@ -284,6 +285,7 @@ object AiOverlayHud {
             phoneVisionTaskActive = active
             if (!active) {
                 currentEmotion = BotEmotion.IDLE
+                ghostControlsExpanded = false
                 faceView?.setBotEmotion(BotEmotion.IDLE)
                 cursorOverlayView?.clearRipples()
                 cursorOverlayView?.visibility = View.GONE
@@ -381,7 +383,7 @@ object AiOverlayHud {
                 returnWebViewToHomeContainer()
                 floatingBrowserCard?.visibility = View.GONE
                 faceView?.visibility = View.VISIBLE
-                val ghostIdle = currentEmotion == BotEmotion.IDLE && !phoneVisionTaskActive
+                val ghostIdle = currentEmotion == BotEmotion.IDLE && !phoneVisionTaskActive && !ghostControlsExpanded
                 sideNotchCard?.visibility = if (ghostIdle) View.GONE else View.VISIBLE
                 root.alpha = 1f
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -1032,7 +1034,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
         val fingerHeight = 24f
         // The middle fingertip's axis is aligned to the exact gesture point.
         val left = handPoint.x - palmWidth / 2f
-        val top = handPoint.y + 3.5f
+        val top = handPoint.y + 1f
         val right = handPoint.x + palmWidth / 2f
         val bottom = top + palmHeight
         val fingerTop = top - fingerHeight + 10f
