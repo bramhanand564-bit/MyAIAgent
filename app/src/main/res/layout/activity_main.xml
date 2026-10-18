@@ -146,33 +146,6 @@
 
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="10dp"
-                    app:cardBackgroundColor="#101C30"
-                    app:cardCornerRadius="18dp"
-                    app:strokeColor="#0EA5E9"
-                    app:strokeWidth="1dp">
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:padding="12dp">
-
-                        <TextView
-                            android:id="@+id/tvLiveTaskProgress"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:fontFamily="sans"
-                            android:lineSpacingExtra="3dp"
-                            android:text="🎯 No active mission\nYour live phone task checklist will appear here."
-                            android:textColor="#E2E8F0"
-                            android:textSize="12sp" />
-                    </LinearLayout>
-                </com.google.android.material.card.MaterialCardView>
-
-                <com.google.android.material.card.MaterialCardView
-                    android:layout_width="match_parent"
                     android:layout_height="290dp"
                     android:layout_marginBottom="10dp"
                     app:cardBackgroundColor="#131B2E"
