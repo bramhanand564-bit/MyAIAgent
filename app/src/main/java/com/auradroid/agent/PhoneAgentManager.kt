@@ -27,7 +27,7 @@ object PhoneAgentManager {
     }
 
     private fun emitLog(message: String) {
-        val line = "[\${System.currentTimeMillis() % 100000}] $message"
+        val line = "[${System.currentTimeMillis() % 100000}] $message"
         mainHandler.post { onLog?.invoke(line) }
     }
 
@@ -95,7 +95,7 @@ object PhoneAgentManager {
                 for (step in 1..20) {
                     if (!isPhoneAgentRunning) break
                     val uiTree = touchService.dumpUiTreeSummary()
-                    val currentSignature = "\${uiTree.hashCode()}"
+                    val currentSignature = "${uiTree.hashCode()}"
                     if (currentSignature == lastTreeSignature) stuckCounter++ else stuckCounter = 0
                     lastTreeSignature = currentSignature
 
@@ -121,7 +121,7 @@ object PhoneAgentManager {
                     val safeEndY = decision.endY.toFloat()
                     val deltaX = abs(safeEndX - safeX)
                     val deltaY = abs(safeEndY - safeY)
-                    emitLog("[\${decision.modelUsed} • PhoneSense] Step $step: \${decision.action} @(\${safeX.toInt()},\${safeY.toInt()}) -> \${decision.reason}")
+                    emitLog("[${decision.modelUsed} • PhoneSense] Step $step: ${decision.action} @(${safeX.toInt()},${safeY.toInt()}) -> ${decision.reason}")
 
                     if (decision.isDone || decision.action == "DONE") {
                         val verify = GeminiBrain.verifyPhoneTaskCompletion(
@@ -131,9 +131,9 @@ object PhoneAgentManager {
                             markSkillCalibrated(context, skillKey)
                             AutomationReliability.recordSuccessfulLesson(
                                 context = context, goal = goal, stateSignature = currentSignature,
-                                lessonFix = "Completed via \${decision.reason}"
+                                lessonFix = "Completed via ${decision.reason}"
                             )
-                            emitLog("[PhoneAgent] Task Verified Complete (\${verify.confidence}%): \${verify.feedback}")
+                            emitLog("[PhoneAgent] Task Verified Complete (${verify.confidence}%): ${verify.feedback}")
                             emitStatus("Phone Task Done!", "HAPPY")
                             break
                         }
@@ -145,7 +145,7 @@ object PhoneAgentManager {
                             val clickedByText = if (decision.targetNodeText.isNotBlank()) {
                                 touchService.clickNodeByTextOrBounds(decision.targetNodeText, safeX, safeY)
                             } else touchService.performHumanTap(safeX, safeY, 90L)
-                            actionHistory.add("Step $step: CLICK '\${decision.targetNodeText}' @(\${safeX.toInt()},\${safeY.toInt()}) ok=$clickedByText")
+                            actionHistory.add("Step $step: CLICK '${decision.targetNodeText}' @(${safeX.toInt()},${safeY.toInt()}) ok=$clickedByText")
                         }
                         "TYPE" -> {
                             emitStatus("Typing Text", "WORKING")
@@ -157,14 +157,14 @@ object PhoneAgentManager {
                             )
                             delay(350)
                             AiOverlayHud.restorePodAfterTextInput()
-                            actionHistory.add("Step $step: TYPE '\${decision.textToType}' ok=$typedOk")
+                            actionHistory.add("Step $step: TYPE '${decision.textToType}' ok=$typedOk")
                         }
                         "SWIPE" -> {
                             emitStatus("Swiping Screen", "WORKING")
                             val endXVal = if (deltaX < 10f && deltaY < 10f) safeX else safeEndX
                             val endYVal = if (deltaX < 10f && deltaY < 10f) (safeY - 500f).coerceAtLeast(150f) else safeEndY
                             touchService.performHumanSwipe(safeX, safeY, endXVal, endYVal, 340L)
-                            actionHistory.add("Step $step: SWIPE from (\${safeX.toInt()},\${safeY.toInt()}) to (\${endXVal.toInt()},\${endYVal.toInt()})")
+                            actionHistory.add("Step $step: SWIPE from (${safeX.toInt()},${safeY.toInt()}) to (${endXVal.toInt()},${endYVal.toInt()})")
                         }
                         "BACK" -> {
                             touchService.performGlobalBack()
@@ -182,7 +182,7 @@ object PhoneAgentManager {
                     delay(1100)
                 }
             } catch (e: Exception) {
-                emitLog("[PhoneAgent] Error: \${e.message}")
+                emitLog("[PhoneAgent] Error: ${e.message}")
                 emitStatus("Phone Agent Error", "ERROR")
             } finally {
                 isPhoneAgentRunning = false
