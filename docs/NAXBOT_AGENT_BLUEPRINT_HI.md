@@ -14,7 +14,7 @@ YouTube example first supported workflow hoga. Architecture generic rahegi taaki
 4. Har video ka persistent status hoga; app retry karte waqt known-published video ko dobara upload karne se bachega.
 5. AI title, description aur tags suggest karega. UI ko fill karne ke baad fields verify honge.
 6. Published status sirf tab report hoga jab screen se publish-success evidence mil jaye. Evidence na mile to NEEDS_CONFIRMATION report hoga; success kabhi guess nahi ki jayegi.
-7. Public auto-publish ek explicit user-controlled setting hogi. Default review mode safe rahega; user setting enable karke scheduled public publishing authorize kar sakega.
+7. Public auto-publish ek explicit user-controlled setting hai. Default review mode safe rahega. Runtime safety gate review mode mein final Publish/Post ko block karta hai; Auto-Publish mode mein bhi publish tabhi allow hota hai jab Accessibility UI tree Public visibility ko selected/checked dikhaye.
 8. Global Stop control hamesha available rahega. Pause, resume, cancel aur retry alag actions honge.
 9. API key source code, Git commits, screenshots ya logs mein nahi jayegi. Prototype mein key device settings mein enter hogi; public distribution ke liye backend proxy zyada secure hai, kyunki APK ke andar client key ko completely hide nahi kiya ja sakta.
 10. CAPTCHA, 2FA, login challenge ya unexpected permission prompt ko bypass nahi karna. Aisi condition par agent pause karke user ko hand-off karega.
@@ -22,7 +22,7 @@ YouTube example first supported workflow hoga. Architecture generic rahegi taaki
 ## Gemini model strategy (2026-10-18 par checked)
 
 - Default cost-conscious model: **gemini-3.1-flash-lite**.
-- Optional higher-capability model: **gemini-3.8-flash**; isko use karne se pehle Google AI Studio / API project mein access aur billing verify karna.
+- Default automatic route intentionally uses the cost-conscious **gemini-3.1-flash-lite** plus bounded fallbacks. The code currently blocks higher-capability model IDs until a separate model/billing-mode choice is implemented; model access and free-tier limits depend on the Google AI Studio project.
 - Model IDs settings se changeable rahenge. Preview ya unavailable model ke fail hone par app bounded fallback karegi, infinite retries nahi.
 - Model ka naam availability, quota ya free access ki guarantee nahi hai. Current official lists:
   - https://ai.google.dev/gemini-api/docs/models
@@ -66,12 +66,12 @@ Only one task may control the physical screen at a time. Other independent work 
 6. Open the official YouTube upload flow. Use UI labels / Accessibility nodes first and calibrated coordinates only as a carefully bounded fallback.
 7. Select the intended file, fill metadata, choose the user-configured visibility, and verify the visible values before publish.
 8. If auto-public mode is disabled, pause for user's final review. If enabled, publish only after all pre-publish checks pass.
-9. Verify a published/success state in the UI. If the app screen changed unexpectedly or confirmation is missing, mark NEEDS_CONFIRMATION and do not enqueue a blind duplicate retry.
+9. Before the final button, Review Mode blocks Publish/Post; Auto-Publish mode requires the live Accessibility UI tree to explicitly show Public as selected/checked. If that evidence is not available, the final action is blocked for safety. After the action, verify a published/success state in the UI. If confirmation is missing, mark NEEDS_CONFIRMATION and do not enqueue a blind duplicate retry.
 10. Save task result, timestamp, video identity, generated metadata and evidence summary; display a report.
 
 ### Real-world Android limit
 
-UI automation is not a cloud server. Android screen interaction requires the phone to be on, unlocked as needed, the Accessibility Service enabled and YouTube's UI accessible. A phone that is powered off cannot perform screen taps. Battery restrictions, login challenges, network delays and YouTube UI changes can pause a task. WorkManager/alarms can wake the app for eligible background work, but they cannot guarantee a successful visible upload with the display unavailable.
+UI automation is not a cloud server. Android screen interaction requires the phone to be on, unlocked as needed, the Accessibility Service enabled and YouTube's UI accessible. A phone that is powered off cannot perform screen taps. Battery restrictions, login challenges, network delays and YouTube UI changes can pause a task. The current daily schedule is still a notification reminder: the user must tap it to open the upload workflow. Fully unattended daily posting is not complete yet. WorkManager/alarms can wake the app for eligible background work, but they cannot guarantee a successful visible upload with the display unavailable.
 
 ## Planned code ownership (file-by-file)
 
