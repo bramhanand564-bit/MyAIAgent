@@ -809,7 +809,7 @@ Respond ONLY with a valid JSON object:
 """.trimIndent()
 
         val images = if (screenshot != null) listOf(screenshot) else emptyList()
-        val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro)
+        val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(rawResp)
 
         if (obj != null) {
