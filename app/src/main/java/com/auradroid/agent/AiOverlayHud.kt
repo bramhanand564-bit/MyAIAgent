@@ -74,6 +74,7 @@ object AiOverlayHud {
     private var homeWebContainer: FrameLayout? = null
 
     private var currentStage: Int = STAGE_1_COMPACT_POD
+    @Volatile private var phoneVisionTaskActive: Boolean = false
     private var currentEmotion: BotEmotion = BotEmotion.IDLE
     private var isHudAttached: Boolean = false
     private var isCursorAttached: Boolean = false
@@ -219,16 +220,6 @@ object AiOverlayHud {
                 cursorOverlayView?.visibility = View.VISIBLE
                 cursorOverlayView?.triggerTapRipple(x, y, label, currentEmotion.eyeColorHex)
             }
-            if (isHudAttached && currentStage == STAGE_1_COMPACT_POD && podLayoutParams != null && rootPodLayout != null) {
-                val targetX = max(12, (x.toInt() - dpToPx(ctx, 28f)))
-                val targetY = max(40, (y.toInt() - dpToPx(ctx, 76f)))
-                podLayoutParams?.x = targetX
-                podLayoutParams?.y = targetY
-                try {
-                    windowManager?.updateViewLayout(rootPodLayout, podLayoutParams)
-                } catch (_: Exception) {
-                }
-            }
         }
     }
 
@@ -278,12 +269,27 @@ object AiOverlayHud {
         }
     }
 
+    /**
+     * Native phone-vision tasks never mount the shared WebView in the floating HUD.
+     */
+    fun setPhoneVisionTaskActive(active: Boolean) {
+        mainHandler.post {
+            phoneVisionTaskActive = active
+            val ctx = appContext ?: return@post
+            if (!canDrawOverlays(ctx)) return@post
+            ensureHudCreated(ctx)
+            if (active) ensureCursorOverlayCreated(ctx)
+            applyStageLayout(STAGE_1_COMPACT_POD)
+        }
+    }
+
     fun openForFirstRunLiveCalibration() {
         mainHandler.post {
             val ctx = appContext ?: return@post
             if (!canDrawOverlays(ctx)) return@post
             ensureHudCreated(ctx)
-            applyStageLayout(STAGE_2_MINI_BROWSER)
+            // Keep the 46dp Baymax pod and status notch visible; never show the mini-browser.
+            applyStageLayout(STAGE_1_COMPACT_POD)
         }
     }
 
@@ -295,6 +301,10 @@ object AiOverlayHud {
     }
 
     fun cycleBrowserStages() {
+        if (phoneVisionTaskActive) {
+            mainHandler.post { applyStageLayout(STAGE_1_COMPACT_POD) }
+            return
+        }
         val nextStage = when (currentStage) {
             STAGE_1_COMPACT_POD -> STAGE_2_MINI_BROWSER
             STAGE_2_MINI_BROWSER -> STAGE_3_FULL_BROWSER
@@ -350,9 +360,10 @@ object AiOverlayHud {
         val ctx = appContext ?: return
         val root = rootPodLayout ?: return
         val params = podLayoutParams ?: return
-        currentStage = stage
+        val effectiveStage = if (phoneVisionTaskActive) STAGE_1_COMPACT_POD else stage
+        currentStage = effectiveStage
 
-        when (stage) {
+        when (effectiveStage) {
             STAGE_1_COMPACT_POD -> {
                 returnWebViewToHomeContainer()
                 floatingBrowserCard?.visibility = View.GONE
@@ -1007,15 +1018,17 @@ class TapRippleOverlayView(context: Context) : View(context) {
         val palmHeight = 48f
         val fingerWidth = 14f
         val fingerHeight = 29f
+        // The center fingertip is anchored at the real screen tap coordinate.
+        val fingertipY = handPoint.y
+        val top = fingertipY + fingerHeight
         val left = handPoint.x - palmWidth / 2f
-        val top = handPoint.y - 6f
         val right = handPoint.x + palmWidth / 2f
         val bottom = top + palmHeight
 
         val fingers = arrayOf(
-            RectF(left + 4f, top - fingerHeight + 8f, left + 4f + fingerWidth, top + 13f),
-            RectF(handPoint.x - fingerWidth / 2f, top - fingerHeight, handPoint.x + fingerWidth / 2f, top + 12f),
-            RectF(right - 4f - fingerWidth, top - fingerHeight + 7f, right - 4f, top + 13f)
+            RectF(left + 4f, fingertipY + 7f, left + 4f + fingerWidth, top + 13f),
+            RectF(handPoint.x - fingerWidth / 2f, fingertipY, handPoint.x + fingerWidth / 2f, top + 12f),
+            RectF(right - 4f - fingerWidth, fingertipY + 6f, right - 4f, top + 13f)
         )
         fingers.forEach { rect ->
             canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, glowPaint)
@@ -1067,9 +1080,15 @@ class TapRippleOverlayView(context: Context) : View(context) {
     private fun drawLabel(canvas: Canvas) {
         val textWidth = labelTextPaint.measureText(tapLabel)
         val left = (handPoint.x - textWidth / 2f - 14f).coerceIn(8f, (width - textWidth - 36f).coerceAtLeast(8f))
-        val top = (handPoint.y - 105f).coerceAtLeast(12f)
-        val rect = RectF(left, top, left + textWidth + 28f, top + 40f)
+        val handRadius = 30f
+        val top = if (handPoint.y < 100f) {
+            handPoint.y + handRadius + 6f
+        } else {
+            handPoint.y - handRadius - 36f
+        }
+        val safeTop = top.coerceIn(8f, (height - 48f).coerceAtLeast(8f))
+        val rect = RectF(left, safeTop, left + textWidth + 28f, safeTop + 40f)
         canvas.drawRoundRect(rect, 12f, 12f, labelBgPaint)
-        canvas.drawText(tapLabel, left + 14f, top + 29f, labelTextPaint)
+        canvas.drawText(tapLabel, left + 14f, safeTop + 29f, labelTextPaint)
     }
 }
