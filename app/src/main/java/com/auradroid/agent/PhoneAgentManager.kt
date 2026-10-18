@@ -135,7 +135,8 @@ object PhoneAgentManager {
                     else emitStatus("Step $step • Thinking", "THINKING")
 
                     val screenshot = touchService.captureScreenBitmapSuspend()
-                    val ragLessons = AutomationReliability.retrieveRelevantRagLessons(context, goal, currentSignature)
+                    val safeScreenSignature = touchService.currentPrivacySafeScreenSignature().ifBlank { currentSignature }
+                    val ragLessons = AutomationReliability.retrieveRelevantRagLessons(context, goal, safeScreenSignature)
                     val focusedStepGoal = buildString {
                         append("OVERALL USER GOAL: ").append(goal)
                         append("\nCURRENT MICRO-STEP (").append(activePlanIndex + 1).append("/").append(microPlan.size).append("): ")
@@ -169,7 +170,7 @@ object PhoneAgentManager {
                     if (decision.isDone || decision.action == "DONE") {
                         val verify = GeminiBrain.verifyPhoneTaskCompletion(
                             context = context,
-                            goal = currentMicroStep.goal + "\\nSuccess evidence: " + currentMicroStep.verificationHint,
+                            goal = currentMicroStep.goal + "\nSuccess evidence: " + currentMicroStep.verificationHint,
                             uiTreeSummary = uiTree,
                             screenshot = screenshot
                         )
@@ -192,7 +193,7 @@ object PhoneAgentManager {
                                 AutomationReliability.recordSuccessfulLesson(
                                     context = context,
                                     goal = goal,
-                                    stateSignature = currentSignature,
+                                    stateSignature = safeScreenSignature,
                                     lessonFix = "All ${completedPlanSteps.size} micro-step(s) verified; last action: ${decision.reason}"
                                 )
                                 emitLog("[PhoneAgent] Entire task verified (${verify.confidence}%): ${verify.feedback}")
@@ -285,6 +286,10 @@ object PhoneAgentManager {
                         }
                     }
                     delay(1100)
+                }
+                if (!taskFullyVerified && isPhoneAgentRunning && activePlanIndex < microPlan.size) {
+                    emitLog("[PhoneAgent] Step budget ended without verified completion; task was NOT marked successful.")
+                    emitStatus("Task Incomplete", "ERROR")
                 }
             } catch (e: Exception) {
                 emitLog("[PhoneAgent] Error: ${e.message}")
