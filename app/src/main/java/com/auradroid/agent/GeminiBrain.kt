@@ -943,9 +943,6 @@ ${uiTreeSummary}
 
 SCREEN SIZE IN PHYSICAL PIXELS:
 Width = ${screenWidthPx}, height = ${screenHeightPx}. Return absolute pixel coordinates in this space.
-DEVICE AND WINDOW CALIBRATION:
-${screenCalibration}
-
 DEVICE AND SAFE-AREA CALIBRATION:
 ${screenCalibration.ifBlank { "Device calibration metadata is unavailable. Use the supplied screenshot and live UI tree only." }}
 
