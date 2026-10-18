@@ -545,6 +545,46 @@ object PhoneAgentManager {
                             delay(300)
                             continue
                         }
+                        if (stepKind != "OTHER") {
+                            val locallyVerified = when (stepKind) {
+                                "OPEN_APP" -> touchService.currentForegroundPackageName()
+                                    .contains("instagram", ignoreCase = true)
+                                "NAVIGATE_SEARCH" -> touchService.hasSearchNavigationOrBar()
+                                "SEARCH_QUERY" -> {
+                                    val queryVisibleOutsideInput = requestedSearchQuery.isNotBlank() &&
+                                        uiTree.lineSequence().any { line ->
+                                            !line.trimStart().startsWith("INPUT[", ignoreCase = true) &&
+                                                line.contains(requestedSearchQuery, ignoreCase = true)
+                                        }
+                                    queryVisibleOutsideInput || touchService.findFirstVideoGridTileCenter() != null
+                                }
+                                "LIKE_VIDEO" -> hasLikedVideoInCurrentTask || isLikeControlAlreadyActive(uiTree)
+                                "COMMENT_VIDEO" -> hasCommentedInCurrentTask ||
+                                    isCommentVisible(uiTree, requestedCommentText)
+                                "SHARE_RECIPIENT" -> requestedShareTarget.isNotBlank() &&
+                                    uiTree.lineSequence().any { line ->
+                                        !line.trimStart().startsWith("INPUT[", ignoreCase = true) &&
+                                            isShareRecipientTarget(line, requestedShareTarget)
+                                    } && uiTree.lineSequence().any { line ->
+                                        line.contains("send", ignoreCase = true)
+                                    }
+                                "SHARE_SEND" -> hasSharedInCurrentTask || isShareSuccessVisible(uiTree)
+                                else -> false
+                            }
+                            try { screenshot?.recycle() } catch (_: Exception) {}
+                            if (locallyVerified) {
+                                val allDone = latchPlanStep(
+                                    activePlanIndex,
+                                    "Local accessibility evidence verified step $stepKind"
+                                )
+                                if (allDone) break
+                            } else {
+                                emitLog("[Verify] Model DONE ignored; waiting for local evidence for $stepKind. Global screen verification is disabled for atomic phone steps.")
+                            }
+                            delay(300)
+                            continue
+                        }
+
                         val verify = GeminiBrain.verifyPhoneTaskCompletion(
                             context = context,
                             goal = currentMicroStep.goal + "\nSuccess evidence: " + currentMicroStep.verificationHint,
