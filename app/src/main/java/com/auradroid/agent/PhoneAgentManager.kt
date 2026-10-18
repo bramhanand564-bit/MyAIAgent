@@ -76,22 +76,27 @@ object PhoneAgentManager {
     private fun isShareSuccessVisible(uiTree: String): Boolean {
         return uiTree.lineSequence().any { rawLine ->
             val line = rawLine.lowercase(Locale.US)
-            line.contains("message sent") || line.contains("sent") ||
-                line.contains("shared successfully") || line.contains("shared with")
+            line.contains("message sent") ||
+                Regex("\\bsent\\b").containsMatchIn(line) ||
+                line.contains("shared successfully")
         }
     }
 
-    private fun isCommentSubmitTarget(labelAndReason: String): Boolean {
-        val text = labelAndReason.lowercase(Locale.US)
-        return text.contains("post") || text.contains("send comment") ||
-            text.contains("submit comment") || text.contains("publish comment")
+    private fun isCommentSubmitTarget(targetLabel: String, reason: String): Boolean {
+        val label = targetLabel.trim().lowercase(Locale.US)
+        val rationale = reason.lowercase(Locale.US)
+        return label == "post" || label == "send" ||
+            label.contains("post comment") || label.contains("submit comment") ||
+            rationale.contains("submit the comment") || rationale.contains("tap post button") ||
+            rationale.contains("click post button")
     }
 
-    private fun isShareSendTarget(labelAndReason: String): Boolean {
-        val text = labelAndReason.lowercase(Locale.US)
-        return text.trim() == "send" || text.contains("send button") ||
-            text.contains("send to") || text.contains("tap send") ||
-            text.contains("share send")
+    private fun isShareSendTarget(targetLabel: String, reason: String): Boolean {
+        val label = targetLabel.trim().lowercase(Locale.US)
+        val rationale = reason.lowercase(Locale.US)
+        return label == "send" || label == "sent" || label.contains("send button") ||
+            (label.isBlank() && (rationale.contains("tap the send button") ||
+                rationale.contains("click the send button")))
     }
 
     private fun extractCommentText(goal: String): String {
@@ -347,6 +352,22 @@ object PhoneAgentManager {
                     emitLog("[${decision.modelUsed} • PhoneSense] Step $step: ${decision.action} @(${safeX.toInt()},${safeY.toInt()}) -> ${decision.reason}")
 
                     if (decision.isDone || decision.action == "DONE") {
+                        if (stepKind == "SHARE_VIDEO" &&
+                            !hasSharedInCurrentTask && !isShareSuccessVisible(uiTree)) {
+                            emitLog("[Share Guard] Model requested DONE before a Send click or Sent confirmation. Continuing safely.")
+                            actionHistory.add("Step $step: premature SHARE DONE rejected")
+                            try { screenshot?.recycle() } catch (_: Exception) {}
+                            delay(300)
+                            continue
+                        }
+                        if (stepKind == "COMMENT_VIDEO" &&
+                            !hasCommentedInCurrentTask && !isCommentVisible(uiTree, requestedCommentText)) {
+                            emitLog("[Comment Guard] Model requested DONE before the comment is visible in the comment list.")
+                            actionHistory.add("Step $step: premature COMMENT DONE rejected")
+                            try { screenshot?.recycle() } catch (_: Exception) {}
+                            delay(300)
+                            continue
+                        }
                         val verify = GeminiBrain.verifyPhoneTaskCompletion(
                             context = context,
                             goal = currentMicroStep.goal + "\nSuccess evidence: " + currentMicroStep.verificationHint,
@@ -444,7 +465,7 @@ object PhoneAgentManager {
                             }
 
                             if (clickedByText && stepKind == "COMMENT_VIDEO" &&
-                                isCommentSubmitTarget(decision.targetNodeText + " " + decision.reason)) {
+                                isCommentSubmitTarget(decision.targetNodeText, decision.reason)) {
                                 if (!commentSubmitAttempted) {
                                     commentSubmitAttempted = true
                                     commentSubmitWaitCount = 0
@@ -469,7 +490,7 @@ object PhoneAgentManager {
                             }
 
                             if (clickedByText && stepKind == "SHARE_VIDEO" &&
-                                isShareSendTarget(decision.targetNodeText + " " + decision.reason)) {
+                                isShareSendTarget(decision.targetNodeText, decision.reason)) {
                                 if (!shareSendAttempted) {
                                     shareSendAttempted = true
                                     hasSharedInCurrentTask = true
