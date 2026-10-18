@@ -1,6 +1,7 @@
 package com.auradroid.agent
 
 import android.Manifest
+import android.app.TimePickerDialog
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -110,6 +111,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cbAutoUploadYouTube: CheckBox
     private lateinit var btnStartFlowPipeline: Button
     private lateinit var btnUploadExistingVideo: Button
+    private lateinit var btnConfirmVideoUploaded: Button
+    private lateinit var btnScheduleDailyYouTube: Button
+    private lateinit var btnCancelDailyYouTube: Button
     private lateinit var tvSelectedFolderUri: TextView
     private lateinit var btnPickStorageFolder: Button
     private lateinit var rgUploadOrder: RadioGroup
@@ -132,6 +136,9 @@ class MainActivity : AppCompatActivity() {
 
     // Tab 5: Engine Settings & Logs
     private lateinit var etGeminiApiKey: EditText
+    private lateinit var cbUseNativeExecution: CheckBox
+    private lateinit var cbPassiveTeachMode: CheckBox
+    private var syncingExecutionMode = false
     private lateinit var etFastModelName: EditText
     private lateinit var etProModelName: EditText
     private lateinit var btnSaveAiSettings: Button
@@ -290,6 +297,9 @@ class MainActivity : AppCompatActivity() {
         cbAutoUploadYouTube = findViewById(R.id.cbAutoUploadYouTube)
         btnStartFlowPipeline = findViewById(R.id.btnStartFlowPipeline)
         btnUploadExistingVideo = findViewById(R.id.btnUploadExistingVideo)
+        btnConfirmVideoUploaded = findViewById(R.id.btnConfirmVideoUploaded)
+        btnScheduleDailyYouTube = findViewById(R.id.btnScheduleDailyYouTube)
+        btnCancelDailyYouTube = findViewById(R.id.btnCancelDailyYouTube)
         tvSelectedFolderUri = findViewById(R.id.tvSelectedFolderUri)
         btnPickStorageFolder = findViewById(R.id.btnPickStorageFolder)
         rgUploadOrder = findViewById(R.id.rgUploadOrder)
@@ -310,6 +320,8 @@ class MainActivity : AppCompatActivity() {
         tvRagVaultViewer = findViewById(R.id.tvRagVaultViewer)
 
         etGeminiApiKey = findViewById(R.id.etGeminiApiKey)
+        cbUseNativeExecution = findViewById(R.id.cbUseNativeExecution)
+        cbPassiveTeachMode = findViewById(R.id.cbPassiveTeachMode)
         etFastModelName = findViewById(R.id.etFastModelName)
         etProModelName = findViewById(R.id.etProModelName)
         btnSaveAiSettings = findViewById(R.id.btnSaveAiSettings)
@@ -433,11 +445,48 @@ class MainActivity : AppCompatActivity() {
         }
 
         PhoneAgentManager.setListeners(
-            logListener = { line -> appendConsoleLog(line) },
+            logListener = { line ->
+                appendConsoleLog(line)
+                if (line.contains("[Plan]") || line.contains("[Checklist]") || line.contains("[Verify]")) {
+                    appendChatLine("🧭 $line")
+                }
+            },
             statusListener = { status, emotion ->
                 tvHeaderStatus.text = "Nax Bot • $status ($emotion)"
             }
         )
+
+        rgExecutionMode.setOnCheckedChangeListener { _, checkedId ->
+            if (syncingExecutionMode) return@setOnCheckedChangeListener
+            val useNative = checkedId == R.id.rbModePhoneVision
+            getSharedPreferences("auradroid_execution_settings", Context.MODE_PRIVATE)
+                .edit().putBoolean("use_native_execution", useNative).apply()
+            if (cbUseNativeExecution.isChecked != useNative) {
+                syncingExecutionMode = true
+                cbUseNativeExecution.isChecked = useNative
+                syncingExecutionMode = false
+            }
+        }
+
+        cbUseNativeExecution.setOnCheckedChangeListener { _, useNative ->
+            if (syncingExecutionMode) return@setOnCheckedChangeListener
+            syncingExecutionMode = true
+            if (useNative) {
+                rbModePhoneVision.isChecked = true
+            } else {
+                rbModeStealthWeb.isChecked = true
+            }
+            syncingExecutionMode = false
+            getSharedPreferences("auradroid_execution_settings", Context.MODE_PRIVATE)
+                .edit().putBoolean("use_native_execution", useNative).apply()
+            appendConsoleLog("[Engine] Execution engine: ${if (useNative) "Native Android Accessibility" else "Stealth WebView"}.")
+        }
+
+        cbPassiveTeachMode.setOnCheckedChangeListener { _, enabled ->
+            AutomationReliability.setPassiveTeachMode(this, enabled)
+            appendConsoleLog("[ShadowTeach] Passive teaching ${if (enabled) "ENABLED" else "DISABLED"}. No screenshots or typed contents are stored.")
+            appendChatLine("🧠 Passive Shadow Teach Mode ${if (enabled) "ON" else "OFF"}")
+        }
 
         btnToggleFloatingHud.setOnClickListener {
             if (!AiOverlayHud.canDrawOverlays(this)) {
@@ -572,11 +621,46 @@ class MainActivity : AppCompatActivity() {
 
         btnUploadExistingVideo.setOnClickListener {
             lifecycleScope.launch {
-                WebPipelineManager.runYouTubeAutoUpload(
-                    context = this@MainActivity,
-                    webView = mainWebView,
-                    skipFlowRouting = false
-                )
+                val result = NativeYouTubeUploader.startNextUpload(this@MainActivity)
+                appendConsoleLog("[YouTube Native] ${result.message}")
+                appendChatLine(if (result.started) "📤 ${result.message}" else "⚠️ ${result.message}")
+                Toast.makeText(this@MainActivity, result.message, Toast.LENGTH_LONG).show()
+                if (result.started) tvHeaderStatus.text = "Nax Bot • Preparing upload"
+            }
+        }
+
+        btnConfirmVideoUploaded.setOnClickListener {
+            val message = NativeYouTubeUploader.markPendingUploadComplete(this)
+            appendConsoleLog("[YouTube Native] $message")
+            appendChatLine("✅ $message")
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }
+
+        btnScheduleDailyYouTube.setOnClickListener {
+            TimePickerDialog(
+                this,
+                { _, hourOfDay, minute ->
+                    DailyYouTubeUploadReceiver.schedule(this, hourOfDay, minute)
+                    val timeLabel = String.format(Locale.getDefault(), "%02d:%02d", hourOfDay, minute)
+                    appendConsoleLog("[YouTube Schedule] Daily reminder enabled for $timeLabel.")
+                    appendChatLine("🗓 Daily YouTube upload reminder set for $timeLabel.")
+                    Toast.makeText(this, "Daily upload reminder set for $timeLabel", Toast.LENGTH_LONG).show()
+                },
+                19,
+                0,
+                android.text.format.DateFormat.is24HourFormat(this)
+            ).apply {
+                setTitle("Choose daily YouTube upload reminder time")
+            }.show()
+        }
+
+        btnCancelDailyYouTube.setOnClickListener {
+            if (DailyYouTubeUploadReceiver.isScheduled(this)) {
+                DailyYouTubeUploadReceiver.cancel(this)
+                appendConsoleLog("[YouTube Schedule] Daily reminder cancelled.")
+                Toast.makeText(this, "Daily YouTube reminder cancelled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "No daily reminder is currently scheduled", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -690,6 +774,16 @@ class MainActivity : AppCompatActivity() {
         etFastModelName.setText(GeminiBrain.getFastModel(this))
         etProModelName.setText(GeminiBrain.getProModel(this))
 
+        val useNativeExecution = getSharedPreferences("auradroid_execution_settings", Context.MODE_PRIVATE)
+            .getBoolean("use_native_execution", false)
+        syncingExecutionMode = true
+        rbModeStealthWeb.isChecked = !useNativeExecution
+        rbModePhoneVision.isChecked = useNativeExecution
+        cbUseNativeExecution.isChecked = useNativeExecution
+        syncingExecutionMode = false
+
+        cbPassiveTeachMode.isChecked = AutomationReliability.isPassiveTeachModeEnabled(this)
+        btnCancelDailyYouTube.isEnabled = DailyYouTubeUploadReceiver.isScheduled(this)
         tvSelectedFolderUri.text = VideoQueueManager.getFolderDisplayLabel(this)
         val newestFirst = VideoQueueManager.isUploadNewestFirst(this)
         rbOrderNewestFirst.isChecked = newestFirst
@@ -773,6 +867,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleIncomingScheduledIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(DailyYouTubeUploadReceiver.EXTRA_OPEN_NATIVE_UPLOAD, false) == true) {
+            intent.removeExtra(DailyYouTubeUploadReceiver.EXTRA_OPEN_NATIVE_UPLOAD)
+            appendChatLine("⏰ Daily YouTube reminder opened. Preparing the next queued video…")
+            lifecycleScope.launch {
+                val result = NativeYouTubeUploader.startNextUpload(this@MainActivity)
+                appendConsoleLog("[YouTube Native] ${result.message}")
+                appendChatLine(if (result.started) "📤 ${result.message}" else "⚠️ ${result.message}")
+                Toast.makeText(this@MainActivity, result.message, Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         val autoGoal = intent?.getStringExtra(TaskSchedulerReceiver.EXTRA_AUTO_START_GOAL)
         if (autoGoal.isNullOrBlank()) return
         val mode = intent.getStringExtra(TaskSchedulerReceiver.EXTRA_AUTO_START_MODE) ?: "STEALTH_WEB"
