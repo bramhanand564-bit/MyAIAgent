@@ -507,7 +507,7 @@ object PhoneAgentManager {
                     // Live accessibility bounds win first. Scale legacy 540x960 coordinates only as fallback.
                     val targetNodeCenter = when (stepKind) {
                         "PLAY_VIDEO" -> touchService.findFirstVideoGridTileCenter()
-                        "SHARE_SEND" -> touchService.findNodeCenterByExactLabel("Send")
+                        "SHARE_SEND" -> touchService.findBottomNodeCenterByExactLabel("Send")
                         "LIKE_VIDEO" -> touchService.findNodeCenterByExactLabel("Like", "Like reel", "Like post")
                         else -> if (decision.targetNodeText.isNotBlank()) {
                             touchService.findNodeCenterByText(decision.targetNodeText)
@@ -631,7 +631,7 @@ object PhoneAgentManager {
                             }
                             emitStatus("Tapping UI", "WORKING")
                             val clickedByText = when {
-                                stepKind == "SHARE_SEND" -> touchService.clickExactLabel("Send")
+                                stepKind == "SHARE_SEND" -> touchService.clickBottomExactLabel("Send")
                                 stepKind == "PLAY_VIDEO" -> touchService.clickFirstVideoGridTile()
                                 stepKind == "SEARCH_QUERY" && searchQueryTyped ->
                                     touchService.clickKeyboardSearchAction()
@@ -714,7 +714,7 @@ object PhoneAgentManager {
                                 continue
                             }
                             if (stepKind == "SHARE_SEND") {
-                                if (touchService.clickExactLabel("Send")) {
+                                if (touchService.clickBottomExactLabel("Send")) {
                                     hasSharedInCurrentTask = true
                                     shareSendAttempted = true
                                     if (latchPlanStep(activePlanIndex, "Exact Send node was clicked; mission completes immediately")) break
