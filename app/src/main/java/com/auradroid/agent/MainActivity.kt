@@ -239,6 +239,7 @@ class MainActivity : AppCompatActivity() {
 
         AutomationReliability.init(this)
         AiOverlayHud.init(this)
+        AuraDroidKeepAliveService.start(this)
 
         bindAllViews()
         GeminiBrain.setModelRouterLogListener { line -> appendConsoleLog(line) }
