@@ -1006,10 +1006,16 @@ Respond ONLY with a valid JSON object:
             "search",
             listOf(",", " then ", " and then ", " play ", " watch ", " like ", " comment ", " share ")
         ).ifBlank { "the requested video" }.take(120)
-        val quotedComment = Regex("[\"']([^\"']{1,100})[\"']").find(goal)?.groupValues?.getOrNull(1)
         val lower = goal.lowercase(Locale.US)
+        val commentMarker = lower.indexOf("comment")
+        val commentSection = if (commentMarker >= 0) {
+            goal.substring((commentMarker + "comment".length).coerceAtMost(goal.length))
+        } else {
+            ""
+        }
+        val quotedComment = Regex("[\"']([^\"']{1,100})[\"']").find(commentSection)?.groupValues?.getOrNull(1)
         val commentText = quotedComment?.takeIf { it.isNotBlank() }
-            ?: if (lower.contains("comment")) "Nice" else ""
+            ?: if (commentMarker >= 0) "Nice" else ""
         val shareTarget = extractMissionValue(
             goal,
             "share with",
