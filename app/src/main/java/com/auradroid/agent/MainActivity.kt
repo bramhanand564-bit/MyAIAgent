@@ -1108,8 +1108,8 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
             .edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply()
         syncingVoiceFeedback = true
-        if (cbVoiceFeedbackChat.isInitialized) cbVoiceFeedbackChat.isChecked = enabled
-        if (cbVoiceFeedbackSettings.isInitialized) cbVoiceFeedbackSettings.isChecked = enabled
+        cbVoiceFeedbackChat.isChecked = enabled
+        cbVoiceFeedbackSettings.isChecked = enabled
         updateVoiceFeedbackLabels(enabled)
         syncingVoiceFeedback = false
         if (enabled) speakVoiceFeedback("Boss, voice feedback on hai.")
@@ -1118,8 +1118,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateVoiceFeedbackLabels(enabled: Boolean) {
         val label = if (enabled) "🔊 Voice Feedback: ON" else "🔊 Voice Feedback: OFF"
-        if (cbVoiceFeedbackChat.isInitialized) cbVoiceFeedbackChat.text = label
-        if (cbVoiceFeedbackSettings.isInitialized) cbVoiceFeedbackSettings.text = label
+        cbVoiceFeedbackChat.text = label
+        cbVoiceFeedbackSettings.text = label
     }
 
     private fun speakVoiceFeedback(text: String) {
