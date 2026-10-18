@@ -295,7 +295,12 @@ object PhoneAgentManager {
                         index == activePlanIndex -> "RUNNING"
                         else -> "PENDING"
                     }
-                    PhoneTaskProgressItem(item.title, state)
+                    val displayTitle = if (index == 2 && requestedSearchQuery.isNotBlank()) {
+                        "Search \"$requestedSearchQuery\""
+                    } else {
+                        item.title
+                    }
+                    PhoneTaskProgressItem(displayTitle, state)
                 }
                 emitMissionProgress(heading, items, completedStepsSet.size, microPlan.size)
             }
@@ -394,12 +399,20 @@ object PhoneAgentManager {
 
                     if (stepKind == "PLAY_VIDEO") {
                         val firstTile = touchService.findFirstVideoGridTileCenter()
-                        if (firstTile != null && touchService.clickFirstVideoGridTile()) {
+                        if (firstTile == null) {
+                            emitLog("[Target] No eligible video grid card is visible below the 35 percent screen threshold. Refusing raw coordinates and Meta AI summary targets.")
+                            delay(350)
+                            continue
+                        }
+                        if (touchService.clickFirstVideoGridTile()) {
                             emitLog("[Target] First eligible video grid tile tapped at (${firstTile.x.toInt()},${firstTile.y.toInt()}).")
                             delay(800)
                             if (latchPlanStep(activePlanIndex, "First eligible grid thumbnail tapped using live node bounds")) break
                             continue
                         }
+                        emitLog("[Target] Grid card tap could not be dispatched. Retrying node lookup without using Gemini coordinates.")
+                        delay(350)
+                        continue
                     }
 
                     if (stepKind == "CLOSE_COMMENTS") {
