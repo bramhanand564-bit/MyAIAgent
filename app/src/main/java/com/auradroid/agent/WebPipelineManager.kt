@@ -344,45 +344,29 @@ object WebPipelineManager {
         }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun runYouTubeAutoUpload(
         context: Context,
         webView: WebView,
         skipFlowRouting: Boolean = false
-    ) = withContext(Dispatchers.Main) {
-        val nextItem = VideoQueueManager.getNextVideoForUpload(context)
-        if (nextItem == null) {
-            log("[Upload] No queued videos found for YouTube upload.")
-            return@withContext
+    ): Unit = withContext(Dispatchers.Main) {
+        // Do not mark queued videos uploaded simply because metadata was generated.
+        // Native Android share flow hands the video and Vision SEO metadata to YouTube;
+        // the user must publish there and confirm completion in AuraDroid.
+        updateStatus("Preparing YouTube Upload", "WORKING")
+        val result = try {
+            NativeYouTubeUploader.startNextUpload(context)
+        } catch (e: Exception) {
+            NativeUploadStartResult(
+                started = false,
+                message = "YouTube upload handoff failed: ${e.message ?: "unknown error"}"
+            )
         }
-
-        val localCache = VideoQueueManager.ensureLocalCacheFile(context, nextItem)
-        if (localCache == null || !localCache.exists()) {
-            log("[Upload] Failed to stage video file for upload: ${nextItem.displayName}")
-            return@withContext
-        }
-
-        log("[Upload] Extracting HD frames for Vision SEO analysis...")
-        updateStatus("Vision SEO Analysis", "SEARCHING")
-
-        val seoMeta = GeminiBrain.generateYouTubeMetadataWithVision(
-            context = context,
-            videoFile = localCache,
-            storyTopicHint = nextItem.displayName,
-            episodeNumber = 1
+        log("[Upload] ${result.message}")
+        updateStatus(
+            if (result.started) "YouTube Review Required" else "Upload Not Started",
+            if (result.started) "WORKING" else "ERROR"
         )
-
-        log("[SEO Title] ${seoMeta.title}")
-        log("[SEO Tags] ${seoMeta.tags.joinToString(", ")}")
-
-        if (!skipFlowRouting) {
-            webView.loadUrl("https://studio.youtube.com")
-            delay(5000)
-        }
-
-        updateStatus("Uploading to YouTube", "UPLOADING")
-        log("[Upload] Automated YouTube Studio upload sequence ready for: ${nextItem.displayName}")
-        VideoQueueManager.markVideoAsUploaded(context, nextItem)
-        updateStatus("Upload Ready", "HAPPY")
     }
 
     private suspend fun downloadBytesFromUrl(url: String): ByteArray? = withContext(Dispatchers.IO) {
