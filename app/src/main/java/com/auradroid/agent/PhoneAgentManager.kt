@@ -57,7 +57,7 @@ object PhoneAgentManager {
         emitLog("[VLA] Stopped by user.")
     }
 
-    fun startAutonomousPhoneTask(context: Context, goal: String, skillKey: String = "general_phone_skill") {
+    fun startAutonomousPhoneTask(context: Context, goal: String) {
         if (isPhoneAgentRunning) {
             emitLog("[VLA] A phone task is already running. Stop it before starting another.")
             return
