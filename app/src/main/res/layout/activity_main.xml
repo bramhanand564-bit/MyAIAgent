@@ -857,6 +857,16 @@
                                 android:textColor="#F8FAFC"
                                 android:textSize="12sp" />
                         </RadioGroup>
+
+                        <CheckBox
+                            android:id="@+id/cbVoiceFeedbackChat"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:buttonTint="#38BDF8"
+                            android:text="🔊 Voice Feedback: OFF"
+                            android:textColor="#E2E8F0"
+                            android:textSize="12sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
 
@@ -1179,6 +1189,77 @@
                             android:typeface="monospace" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:layout_marginBottom="10dp"
+                    app:cardBackgroundColor="#131B2E"
+                    app:cardCornerRadius="22dp"
+                    app:strokeColor="#A855F7"
+                    app:strokeWidth="1dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="🧠 Memory Chat &amp; Video Learning Studio"
+                            android:textColor="#C4B5FD"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Screen-recording ke steps samjhaayein. Nax Bot keyframes analyze karke app-specific Golden Fix save karega."
+                            android:textColor="#94A3B8"
+                            android:textSize="11sp" />
+
+                        <EditText
+                            android:id="@+id/etMemoryChatMessage"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="#0B1325"
+                            android:gravity="top"
+                            android:hint="Example: Bhai folder se video uthakar YouTube par upload karne ka video hai"
+                            android:inputType="textCapSentences|textMultiLine"
+                            android:minHeight="72dp"
+                            android:padding="10dp"
+                            android:textColor="#FFFFFF"
+                            android:textColorHint="#64748B"
+                            android:textSize="12sp" />
+
+                        <Button
+                            android:id="@+id/btnPickMemoryVideo"
+                            android:layout_width="match_parent"
+                            android:layout_height="42dp"
+                            android:layout_marginTop="8dp"
+                            android:backgroundTint="#7C3AED"
+                            android:text="🎬 Upload MP4 and Analyze Keyframes"
+                            android:textAllCaps="false"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp" />
+
+                        <TextView
+                            android:id="@+id/tvMemoryVideoStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:background="#0B1325"
+                            android:padding="10dp"
+                            android:text="No training video selected."
+                            android:textColor="#E2E8F0"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
         </ScrollView>
 
@@ -1266,6 +1347,16 @@
                                 android:textColor="#FFFFFF"
                                 android:textSize="12sp" />
                         </LinearLayout>
+
+                        <CheckBox
+                            android:id="@+id/cbVoiceFeedbackSettings"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:buttonTint="#38BDF8"
+                            android:text="🔊 Voice Feedback: OFF"
+                            android:textColor="#E2E8F0"
+                            android:textSize="13sp" />
 
                         <Button
                             android:id="@+id/btnSaveAiSettings"
