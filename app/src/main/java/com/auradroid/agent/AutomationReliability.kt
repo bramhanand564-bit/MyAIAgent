@@ -155,21 +155,67 @@ object AutomationReliability {
         init(context)
         val db = dbHelper?.readableDatabase ?: return "No prior RAG lessons recorded."
         val sb = StringBuilder()
+        val queryTokens = tokenizeText(goal).split(",").filter { it.isNotBlank() }.toSet()
+        val stateTokens = tokenizeText(stateSignature).split(",").filter { it.isNotBlank() }.toSet()
+        val lessons = mutableListOf<Triple<String, String, Int>>()
         try {
             db.rawQuery(
-                "SELECT goal_query, lesson_fix FROM vector_rag_memory ORDER BY timestamp DESC LIMIT 5",
+                "SELECT goal_query, state_signature, lesson_fix, embedding_tokens FROM vector_rag_memory ORDER BY timestamp DESC LIMIT 100",
                 null
             ).use { cursor ->
                 while (cursor.moveToNext()) {
-                    val q = cursor.getString(0) ?: ""
-                    val fix = cursor.getString(1) ?: ""
-                    sb.append("• Goal: $q ➔ Fix: $fix\n")
+                    val lessonGoal = cursor.getString(0).orEmpty()
+                    val lessonState = cursor.getString(1).orEmpty()
+                    val fix = cursor.getString(2).orEmpty()
+                    val tokens = cursor.getString(3).orEmpty().split(",").filter { it.isNotBlank() }.toSet()
+                    val score = queryTokens.intersect(tokens).size * 4 +
+                        stateTokens.intersect(tokens).size +
+                        if (stateSignature.isNotBlank() && lessonState == stateSignature) 20 else 0
+                    lessons.add(Triple(lessonGoal, fix, score))
                 }
             }
         } catch (_: Exception) {
         }
+
+        val ranked = if (lessons.any { it.third > 0 }) {
+            lessons.sortedByDescending { it.third }.take(5)
+        } else {
+            lessons.take(5)
+        }
+        ranked.forEach { (lessonGoal, fix, score) ->
+            sb.append("• Goal: ").append(lessonGoal)
+                .append(" ➔ Fix: ").append(fix)
+                .append(if (score > 0) " [relevance $score]" else "")
+                .append("\\n")
+        }
+
+        // Reuse only events recorded from an identical privacy-safe screen signature.
+        // Coordinates are hints, not mandatory clicks; the live UI tree must still agree.
+        if (stateSignature.isNotBlank()) {
+            try {
+                db.rawQuery(
+                    "SELECT package_name, event_type, center_x, center_y, label_text, is_correction FROM shadow_teach_events WHERE screen_signature = ? ORDER BY timestamp DESC LIMIT 4",
+                    arrayOf(stateSignature)
+                ).use { cursor ->
+                    var wroteHeader = false
+                    while (cursor.moveToNext()) {
+                        if (!wroteHeader) {
+                            sb.append("Passive Teach examples matching this same screen (verify against current UI before reuse):\\n")
+                            wroteHeader = true
+                        }
+                        val retry = if (cursor.getInt(5) == 1) " [repeated target/correction]" else ""
+                        sb.append("• ").append(cursor.getString(0)).append(" / ")
+                            .append(cursor.getString(1)).append(" @(")
+                            .append(cursor.getFloat(2).toInt()).append(",")
+                            .append(cursor.getFloat(3).toInt()).append(") label='")
+                            .append(cursor.getString(4)).append("'").append(retry).append("\\n")
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
         val res = sb.toString().trim()
-        return if (res.isBlank()) "No prior RAG lessons recorded." else res
+        return if (res.isBlank()) "No relevant RAG or same-screen teaching lessons recorded." else res
     }
 
     fun savePersonalMemoryFact(context: Context, factText: String) {
@@ -267,8 +313,8 @@ object AutomationReliability {
             var correction = false
             if (eventSafe == "VIEW_CLICKED") {
                 db.rawQuery(
-                    "SELECT center_x, center_y FROM shadow_teach_events WHERE package_name = ? AND event_type = 'VIEW_CLICKED' AND timestamp >= ? ORDER BY timestamp DESC LIMIT 1",
-                    arrayOf(packageSafe, (now - 8000L).toString())
+                    "SELECT center_x, center_y FROM shadow_teach_events WHERE package_name = ? AND screen_signature = ? AND event_type = 'VIEW_CLICKED' AND timestamp >= ? ORDER BY timestamp DESC LIMIT 1",
+                    arrayOf(packageSafe, signature, (now - 8000L).toString())
                 ).use { cursor ->
                     if (cursor.moveToFirst()) {
                         val oldX = cursor.getFloat(0)
