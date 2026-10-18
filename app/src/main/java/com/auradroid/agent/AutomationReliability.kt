@@ -332,10 +332,13 @@ object AutomationReliability {
         val eventSafe = eventType.trim().uppercase(Locale.US)
         if (eventSafe !in setOf("VIEW_CLICKED", "VIEW_SELECTED", "VIEW_SCROLLED", "WINDOW_STATE_CHANGED")) return false
         val cleanLabel = labelText.trim().replace(Regex("\\s+"), " ").take(80)
-        val sensitive = Regex(
-            "(?i)(password|passcode|pin code|one.?time.?password|\\botp\\b|email|e-mail|phone number|bank|account number|credit card|debit card|cvv|security code|recovery code)"
+        val labelLower = cleanLabel.lowercase(Locale.US)
+        val sensitiveTerms = listOf(
+            "password", "passcode", "pin code", "one time password", "otp",
+            "email", "e-mail", "phone number", "bank", "account number",
+            "credit card", "debit card", "cvv", "security code", "recovery code"
         )
-        if (sensitive.containsMatchIn(cleanLabel)) return false
+        if (sensitiveTerms.any { labelLower.contains(it) }) return false
 
         val signature = screenSignature.trim().take(64).ifBlank { "unknown" }
         val safeBounds = boundsText.trim().take(100)
