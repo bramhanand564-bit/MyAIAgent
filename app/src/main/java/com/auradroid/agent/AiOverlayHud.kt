@@ -76,6 +76,7 @@ object AiOverlayHud {
     private var currentStage: Int = STAGE_1_COMPACT_POD
     @Volatile private var phoneVisionTaskActive: Boolean = false
     private var currentEmotion: BotEmotion = BotEmotion.IDLE
+    private var ghostControlsExpanded: Boolean = false
     private var isHudAttached: Boolean = false
     private var isCursorAttached: Boolean = false
     private var isTemporarilyHiddenForInput: Boolean = false
@@ -173,11 +174,10 @@ object AiOverlayHud {
     }
 
     fun updateStatus(statusText: String, emotionName: String = "") {
-        if (emotionName.isNotBlank()) {
-            setEmotionByName(emotionName)
-        }
+        if (emotionName.isNotBlank()) setEmotionByName(emotionName)
         mainHandler.post {
             tvNotchStatus?.text = statusText.take(36)
+            if (isHudAttached) applyStageLayout(currentStage)
         }
     }
 
@@ -624,7 +624,7 @@ object AiOverlayHud {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!movedSignificantly && !phoneVisionTaskActive) {
-                        notch.visibility = if (notch.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                        ghostControlsExpanded = !ghostControlsExpanded
                         applyStageLayout(STAGE_1_COMPACT_POD)
                     }
                     true
@@ -801,6 +801,7 @@ class NaxBotFaceView(context: Context) : View(context) {
             eyeY + eyeRadiusY
         )
 
+        // Single-layer flat solid eyes: no highlight, inner blue, reflection, or blush.
         canvas.drawOval(eyeRectLeft, eyeOuterPaint)
         canvas.drawOval(eyeRectRight, eyeOuterPaint)
 
@@ -988,7 +989,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
             }
             start()
         }
-        postDelayed(autoHideTapRunnable, 190L)
+        postDelayed(autoHideTapRunnable, 200L)
         handScaleAnimator?.cancel()
         handScaleAnimator = ValueAnimator.ofFloat(1f, 0.80f, 1f).apply {
             duration = 220L
@@ -1038,7 +1039,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
 
         val fingers = arrayOf(
             RectF(left + 4f, fingerTop + 8f, left + 4f + fingerWidth, top + 13f),
-            RectF(handPoint.x - fingerWidth / 2f, fingerTop, handPoint.x + fingerWidth / 2f, top + 12f),
+            RectF(handPoint.x - fingerWidth / 2f, fingerTop, handPoint.x + fingerWidth / 2f, fingerTop + fingerHeight),
             RectF(right - 4f - fingerWidth, fingerTop + 7f, right - 4f, top + 13f)
         )
         fingers.forEach { rect ->
