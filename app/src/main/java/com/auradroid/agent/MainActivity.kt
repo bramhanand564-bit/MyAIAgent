@@ -146,12 +146,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etGeminiApiKey: EditText
     private lateinit var cbUseNativeExecution: CheckBox
     private lateinit var cbPassiveTeachMode: CheckBox
-    private lateinit var cbVoiceFeedbackChat: CheckBox
-    private lateinit var cbVoiceFeedbackSettings: CheckBox
     private var syncingExecutionMode = false
-    private var syncingVoiceSettings = false
-    private var textToSpeech: TextToSpeech? = null
-    @Volatile private var textToSpeechReady = false
     private lateinit var etFastModelName: EditText
     private lateinit var etProModelName: EditText
     private lateinit var btnSaveAiSettings: Button
@@ -226,43 +221,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val memoryVideoLauncher = registerForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val description = etMemoryVideoNotes.text.toString().trim()
-            if (description.isBlank()) {
-                Toast.makeText(
-                    this,
-                    "Pehle video ka workflow describe karein.",
-                    Toast.LENGTH_LONG
-                ).show()
-            } else {
-                tvMemoryVideoStatus.text = "Video keyframes analyze ho rahe hain..."
-                btnPickMemoryVideo.isEnabled = false
-                lifecycleScope.launch {
-                    try {
-                        val result = AutomationReliability.trainMemoryFromVideo(
-                            this@MainActivity,
-                            uri,
-                            description
-                        )
-                        tvMemoryVideoStatus.text = result
-                        appendConsoleLog("[VideoMemory] $result")
-                        refreshRagVaultViewer()
-                        speakVoiceFeedback("Boss, video memory training complete ho gayi hai.")
-                    } catch (error: Exception) {
-                        val message = "Video training failed: ${error.message ?: error.javaClass.simpleName}"
-                        tvMemoryVideoStatus.text = message
-                        appendConsoleLog("[VideoMemory] $message")
-                    } finally {
-                        btnPickMemoryVideo.isEnabled = true
-                    }
-                }
-            }
-        }
-    }
-
     private val storagePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) {
@@ -283,7 +241,6 @@ class MainActivity : AppCompatActivity() {
         AiOverlayHud.init(this)
 
         bindAllViews()
-        initializeVoiceFeedback()
         GeminiBrain.setModelRouterLogListener { line -> appendConsoleLog(line) }
         setupWebView()
         setupTabNavigation()
@@ -297,12 +254,11 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         GeminiBrain.setModelRouterLogListener(null)
         try {
-            textToSpeech?.stop()
-            textToSpeech?.shutdown()
+            voiceTts?.stop()
+            voiceTts?.shutdown()
         } catch (_: Exception) {
         }
-        textToSpeech = null
-        textToSpeechReady = false
+        voiceTts = null
         super.onDestroy()
     }
 
@@ -311,91 +267,6 @@ class MainActivity : AppCompatActivity() {
         handleIncomingScheduledIntent(intent)
     }
 
-
-    companion object {
-        private const val VOICE_PREFS = "auradroid_voice_settings"
-        private const val KEY_VOICE_ENABLED = "voice_feedback_enabled"
-    }
-
-    private fun initializeVoiceFeedback() {
-        textToSpeech = TextToSpeech(applicationContext) { status ->
-            textToSpeechReady = status == TextToSpeech.SUCCESS
-            if (textToSpeechReady) {
-                try {
-                    val languageResult = textToSpeech?.setLanguage(Locale("hi", "IN"))
-                    if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
-                        languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        textToSpeech?.setLanguage(Locale.US)
-                    }
-                    textToSpeech?.setSpeechRate(0.94f)
-                } catch (error: Exception) {
-                    appendConsoleLog("[Voice] TTS language initialization failed: ${error.message}")
-                }
-            } else {
-                appendConsoleLog("[Voice] Text-to-Speech engine is unavailable on this device.")
-            }
-        }
-    }
-
-    private fun isVoiceFeedbackEnabled(): Boolean {
-        return getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_VOICE_ENABLED, false)
-    }
-
-    private fun setVoiceFeedbackEnabled(enabled: Boolean, sourceIsChat: Boolean) {
-        getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_VOICE_ENABLED, enabled).apply()
-        syncingVoiceSettings = true
-        cbVoiceFeedbackChat.isChecked = enabled
-        cbVoiceFeedbackSettings.isChecked = enabled
-        syncingVoiceSettings = false
-        if (!enabled) {
-            try { textToSpeech?.stop() } catch (_: Exception) {}
-            appendConsoleLog("[Voice] Feedback disabled. TTS stopped immediately.")
-            return
-        }
-        appendConsoleLog("[Voice] Feedback enabled.")
-        speakVoiceFeedback("Boss, voice feedback on hai.")
-    }
-
-    private fun speakVoiceFeedback(text: String) {
-        if (!isVoiceFeedbackEnabled() || !textToSpeechReady) return
-        val spoken = text.trim().take(420)
-        if (spoken.isBlank()) return
-        try {
-            textToSpeech?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "nax_voice_feedback")
-        } catch (error: Exception) {
-            appendConsoleLog("[Voice] Speak failed: ${error.message ?: error.javaClass.simpleName}")
-        }
-    }
-
-    private fun speakStatusFeedback(status: String) {
-        if (!isVoiceFeedbackEnabled()) return
-        val normalized = status.lowercase(Locale.US)
-        val spoken = when {
-            normalized.contains("task complete") || normalized.contains("goal completed") ->
-                "Boss, task complete ho gaya."
-            normalized.contains("stuck") || normalized.contains("error") ||
-                normalized.contains("dikkat") || normalized.contains("enable accessibility") ->
-                "Boss, yahan thodi dikkat aa rahi hai. Main screen ko dobara dekh raha hoon."
-            normalized.contains("observing") || normalized.contains("thinking") ->
-                "Boss, screen ko dhyan se dekh raha hoon."
-            normalized.contains("tapped") || normalized.contains("tap") ->
-                "Boss, screen par tap kar raha hoon."
-            normalized.contains("typed") ->
-                "Boss, text type kar raha hoon."
-            normalized.contains("swiped") || normalized.contains("scroll") ->
-                "Boss, screen par scroll kar raha hoon."
-            normalized.contains("pressed back") ->
-                "Boss, ek step back ja raha hoon."
-            normalized.contains("pressed home") ->
-                "Boss, home screen par ja raha hoon."
-            normalized.contains("phone agent idle") || normalized.contains("stopped") ->
-                "Boss, task rok diya hai."
-            else -> ""
-        }
-        if (spoken.isNotBlank()) speakVoiceFeedback(spoken)
-    }
 
     private fun bindAllViews() {
         tvHeaderStatus = findViewById(R.id.tvHeaderStatus)
@@ -608,7 +479,7 @@ class MainActivity : AppCompatActivity() {
         WebPipelineManager.setLogListener { line -> appendConsoleLog(line) }
         WebPipelineManager.setStatusListener { status, emotion ->
             tvHeaderStatus.text = "Nax Bot • $status ($emotion)"
-            speakStatusFeedback(status)
+            speakTaskStatus(status)
         }
 
         PhoneAgentManager.setListeners(
@@ -618,7 +489,7 @@ class MainActivity : AppCompatActivity() {
             },
             statusListener = { status, emotion ->
                 tvHeaderStatus.text = "Nax Bot • $status ($emotion)"
-                speakStatusFeedback(status)
+                speakTaskStatus(status)
             }
         )
 
@@ -660,13 +531,6 @@ class MainActivity : AppCompatActivity() {
         }
         cbVoiceFeedbackSettings.setOnCheckedChangeListener { _, enabled ->
             if (!syncingVoiceFeedback) setVoiceFeedbackEnabled(enabled)
-        }
-
-        cbVoiceFeedbackChat.setOnCheckedChangeListener { _, enabled ->
-            if (!syncingVoiceSettings) setVoiceFeedbackEnabled(enabled, sourceIsChat = true)
-        }
-        cbVoiceFeedbackSettings.setOnCheckedChangeListener { _, enabled ->
-            if (!syncingVoiceSettings) setVoiceFeedbackEnabled(enabled, sourceIsChat = false)
         }
 
         btnPickMemoryVideo.setOnClickListener {
@@ -870,16 +734,6 @@ class MainActivity : AppCompatActivity() {
         btnPickTrainScreenshots.setOnClickListener {
             screenshotTrainerLauncher.launch("image/*")
         }
-        btnPickMemoryVideo.setOnClickListener {
-            val description = etMemoryChatMessage.text.toString().trim()
-            if (description.isBlank()) {
-                etMemoryChatMessage.error = "Describe what this video teaches Nax Bot"
-                etMemoryChatMessage.requestFocus()
-            } else {
-                memoryVideoLauncher.launch("video/mp4")
-            }
-        }
-
         btnStartLiveTeach.setOnClickListener {
             toggleLiveTeachMode()
         }
@@ -982,10 +836,11 @@ class MainActivity : AppCompatActivity() {
         cbPassiveTeachMode.isChecked = AutomationReliability.isPassiveTeachModeEnabled(this)
         val voiceEnabled = getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_VOICE_ENABLED, false)
-        syncingVoiceSettings = true
+        syncingVoiceFeedback = true
         cbVoiceFeedbackChat.isChecked = voiceEnabled
         cbVoiceFeedbackSettings.isChecked = voiceEnabled
-        syncingVoiceSettings = false
+        updateVoiceFeedbackLabels(voiceEnabled)
+        syncingVoiceFeedback = false
         btnCancelDailyYouTube.isEnabled = DailyYouTubeUploadReceiver.isScheduled(this)
         tvSelectedFolderUri.text = VideoQueueManager.getFolderDisplayLabel(this)
         val newestFirst = VideoQueueManager.isUploadNewestFirst(this)
@@ -1177,9 +1032,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processMemoryTrainingVideo(uri: Uri) {
-        val description = etMemoryChatMessage.text.toString().trim()
+        val description = etMemoryVideoNotes.text.toString().trim()
         if (description.isBlank()) {
-            etMemoryChatMessage.error = "Describe this recording first"
+            etMemoryVideoNotes.error = "Describe this recording first"
             return
         }
         val appName = inferMemoryAppName(description)
