@@ -16,6 +16,11 @@ data class PhoneTaskProgressItem(
     val state: String
 )
 
+data class PhoneTaskProgressItem(
+    val title: String,
+    val state: String
+)
+
 object PhoneAgentManager {
     private const val PREFS_NAME = "auradroid_phone_calibration_prefs"
     private const val KEY_CALIBRATED_SKILLS = "calibrated_phone_skills_csv"
@@ -105,14 +110,6 @@ object PhoneAgentManager {
             rationale.contains("click post button")
     }
 
-    private fun isShareSendTarget(targetLabel: String, reason: String): Boolean {
-        val label = targetLabel.trim().lowercase(Locale.US)
-        val rationale = reason.lowercase(Locale.US)
-        return label == "send" || label == "sent" || label.contains("send button") ||
-            (label.isBlank() && (rationale.contains("tap the send button") ||
-                rationale.contains("click the send button")))
-    }
-
     private fun isShareRecipientTarget(targetLabel: String, requestedRecipient: String): Boolean {
         val label = targetLabel.trim().lowercase(Locale.US)
         val recipient = requestedRecipient.trim().lowercase(Locale.US)
@@ -152,10 +149,11 @@ object PhoneAgentManager {
     }
 
     private fun extractShareTarget(goal: String): String {
-        val markerIndex = goal.indexOf("share with", ignoreCase = true)
-            .takeIf { it >= 0 } ?: goal.indexOf("send to", ignoreCase = true)
+        val shareIndex = goal.indexOf("share with", ignoreCase = true)
+        val sendIndex = goal.indexOf("send to", ignoreCase = true)
+        val markerIndex = if (shareIndex >= 0) shareIndex else sendIndex
         if (markerIndex < 0) return ""
-        val markerLength = if (goal.regionMatches(markerIndex, "share with", 0, 10, true)) 10 else 7
+        val markerLength = if (shareIndex >= 0) 10 else 7
         var value = goal.substring((markerIndex + markerLength).coerceAtMost(goal.length)).trim()
         val first = value.firstOrNull()
         if (first == '"' || first == '\'') {
@@ -282,10 +280,25 @@ object PhoneAgentManager {
             var hasSharedInCurrentTask = false
             var commentSubmitAttempted = false
             var commentSubmitWaitCount = 0
-            var commentBackPressed = false
+            var commentTextTyped = false
+            var searchQueryTyped = false
             var shareSendAttempted = false
             val performedToggleTypes = linkedSetOf<String>()
-            val requestedCommentText = extractCommentText(goal)
+            val requestedCommentText = extractCommentText(goal).ifBlank { "Nice" }
+            val requestedSearchQuery = extractSearchQuery(goal)
+            val requestedShareTarget = extractShareTarget(goal)
+
+            fun publishProgress(heading: String = "🎯 Current Mission") {
+                val items = microPlan.mapIndexed { index, item ->
+                    val state = when {
+                        completedStepsSet.contains(index) -> "DONE"
+                        index == activePlanIndex -> "RUNNING"
+                        else -> "PENDING"
+                    }
+                    PhoneTaskProgressItem(item.title, state)
+                }
+                emitMissionProgress(heading, items, completedStepsSet.size, microPlan.size)
+            }
 
             fun finishPhoneTaskIfDone(): Boolean {
                 if (activePlanIndex < microPlan.size ||
@@ -293,8 +306,9 @@ object PhoneAgentManager {
                 taskFullyVerified = true
                 markSkillCalibrated(context, skillKey)
                 AiOverlayHud.updateTaskProgress("Task Complete", completedStepsSet.size, microPlan.size)
-                emitLog("[PhoneAgent] All ${completedStepsSet.size} micro-step(s) are permanently latched complete.")
-                emitStatus("Task Complete (${completedStepsSet.size}/${microPlan.size} ✅)", "HAPPY")
+                publishProgress("🎯 Task Complete! ✅")
+                emitLog("[PhoneAgent] All ${completedStepsSet.size} atomic step(s) are permanently latched complete.")
+                emitStatus("Task Complete! ✅", "HAPPY")
                 return true
             }
 
@@ -317,10 +331,12 @@ object PhoneAgentManager {
                     "Task Complete"
                 }
                 AiOverlayHud.updateTaskProgress(nextTitle, completedStepsSet.size, microPlan.size)
+                publishProgress()
                 return finishPhoneTaskIfDone()
             }
 
-            emitLog("[Plan] Created ${microPlan.size} micro-step(s) for: ${goal.take(100)}")
+            publishProgress()
+            emitLog("[Plan] Created ${microPlan.size} atomic micro-step(s) for: ${goal.take(100)}")
             microPlan.forEachIndexed { idx, item ->
                 emitLog("[Plan] ${idx + 1}. ${item.title}")
             }
@@ -344,9 +360,64 @@ object PhoneAgentManager {
                     }
                     AiOverlayHud.updateTaskProgress(currentMicroStep.title, completedPlanSteps.size, microPlan.size)
 
-                    val uiTree = touchService.dumpUiTreeSummary()
+                    var uiTree = touchService.dumpUiTreeSummary()
 
-                    // A completed side effect is latched before requesting another model action.
+                    if (stepKind == "OPEN_APP" &&
+                        touchService.currentForegroundPackageName().contains("instagram", ignoreCase = true)) {
+                        if (latchPlanStep(activePlanIndex, "Instagram is already in the foreground")) break
+                        delay(150)
+                        continue
+                    }
+
+                    if (stepKind == "NAVIGATE_SEARCH") {
+                        var searchSurfaceVisible = touchService.hasSearchNavigationOrBar()
+                        if (!searchSurfaceVisible) {
+                            for (backAttempt in 0 until 2) {
+                                touchService.performGlobalBack()
+                                delay(800)
+                                uiTree = touchService.dumpUiTreeSummary()
+                                searchSurfaceVisible = touchService.hasSearchNavigationOrBar()
+                                if (searchSurfaceVisible) break
+                            }
+                        }
+                        if (searchSurfaceVisible) {
+                            touchService.clickBottomSearchTab()
+                            delay(650)
+                            uiTree = touchService.dumpUiTreeSummary()
+                            if (touchService.hasSearchNavigationOrBar()) {
+                                if (latchPlanStep(activePlanIndex, "Search or Explore surface is visible")) break
+                                delay(200)
+                                continue
+                            }
+                        }
+                    }
+
+                    if (stepKind == "PLAY_VIDEO") {
+                        val firstTile = touchService.findFirstVideoGridTileCenter()
+                        if (firstTile != null && touchService.clickFirstVideoGridTile()) {
+                            emitLog("[Target] First eligible video grid tile tapped at (${firstTile.x.toInt()},${firstTile.y.toInt()}).")
+                            delay(800)
+                            if (latchPlanStep(activePlanIndex, "First eligible grid thumbnail tapped using live node bounds")) break
+                            continue
+                        }
+                    }
+
+                    if (stepKind == "CLOSE_COMMENTS") {
+                        touchService.performGlobalBack()
+                        delay(500)
+                        if (latchPlanStep(activePlanIndex, "Comment sheet closed with one Back action")) break
+                        continue
+                    }
+
+                    if (stepKind == "SEARCH_QUERY" && searchQueryTyped) {
+                        val submitted = touchService.clickKeyboardSearchAction()
+                        if (submitted) {
+                            delay(900)
+                            if (latchPlanStep(activePlanIndex, "Search query submitted using the keyboard Search action")) break
+                            continue
+                        }
+                    }
+
                     if (stepKind == "LIKE_VIDEO" &&
                         (hasLikedVideoInCurrentTask || isLikeControlAlreadyActive(uiTree))) {
                         hasLikedVideoInCurrentTask = true
@@ -358,18 +429,14 @@ object PhoneAgentManager {
                     if (stepKind == "COMMENT_VIDEO" &&
                         (hasCommentedInCurrentTask || isCommentVisible(uiTree, requestedCommentText))) {
                         hasCommentedInCurrentTask = true
-                        if (!commentBackPressed) {
-                            touchService.performGlobalBack()
-                            commentBackPressed = true
-                        }
-                        if (latchPlanStep(activePlanIndex, "Submitted comment is visible; comment sheet closed once")) break
+                        if (latchPlanStep(activePlanIndex, "Submitted comment is visible; duplicate comment is blocked")) break
                         delay(250)
                         continue
                     }
-                    if (stepKind == "SHARE_VIDEO" &&
+                    if ((stepKind == "SHARE_SEND" || stepKind == "SHARE_VIDEO") &&
                         (hasSharedInCurrentTask || isShareSuccessVisible(uiTree))) {
                         hasSharedInCurrentTask = true
-                        if (latchPlanStep(activePlanIndex, "Share send completed or Sent confirmation is visible")) break
+                        if (latchPlanStep(activePlanIndex, "Send has completed or Sent confirmation is visible")) break
                         delay(250)
                         continue
                     }
@@ -407,6 +474,12 @@ object PhoneAgentManager {
                         if (lastVerificationHint.isNotBlank()) {
                             append("\nPREVIOUS VERIFICATION CORRECTION: ").append(lastVerificationHint)
                         }
+                        if (stepKind == "SEARCH_QUERY" && searchQueryTyped) {
+                            append("\nThe requested search query is already typed. Do not type it again; submit only with the visible keyboard Search or Go action.")
+                        }
+                        if (stepKind == "COMMENT_VIDEO" && commentTextTyped) {
+                            append("\nThe requested comment text is already typed. Do not replace or type it again; find and tap Post once.")
+                        }
                     }
                     val screenDimensions = touchService.getRealScreenDimensions()
                     val screenWidthPx = screenDimensions.first.toInt().coerceAtLeast(1)
@@ -423,20 +496,43 @@ object PhoneAgentManager {
                         screenHeightPx = screenHeightPx
                     )
 
-                    // Clamp every model-provided coordinate to current device pixel bounds.
-                    val safeX = decision.x.coerceIn(0.5f, (screenWidthPx - 0.5f).coerceAtLeast(0.5f))
-                    val safeY = decision.y.coerceIn(0.5f, (screenHeightPx - 0.5f).coerceAtLeast(0.5f))
-                    val safeEndX = decision.endX.coerceIn(0.5f, (screenWidthPx - 0.5f).coerceAtLeast(0.5f))
-                    val safeEndY = decision.endY.coerceIn(0.5f, (screenHeightPx - 0.5f).coerceAtLeast(0.5f))
+                    // Live accessibility bounds win first. Scale legacy 540x960 coordinates only as fallback.
+                    val targetNodeCenter = when (stepKind) {
+                        "PLAY_VIDEO" -> touchService.findFirstVideoGridTileCenter()
+                        "SHARE_SEND" -> touchService.findNodeCenterByExactLabel("Send")
+                        "LIKE_VIDEO" -> touchService.findNodeCenterByExactLabel("Like", "Like reel", "Like post")
+                        else -> if (decision.targetNodeText.isNotBlank()) {
+                            touchService.findNodeCenterByText(decision.targetNodeText)
+                        } else null
+                    }
+                    val scaledStart = touchService.scaleAiCoordinates(decision.x, decision.y)
+                    val scaledEnd = touchService.scaleAiCoordinates(decision.endX, decision.endY)
+                    val selectedX = targetNodeCenter?.x ?: scaledStart.x
+                    val selectedY = targetNodeCenter?.y ?: scaledStart.y
+                    val safeX = selectedX.coerceIn(0.5f, (screenWidthPx - 0.5f).coerceAtLeast(0.5f))
+                    val safeY = selectedY.coerceIn(0.5f, (screenHeightPx - 0.5f).coerceAtLeast(0.5f))
+                    val safeEndX = scaledEnd.x.coerceIn(0.5f, (screenWidthPx - 0.5f).coerceAtLeast(0.5f))
+                    val safeEndY = scaledEnd.y.coerceIn(0.5f, (screenHeightPx - 0.5f).coerceAtLeast(0.5f))
                     val deltaX = abs(safeEndX - safeX)
                     val deltaY = abs(safeEndY - safeY)
                     emitLog("[${decision.modelUsed} • PhoneSense] Step $step: ${decision.action} @(${safeX.toInt()},${safeY.toInt()}) -> ${decision.reason}")
 
                     if (decision.isDone || decision.action == "DONE") {
-                        if (stepKind == "SHARE_VIDEO" &&
-                            !hasSharedInCurrentTask && !isShareSuccessVisible(uiTree)) {
-                            emitLog("[Share Guard] Model requested DONE before a Send click or Sent confirmation. Continuing safely.")
-                            actionHistory.add("Step $step: premature SHARE DONE rejected")
+                        if (stepKind == "SHARE_SEND" || stepKind == "SHARE_VIDEO") {
+                            if (hasSharedInCurrentTask || isShareSuccessVisible(uiTree)) {
+                                hasSharedInCurrentTask = true
+                                if (latchPlanStep(activePlanIndex, "Final share step has a local Send or Sent confirmation")) break
+                                continue
+                            }
+                            emitLog("[Share Guard] Final-step DONE is ignored until the exact Send button is clicked.")
+                            try { screenshot?.recycle() } catch (_: Exception) {}
+                            delay(300)
+                            continue
+                        }
+                        if (stepKind == "COMMENT_VIDEO" &&
+                            !hasCommentedInCurrentTask && !isCommentVisible(uiTree, requestedCommentText)) {
+                            emitLog("[Comment Guard] Model requested DONE before the comment is visible in the comment list.")
+                            actionHistory.add("Step $step: premature COMMENT DONE rejected")
                             try { screenshot?.recycle() } catch (_: Exception) {}
                             delay(300)
                             continue
