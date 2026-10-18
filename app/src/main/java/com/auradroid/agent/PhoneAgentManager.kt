@@ -91,9 +91,40 @@ object PhoneAgentManager {
             val actionHistory = mutableListOf<String>()
             var stuckCounter = 0
             var lastTreeSignature = ""
+            var lastVerificationHint = ""
+            var verificationFailures = 0
+            var lastAnnouncedPlanIndex = -1
+            var taskFullyVerified = false
+            val microPlan = try {
+                val planningTree = touchService.dumpUiTreeSummary()
+                val planningScreenshot = touchService.captureScreenBitmapSuspend()
+                GeminiBrain.buildMicroStepPlan(context, goal, planningTree, planningScreenshot)
+                    .ifEmpty { listOf(TaskMicroStep("Complete requested task", goal, "Visible result matches the user request")) }
+            } catch (e: Exception) {
+                emitLog("[Plan] Planner fallback: ${e.message ?: "unavailable"}")
+                listOf(TaskMicroStep("Complete requested task", goal, "Visible result matches the user request"))
+            }
+            var activePlanIndex = 0
+            val completedPlanSteps = linkedSetOf<Int>()
+            emitLog("[Plan] Created ${microPlan.size} micro-step(s) for: ${goal.take(100)}")
+            microPlan.forEachIndexed { idx, item ->
+                emitLog("[Plan] ${idx + 1}. ${item.title}")
+            }
+
             try {
-                for (step in 1..20) {
+                for (step in 1..30) {
                     if (!isPhoneAgentRunning) break
+                    if (activePlanIndex >= microPlan.size) {
+                        taskFullyVerified = true
+                        break
+                    }
+                    val currentMicroStep = microPlan[activePlanIndex]
+                    if (lastAnnouncedPlanIndex != activePlanIndex) {
+                        lastAnnouncedPlanIndex = activePlanIndex
+                        emitLog("[Checklist] ${completedPlanSteps.size}/${microPlan.size} complete • NOW: ${currentMicroStep.title}")
+                    }
+                    AiOverlayHud.updateTaskProgress(currentMicroStep.title, completedPlanSteps.size, microPlan.size)
+
                     val uiTree = touchService.dumpUiTreeSummary()
                     val currentSignature = "${uiTree.hashCode()}"
                     if (currentSignature == lastTreeSignature) stuckCounter++ else stuckCounter = 0
@@ -105,12 +136,24 @@ object PhoneAgentManager {
 
                     val screenshot = touchService.captureScreenBitmapSuspend()
                     val ragLessons = AutomationReliability.retrieveRelevantRagLessons(context, goal, currentSignature)
+                    val focusedStepGoal = buildString {
+                        append("OVERALL USER GOAL: ").append(goal)
+                        append("\nCURRENT MICRO-STEP (").append(activePlanIndex + 1).append("/").append(microPlan.size).append("): ")
+                            .append(currentMicroStep.title)
+                        append("\nTARGET FOR THIS STEP: ").append(currentMicroStep.goal)
+                        if (currentMicroStep.verificationHint.isNotBlank()) {
+                            append("\nVISIBLE SUCCESS EVIDENCE: ").append(currentMicroStep.verificationHint)
+                        }
+                        if (lastVerificationHint.isNotBlank()) {
+                            append("\nPREVIOUS VERIFICATION CORRECTION: ").append(lastVerificationHint)
+                        }
+                    }
                     val decision = GeminiBrain.decideNextUiAction(
                         context = context,
-                        goal = goal,
+                        goal = focusedStepGoal,
                         uiTreeSummary = uiTree,
                         screenshot = screenshot,
-                        historySummary = actionHistory.takeLast(6).joinToString("\n"),
+                        historySummary = actionHistory.takeLast(8).joinToString("\n"),
                         ragLessons = ragLessons,
                         escalateToPro = escalatePro
                     )
@@ -125,17 +168,51 @@ object PhoneAgentManager {
 
                     if (decision.isDone || decision.action == "DONE") {
                         val verify = GeminiBrain.verifyPhoneTaskCompletion(
-                            context = context, goal = goal, uiTreeSummary = uiTree, screenshot = screenshot
+                            context = context,
+                            goal = currentMicroStep.goal + "\\nSuccess evidence: " + currentMicroStep.verificationHint,
+                            uiTreeSummary = uiTree,
+                            screenshot = screenshot
                         )
-                        if (verify.isCompleted || step >= 3) {
-                            markSkillCalibrated(context, skillKey)
-                            AutomationReliability.recordSuccessfulLesson(
-                                context = context, goal = goal, stateSignature = currentSignature,
-                                lessonFix = "Completed via ${decision.reason}"
+                        val verified = verify.isCompleted && verify.confidence >= 80
+                        if (verified) {
+                            completedPlanSteps.add(activePlanIndex)
+                            emitLog("[Checklist] ☑ ${currentMicroStep.title} (${verify.confidence}% confidence)")
+                            actionHistory.add("VERIFIED: ${currentMicroStep.title} — ${verify.feedback}")
+                            activePlanIndex++
+                            verificationFailures = 0
+                            lastVerificationHint = ""
+                            AiOverlayHud.updateTaskProgress(
+                                if (activePlanIndex < microPlan.size) microPlan[activePlanIndex].title else "Verified",
+                                completedPlanSteps.size,
+                                microPlan.size
                             )
-                            emitLog("[PhoneAgent] Task Verified Complete (${verify.confidence}%): ${verify.feedback}")
-                            emitStatus("Phone Task Done!", "HAPPY")
-                            break
+                            if (activePlanIndex >= microPlan.size) {
+                                taskFullyVerified = true
+                                markSkillCalibrated(context, skillKey)
+                                AutomationReliability.recordSuccessfulLesson(
+                                    context = context,
+                                    goal = goal,
+                                    stateSignature = currentSignature,
+                                    lessonFix = "All ${completedPlanSteps.size} micro-step(s) verified; last action: ${decision.reason}"
+                                )
+                                emitLog("[PhoneAgent] Entire task verified (${verify.confidence}%): ${verify.feedback}")
+                                emitStatus("Phone Task Done!", "HAPPY")
+                                break
+                            }
+                            delay(350)
+                            continue
+                        } else {
+                            verificationFailures++
+                            lastVerificationHint = verify.nextHint.ifBlank { verify.feedback }
+                            emitLog("[Verify] NOT complete (${verify.confidence}%): ${verify.feedback}. Retry ${verificationFailures}/2.")
+                            actionHistory.add("VERIFY FAILED: ${lastVerificationHint}")
+                            if (verificationFailures >= 2) {
+                                emitLog("[PhoneAgent] Stopped safely: completion could not be verified; task was NOT marked successful.")
+                                emitStatus("Verification Needed", "ERROR")
+                                break
+                            }
+                            delay(500)
+                            continue
                         }
                     }
 
