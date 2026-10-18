@@ -320,6 +320,15 @@ object PhoneAgentManager {
                         )
                         else -> ""
                     }
+                    val memoryScreenshots = if (taskStuck || memoryHints.isNotBlank()) {
+                        AutomationReliability.getAppMemoryScreenshots(
+                            context.applicationContext,
+                            activePackageName,
+                            3
+                        )
+                    } else {
+                        emptyList()
+                    }
                     val decision = try {
                         GeminiBrain.decideNextUiAction(
                             context = context,
@@ -331,10 +340,14 @@ object PhoneAgentManager {
                             escalateToPro = false,
                             screenWidthPx = screenWidth,
                             screenHeightPx = screenHeight,
-                            screenCalibration = touchService.getScreenCalibrationSummary()
+                            screenCalibration = touchService.getScreenCalibrationSummary(),
+                            memoryScreenshots = memoryScreenshots
                         )
                     } finally {
                         try { if (screenshot != null && !screenshot.isRecycled) screenshot.recycle() } catch (_: Exception) {}
+                        memoryScreenshots.forEach {
+                            try { if (!it.isRecycled) it.recycle() } catch (_: Exception) {}
+                        }
                     }
 
                     if (!isPhoneAgentRunning) break
