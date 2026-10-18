@@ -39,7 +39,11 @@ data class PhoneUiDecision(
     val targetNodeText: String,
     val reason: String,
     val isDone: Boolean,
-    val modelUsed: String
+    val modelUsed: String,
+    val ymin: Float = 0f,
+    val xmin: Float = 0f,
+    val ymax: Float = 0f,
+    val xmax: Float = 0f
 )
 
 data class PhoneTaskVerification(
@@ -383,7 +387,9 @@ Respond ONLY with a valid JSON object:
         screenshot: Bitmap?,
         historySummary: String,
         ragLessons: String,
-        escalateToPro: Boolean = false
+        escalateToPro: Boolean = false,
+        screenWidthPx: Int = context.resources.displayMetrics.widthPixels,
+        screenHeightPx: Int = context.resources.displayMetrics.heightPixels
     ): PhoneUiDecision {
         val prompt = """
 You are Nax Bot controlling an Android phone via Accessibility UI Tree + Vision.
@@ -399,16 +405,21 @@ Live Accessibility UI Nodes (with screen coordinates):
 ${uiTreeSummary}
 
 Choose the single safest next UI step. If the user asked to open or switch to an app, prefer LAUNCH_APP and put the app name or exact package ID in targetNodeText. If a popup/permission dialog blocks the screen, handle it first.
+Coordinate contract: actual device screenshot/screen is ${screenWidthPx} x ${screenHeightPx} pixels. For CLICK/HOLD/SWIPE use absolute pixel coordinates in this exact coordinate space; never assume 540x960 and never return a 0..1000 grid for x/y. Accessibility UI-node coordinates are already in screen pixels. Prefer the center of the visible target: cx=(left+right)/2, cy=(top+bottom)/2. For VISION_BOX_TAP only, return xmin/ymin/xmax/ymax normalized to a 0..1000 grid; the native service converts those to pixel coordinates and taps the box center.
 Respond ONLY with a valid JSON object:
 {
-  "action": "LAUNCH_APP or CLICK or TYPE or SWIPE or BACK or HOME or WAIT or DONE",
-  "x": 540.0,
-  "y": 1200.0,
-  "endX": 540.0,
-  "endY": 400.0,
+  "action": "LAUNCH_APP or CLICK or HOLD or VISION_BOX_TAP or TYPE or SWIPE or BACK or HOME or WAIT or DONE",
+  "x": 0.0,
+  "y": 0.0,
+  "endX": 0.0,
+  "endY": 0.0,
+  "xmin": 0.0,
+  "ymin": 0.0,
+  "xmax": 1000.0,
+  "ymax": 1000.0,
   "textToType": "",
-  "targetNodeText": "exact label of button/field",
-  "reason": "why this action moves closer to goal",
+  "targetNodeText": "exact visible label or package ID",
+  "reason": "why this action moves closer to the goal",
   "isDone": false
 }
 """.trimIndent()
@@ -428,7 +439,11 @@ Respond ONLY with a valid JSON object:
                 targetNodeText = obj.optString("targetNodeText", ""),
                 reason = obj.optString("reason", "Cognitive UI decision"),
                 isDone = obj.optBoolean("isDone", false),
-                modelUsed = modelUsed
+                modelUsed = modelUsed,
+                ymin = obj.optDouble("ymin", 0.0).toFloat().coerceIn(0f, 1000f),
+                xmin = obj.optDouble("xmin", 0.0).toFloat().coerceIn(0f, 1000f),
+                ymax = obj.optDouble("ymax", 0.0).toFloat().coerceIn(0f, 1000f),
+                xmax = obj.optDouble("xmax", 0.0).toFloat().coerceIn(0f, 1000f)
             )
         }
 
