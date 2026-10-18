@@ -292,12 +292,14 @@ object PhoneAgentManager {
                     iteration += 1
                     emitStatus("Observing screen ${iteration}", "THINKING")
 
-                    val screenshot = touchService.captureScreenBitmapSuspend()
-                    activePackageName = touchService.getActivePackageName().ifBlank { activePackageName }
-                    val uiTree = touchService.dumpUiTreeSummary()
+                    // Collect full-screen pixel geometry and safe-area metadata before capturing.
                     val dimensions = touchService.getRealScreenDimensions()
                     val screenWidth = dimensions.first.toInt().coerceAtLeast(1)
                     val screenHeight = dimensions.second.toInt().coerceAtLeast(1)
+                    val screenCalibration = screenCalibration
+                    val screenshot = touchService.captureScreenBitmapSuspend()
+                    activePackageName = touchService.getActivePackageName().ifBlank { activePackageName }
+                    val uiTree = touchService.dumpUiTreeSummary()
                     val fingerprint = sampledFingerprint(screenshot)
                     if (fingerprint != null && fingerprint == lastFrameFingerprint) {
                         unchangedFrameCount += 1
