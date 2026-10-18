@@ -844,10 +844,7 @@ Respond ONLY with a valid JSON object:
 }
 """.trimIndent()
 
-        val images = buildList {
-            if (screenshot != null) add(screenshot)
-            addAll(memoryScreenshots.filterNot { it.isRecycled })
-        }
+        val images = if (screenshot != null) listOf(screenshot) else emptyList()
         val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(rawResp)
 
@@ -950,6 +947,9 @@ Width = ${screenWidthPx}, height = ${screenHeightPx}. Return absolute pixel coor
 DEVICE AND SAFE-AREA CALIBRATION:
 ${screenCalibration.ifBlank { "Device calibration metadata is unavailable. Use the supplied screenshot and live UI tree only." }}
 
+PREVIOUS APP-SPECIFIC CORRECTION IMAGES:
+${if (memoryScreenshots.isEmpty()) "No prior correction screenshots loaded." else "Additional images following the current screenshot are prior human-correction frames for this app. Use them only as context and prioritize the current screenshot."}
+
 Choose ONE next action from CLICK, TYPE, SWIPE, BACK, HOME, or DONE. Use visual reasoning over the full user goal and current screen rather than a hardcoded task checklist.
 For CLICK, set x and y to the center of the visible target in physical pixels. Prefer live accessibility bounds when they describe that same visible control. Avoid status-bar, navigation-bar, camera-cutout, and other obstructed or unsafe areas.
 For TYPE, return only the text to enter into the currently focused field. If the right field is not focused, click that field first and observe again.
@@ -969,7 +969,10 @@ Return ONLY valid JSON, with no markdown and no extra text:
 }
 """.trimIndent()
 
-        val images = if (screenshot != null) listOf(screenshot) else emptyList()
+        val images = buildList {
+            if (screenshot != null) add(screenshot)
+            addAll(memoryScreenshots.filterNot { it.isRecycled })
+        }
         val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(rawResp)
 
