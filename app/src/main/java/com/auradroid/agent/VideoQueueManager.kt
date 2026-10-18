@@ -106,7 +106,7 @@ object VideoQueueManager {
         if (bytes.size < 1024) return null
         return try {
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val fileName = "\${prefix}_\${stamp}.mp4"
+            val fileName = "${prefix}_${stamp}.mp4"
             val targetDir = getDefaultDownloadDir(context)
             val outFile = File(targetDir, fileName)
             FileOutputStream(outFile).use { fos ->
@@ -241,14 +241,14 @@ object VideoQueueManager {
     fun getDownloadedVideosReport(context: Context): String {
         val list = listCandidateVideos(context)
         if (list.isEmpty()) {
-            return "No unuploaded MP4 videos found in queue.\nFolder: \${getFolderDisplayLabel(context)}"
+            return "No unuploaded MP4 videos found in queue.\nFolder: ${getFolderDisplayLabel(context)}"
         }
         val sb = StringBuilder()
-        sb.append("Queued Videos (\${list.size}) • Order: ")
+        sb.append("Queued Videos (${list.size}) • Order: ")
         sb.append(if (isUploadNewestFirst(context)) "Newest First\n\n" else "Oldest First\n\n")
         list.take(15).forEachIndexed { idx, item ->
             val mb = String.format(Locale.US, "%.2f MB", item.sizeBytes.toDouble() / (1024.0 * 1024.0))
-            sb.append("\${idx + 1}. \${item.displayName} ($mb)\n")
+            sb.append("${idx + 1}. ${item.displayName} ($mb)\n")
         }
         return sb.toString().trim()
     }
@@ -325,7 +325,7 @@ object VideoQueueManager {
             val arr = JSONArray(rawArr)
             for (i in 0 until arr.length()) {
                 val obj = arr.optJSONObject(i) ?: continue
-                sb.append("Ep \${obj.optInt("ep")}: \${obj.optString("summary")}\n")
+                sb.append("Ep ${obj.optInt("ep")}: ${obj.optString("summary")}\n")
             }
         } catch (_: Exception) {}
         val historyText = if (sb.isEmpty()) {
