@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -546,7 +547,9 @@ object GeminiBrain {
         prompt: String,
         bitmaps: List<Bitmap> = emptyList(),
         preferPro: Boolean = false,
-        taskType: String = if (preferPro) "HIGH_BRAIN_VISION" else "AGENT"
+        taskType: String = if (preferPro) "HIGH_BRAIN_VISION" else "AGENT",
+        audioBytes: ByteArray? = null,
+        audioMimeType: String = "audio/wav"
     ): Pair<String, String> = withContext(Dispatchers.IO) {
         val apiKey = getApiKey(context)
         if (apiKey.isBlank()) {
@@ -572,15 +575,42 @@ object GeminiBrain {
                 partsArray.put(JSONObject().put("inline_data", inlineData))
             }
         }
+        if (normalizedTask == "AUDIO_TRANSCRIBE" && audioBytes != null && audioBytes.isNotEmpty()) {
+            partsArray.put(
+                JSONObject().put(
+                    "inline_data",
+                    JSONObject()
+                        .put("mime_type", audioMimeType.ifBlank { "audio/wav" })
+                        .put("data", Base64.encodeToString(audioBytes, Base64.NO_WRAP))
+                )
+            )
+        }
+
+        val generationConfig = JSONObject()
+            .put("temperature", if (normalizedTask == "TTS_SPEECH") 1.0 else 0.25)
+            .put("maxOutputTokens", 1400)
+        when (normalizedTask) {
+            "IMAGE_GEN" -> generationConfig.put(
+                "responseModalities",
+                JSONArray().put("TEXT").put("IMAGE")
+            )
+            "TTS_SPEECH" -> generationConfig
+                .put("responseModalities", JSONArray().put("AUDIO"))
+                .put(
+                    "speechConfig",
+                    JSONObject().put(
+                        "voiceConfig",
+                        JSONObject().put(
+                            "prebuiltVoiceConfig",
+                            JSONObject().put("voiceName", "Kore")
+                        )
+                    )
+                )
+        }
 
         val payloadObj = JSONObject().apply {
             put("contents", JSONArray().put(JSONObject().put("parts", partsArray)))
-            put(
-                "generationConfig",
-                JSONObject()
-                    .put("temperature", 0.25)
-                    .put("maxOutputTokens", 1400)
-            )
+            put("generationConfig", generationConfig)
         }
         val bodyString = payloadObj.toString()
         val mediaType = "application/json; charset=utf-8".toMediaType()
@@ -606,12 +636,16 @@ object GeminiBrain {
                 val result = httpClient.newCall(request).execute().use { response ->
                     val rawBody = response.body?.string().orEmpty()
                     if (response.isSuccessful) {
-                        val parsedText = extractTextFromGeminiJson(rawBody)
-                        if (parsedText.isNotBlank()) {
+                        val parsedPayload = when (normalizedTask) {
+                            "IMAGE_GEN" -> extractInlineDataBase64(rawBody, "image/").first
+                            "TTS_SPEECH" -> extractInlineDataBase64(rawBody, "audio/").first
+                            else -> extractTextFromGeminiJson(rawBody)
+                        }
+                        if (parsedPayload.isNotBlank()) {
                             rememberWorkingModel(context, normalizedTask, modelName)
-                            Pair(parsedText, modelName)
+                            Pair(parsedPayload, modelName)
                         } else {
-                            routerLog(context, "[ModelBlocker] $modelName returned no text content. Trying the next eligible model.")
+                            routerLog(context, "[ModelBlocker] $modelName returned no usable task payload. Trying the next eligible model.")
                             null
                         }
                     } else {
@@ -637,6 +671,88 @@ object GeminiBrain {
 
         routerLog(context, "[ModelBlocker] All eligible $normalizedTask model attempts exhausted.")
         Pair("", "FALLBACK_EXHAUSTED")
+    }
+
+    private fun extractInlineDataBase64(rawResponse: String, mimePrefix: String): Pair<String, String> {
+        return try {
+            val root = JSONObject(rawResponse)
+            val candidates = root.optJSONArray("candidates") ?: return Pair("", "")
+            for (candidateIndex in 0 until candidates.length()) {
+                val parts = candidates.optJSONObject(candidateIndex)
+                    ?.optJSONObject("content")?.optJSONArray("parts") ?: continue
+                for (partIndex in 0 until parts.length()) {
+                    val part = parts.optJSONObject(partIndex) ?: continue
+                    val data = part.optJSONObject("inlineData") ?: part.optJSONObject("inline_data") ?: continue
+                    val mime = data.optString("mimeType", data.optString("mime_type", ""))
+                    val encoded = data.optString("data", "")
+                    if (mime.startsWith(mimePrefix, ignoreCase = true) && encoded.isNotBlank()) {
+                        return Pair(encoded, mime)
+                    }
+                }
+            }
+            Pair("", "")
+        } catch (_: Exception) {
+            Pair("", "")
+        }
+    }
+
+    suspend fun generateSpeechWithFallback(
+        context: Context,
+        text: String,
+        voiceName: String = "Kore"
+    ): Pair<ByteArray?, String> {
+        val prompt = "Read the following text aloud clearly and naturally. Voice style: conversational. Voice name requested: ${voiceName}. Text: ${text}"
+        val (encodedAudio, modelUsed) = callGeminiWithFallback(
+            context = context,
+            prompt = prompt,
+            preferPro = false,
+            taskType = "TTS_SPEECH"
+        )
+        val audio = try {
+            if (encodedAudio.isBlank()) null else Base64.decode(encodedAudio, Base64.DEFAULT)
+        } catch (_: Exception) {
+            null
+        }
+        return Pair(audio, modelUsed)
+    }
+
+    suspend fun transcribeAudioWithFallback(
+        context: Context,
+        audioBytes: ByteArray,
+        audioMimeType: String = "audio/wav",
+        instruction: String = "Transcribe the spoken words accurately. Preserve the original language."
+    ): Pair<String, String> {
+        return callGeminiWithFallback(
+            context = context,
+            prompt = instruction,
+            preferPro = false,
+            taskType = "AUDIO_TRANSCRIBE",
+            audioBytes = audioBytes,
+            audioMimeType = audioMimeType
+        )
+    }
+
+    suspend fun generateImageWithFallback(
+        context: Context,
+        prompt: String,
+        referenceImages: List<Bitmap> = emptyList()
+    ): Pair<Bitmap?, String> {
+        val (encodedImage, modelUsed) = callGeminiWithFallback(
+            context = context,
+            prompt = prompt,
+            bitmaps = referenceImages,
+            preferPro = false,
+            taskType = "IMAGE_GEN"
+        )
+        val image = try {
+            if (encodedImage.isBlank()) null else {
+                val bytes = Base64.decode(encodedImage, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+        } catch (_: Exception) {
+            null
+        }
+        return Pair(image, modelUsed)
     }
 
     private fun extractTextFromGeminiJson(rawResponse: String): String {
