@@ -53,13 +53,6 @@ data class PhoneUiDecision(
     val xmax: Float = 0f
 )
 
-data class PhoneTaskVerification(
-    val isCompleted: Boolean,
-    val confidence: Int,
-    val feedback: String,
-    val nextHint: String
-)
-
 data class ChatPlanResponse(
     val replyHinglish: String,
     val intentType: String,
@@ -68,12 +61,6 @@ data class ChatPlanResponse(
     val scheduledTimeMillis: Long?,
     val scheduleLabel: String,
     val emotion: String
-)
-
-data class TaskMicroStep(
-    val title: String,
-    val goal: String,
-    val verificationHint: String
 )
 
 data class EpisodicStoryResult(
@@ -894,36 +881,37 @@ Respond ONLY with a valid JSON object:
         screenHeightPx: Int = context.resources.displayMetrics.heightPixels
     ): PhoneUiDecision {
         val prompt = """
-You are Nax Bot controlling an Android phone via Accessibility UI Tree + Vision.
-Goal: ${goal}
+You are Nax Bot, an autonomous Android agent controlled by a Vision-Language-Action loop.
 
-Recent Action History:
-${historySummary}
+USER GOAL:
+${goal}
 
-Relevant Past RAG Fixes:
-${ragLessons}
+HISTORY OF THE LAST ACTIONS:
+${historySummary.ifBlank { "No actions have been performed yet." }}
 
-Live Accessibility UI Nodes (with screen coordinates):
+PHONE SCREEN:
+The screenshot is the primary source of truth. Analyze it visually before deciding. Use the live Accessibility UI Tree below only to refine target labels and exact screen-pixel bounds.
 ${uiTreeSummary}
 
-Choose the single safest next UI step for the CURRENT MICRO-STEP only. If the user asked to open or switch to an app, prefer LAUNCH_APP and put the app name or exact package ID in targetNodeText. If a popup or permission dialog blocks the screen, handle it first.
-For social-video missions, never repeat a completed step. Like, Follow, and Subscribe are toggle controls: if their node says selected, Liked, Unlike, Following, or Subscribed, do not tap them again. Submit a comment only once and advance only after the comment is visible in the comment list. For sharing, tap Send only after the intended recipient is selected, and never tap Send twice. Treat visible Sent or Shared confirmation as completion.
-Coordinate contract: actual device screenshot/screen is ${screenWidthPx} x ${screenHeightPx} pixels. For CLICK/HOLD/SWIPE use absolute pixel coordinates in this exact coordinate space; never assume 540x960 and never return a 0..1000 grid for x/y. Accessibility UI-node coordinates are already in screen pixels. Prefer the center of the visible target: cx=(left+right)/2, cy=(top+bottom)/2. For VISION_BOX_TAP only, return xmin/ymin/xmax/ymax normalized to a 0..1000 grid; the native service converts those to pixel coordinates and taps the box center.
-Respond ONLY with a valid JSON object:
+SCREEN SIZE IN PHYSICAL PIXELS:
+Width = ${screenWidthPx}, height = ${screenHeightPx}. Return absolute pixel coordinates in this space.
+
+Decide the SINGLE best next action that moves toward the complete user goal. Think across the full goal, not a hardcoded sub-step.
+For a Like or other toggle control, inspect its visual state yourself. If a heart is already red or filled, or the screenshot clearly shows it is already liked, do not click it again. Continue with the next unfinished part of the goal.
+Prefer a visible UI node's exact label in targetNodeText when available. Put the target's center in x and y. For a coordinate-only action, use the exact physical pixel coordinate.
+If a keyboard is open, reason about whether text still needs typing or whether the action should be submitted. If a share sheet is open, identify the requested recipient before deciding to send.
+Return DONE only when the entire user goal is visibly complete. If the screen is loading or the next action is not yet safe, return a short safe action such as BACK only when justified by the screenshot; otherwise return DONE only if the goal is complete.
+
+Return ONLY valid JSON, with no markdown and no extra text:
 {
-  "action": "LAUNCH_APP or CLICK or HOLD or VISION_BOX_TAP or TYPE or SWIPE or SCROLL_DOWN or SCROLL_UP or BACK or HOME or WAIT or DONE",
-  "x": 0.0,
-  "y": 0.0,
-  "endX": 0.0,
-  "endY": 0.0,
-  "xmin": 0.0,
-  "ymin": 0.0,
-  "xmax": 1000.0,
-  "ymax": 1000.0,
-  "textToType": "",
-  "targetNodeText": "exact visible label or package ID",
-  "reason": "why this action moves closer to the goal",
-  "isDone": false
+  "action": "CLICK, TYPE, SWIPE, BACK, HOME, or DONE",
+  "x": 120.0,
+  "y": 500.0,
+  "endX": 120.0,
+  "endY": 500.0,
+  "textToType": "hello",
+  "targetNodeText": "exact visible label if available",
+  "reason": "Explain what you see in the screenshot and why this is the next action."
 }
 """.trimIndent()
 
@@ -961,204 +949,6 @@ Respond ONLY with a valid JSON object:
             reason = "Waiting for UI tree stabilization",
             isDone = false,
             modelUsed = "fallback-guard"
-        )
-    }
-
-    /**
-     * Creates a short, observable task plan. If the model is unavailable or returns
-     * malformed JSON, keep one complete goal instead of inventing unsafe intermediate actions.
-     */
-    private fun extractMissionValue(goal: String, marker: String, stopWords: List<String>): String {
-        val lower = goal.lowercase(Locale.US)
-        val markerIndex = lower.indexOf(marker.lowercase(Locale.US))
-        if (markerIndex < 0) return ""
-        var value = goal.substring(markerIndex + marker.length).trim()
-        val firstCharacter = value.firstOrNull()
-        if (firstCharacter == '"' || firstCharacter == '\'') {
-            val quoteEnd = value.indexOf(firstCharacter, 1)
-            if (quoteEnd > 1) return value.substring(1, quoteEnd).trim()
-        }
-        value = value.trimStart(':', ' ', '\t')
-        var cutAt = value.length
-        for (stop in stopWords) {
-            val found = value.indexOf(stop, ignoreCase = true)
-            if (found >= 0 && found < cutAt) cutAt = found
-        }
-        return value.substring(0, cutAt).trim().trimEnd(',', '.', ';', ':', ' ')
-    }
-
-    private fun isSocialMultiActionMission(goal: String): Boolean {
-        val lower = goal.lowercase(Locale.US)
-        val hasVideo = lower.contains("video") || lower.contains("reel")
-        val hasLike = lower.contains("like") || lower.contains("heart")
-        val hasComment = lower.contains("comment")
-        val hasShare = lower.contains("share") || lower.contains("send")
-        val hasSearch = lower.contains("search") || lower.contains("find")
-        val isSocialApp = lower.contains("instagram") || lower.contains("facebook") ||
-            lower.contains("tiktok") || lower.contains("social media")
-        return hasVideo && hasLike && hasComment && hasShare && hasSearch &&
-            (isSocialApp || lower.contains("bhojpuri"))
-    }
-
-    private fun buildSocialMissionPlan(goal: String): List<TaskMicroStep> {
-        val searchQuery = extractMissionValue(
-            goal,
-            "search",
-            listOf(",", " then ", " and then ", " play ", " watch ", " like ", " comment ", " share ")
-        ).ifBlank { "the requested video" }.take(120)
-        val lower = goal.lowercase(Locale.US)
-        val commentMarker = lower.indexOf("comment")
-        val commentSection = if (commentMarker >= 0) {
-            goal.substring((commentMarker + "comment".length).coerceAtMost(goal.length))
-        } else {
-            ""
-        }
-        val quotedComment = Regex("[\"']([^\"']{1,100})[\"']").find(commentSection)?.groupValues?.getOrNull(1)
-        val commentText = quotedComment?.takeIf { it.isNotBlank() }
-            ?: if (commentMarker >= 0) "Nice" else ""
-        val shareTarget = extractMissionValue(
-            goal,
-            "share with",
-            listOf(",", ".", ";", " then ", " and then ", " using ")
-        ).ifBlank {
-            extractMissionValue(goal, "send to", listOf(",", ".", ";", " then ", " and then "))
-        }.ifBlank { "the requested contact" }.take(80)
-
-        return listOf(
-            TaskMicroStep(
-                title = "Open Instagram App",
-                goal = "Open the Instagram Android app. If Instagram is already the foreground app, do not relaunch it; finish this step and preserve the current session.",
-                verificationHint = "Instagram is the current foreground app."
-            ),
-            TaskMicroStep(
-                title = "Navigate to Search / Explore Tab",
-                goal = "Navigate to Instagram Search or Explore. If a Reel player, comment sheet, share sheet, or profile page hides the bottom navigation, press Back no more than two times with an 800 ms pause until the Search tab or Search bar is visible. Then tap the bottom Search or Explore tab.",
-                verificationHint = "The Search or Explore screen is visible, with a Search bar or bottom Search navigation."
-            ),
-            TaskMicroStep(
-                title = "Tap Top Search Bar and Type Query",
-                goal = "Tap the top Search bar, clear any old query, type exactly \"$searchQuery\", and submit with the keyboard Search action or the exact Search suggestion. Do not reuse a prior result grid without submitting this query.",
-                verificationHint = "The exact query \"$searchQuery\" is submitted and matching search results are visible."
-            ),
-            TaskMicroStep(
-                title = "Tap 1st Video in Grid",
-                goal = "Open the first video or Reel thumbnail in the results grid for \"$searchQuery\". Never tap Meta AI summary text, Ask anything, or a More link. Ignore those summary nodes and select a clickable image or video grid card whose top is below 35 percent of the real screen height and whose width is at least 40 percent of screen width.",
-                verificationHint = "The selected result is open in its Reel or video player."
-            ),
-            TaskMicroStep(
-                title = "Tap Like Button Once",
-                goal = "Like the current Reel exactly once. UI-node bounds and selected state take priority. If the control is already selected, labeled Liked or Unlike, or otherwise visibly active, do not tap it again.",
-                verificationHint = "The Like control is active or the one permitted Like tap has been accepted."
-            ),
-            TaskMicroStep(
-                title = "Open Comments, Type Comment and Tap Post",
-                goal = "Open comments for the current Reel, enter the exact comment \"$commentText\", and tap Post once. Check whether that exact comment is already visible first. Never duplicate a comment submission.",
-                verificationHint = "The exact comment \"$commentText\" is visible in the comment list, not just in the input field."
-            ),
-            TaskMicroStep(
-                title = "Close Comments Sheet",
-                goal = "Close the comment sheet by pressing Android Back exactly once. Do not return to the previous Reel or leave the app.",
-                verificationHint = "The comment sheet has closed and the same Reel is visible again."
-            ),
-            TaskMicroStep(
-                title = "Tap Share and Select Friend",
-                goal = "Open the Share sheet for the current Reel, search for and select the intended recipient \"$shareTarget\", and wait until the recipient is selected. Do not tap Send during this step.",
-                verificationHint = "The intended recipient \"$shareTarget\" is selected in the Share sheet and the Send button is available."
-            ),
-            TaskMicroStep(
-                title = "Tap Bottom Send Button and Finish Mission",
-                goal = "Tap the exact visible Send button in the Share sheet using its AccessibilityNodeInfo bounds, not a guessed coordinate. Once Send is clicked for the selected recipient, mark this final step done immediately and end the mission without global screen verification or another loop iteration.",
-                verificationHint = "The exact Send button has been clicked once for the selected recipient, or an explicit Sent confirmation is visible."
-            )
-        )
-    }
-
-    suspend fun buildMicroStepPlan(
-        context: Context,
-        goal: String,
-        uiTreeSummary: String = "",
-        screenshot: Bitmap? = null
-    ): List<TaskMicroStep> {
-        val normalizedGoal = goal.trim().take(1200)
-        if (normalizedGoal.isBlank()) return emptyList()
-        if (isSocialMultiActionMission(normalizedGoal)) {
-            return buildSocialMissionPlan(normalizedGoal)
-        }
-
-        val prompt = """
-You are Nax Bot's Android task planner. Break the user's goal into 2-6 small, observable steps.
-Only include actions needed for the request. Do not include login, purchases, sending messages,
-deleting content, or publishing/posting unless explicitly requested by the user.
-Each step must have a clear on-screen completion signal. Return ONLY JSON:
-{"steps":[{"title":"short label","goal":"specific next subgoal","verificationHint":"visible evidence of completion"}]}
-User goal: ${normalizedGoal}
-Current screen accessibility summary (may be empty):
-${uiTreeSummary.take(6000)}
-""".trimIndent()
-        val images = if (screenshot != null) listOf(screenshot) else emptyList()
-        val (raw, _) = callGeminiWithFallback(context, prompt, images, preferPro = false, taskType = "HIGH_BRAIN_VISION")
-        val obj = extractCleanJsonObject(raw)
-        val array = obj?.optJSONArray("steps")
-        if (array != null) {
-            val parsed = mutableListOf<TaskMicroStep>()
-            for (i in 0 until minOf(array.length(), 6)) {
-                val item = array.optJSONObject(i) ?: continue
-                val title = item.optString("title").trim().take(100)
-                val stepGoal = item.optString("goal").trim().take(700)
-                val hint = item.optString("verificationHint").trim().take(300)
-                if (title.isNotBlank() && stepGoal.isNotBlank()) {
-                    parsed.add(TaskMicroStep(title, stepGoal, hint))
-                }
-            }
-            if (parsed.isNotEmpty()) return parsed
-        }
-
-        return listOf(
-            TaskMicroStep(
-                title = "Complete requested task",
-                goal = normalizedGoal,
-                verificationHint = "Visible evidence that the user's requested outcome is complete"
-            )
-        )
-    }
-
-    suspend fun verifyPhoneTaskCompletion(
-        context: Context,
-        goal: String,
-        uiTreeSummary: String,
-        screenshot: Bitmap?
-    ): PhoneTaskVerification {
-        val prompt = """
-Verify if the user's Android goal is 100% completed on the current screen.
-Goal: ${goal}
-Current UI Tree:
-${uiTreeSummary}
-
-Respond ONLY with JSON:
-{
-  "isCompleted": true,
-  "confidence": 95,
-  "feedback": "what was verified on screen",
-  "nextHint": "if false, what step remains"
-}
-""".trimIndent()
-
-        val images = if (screenshot != null) listOf(screenshot) else emptyList()
-        val (rawResp, _) = callGeminiWithFallback(context, prompt, images, preferPro = false, taskType = "HIGH_BRAIN_VISION")
-        val obj = extractCleanJsonObject(rawResp)
-        if (obj != null) {
-            return PhoneTaskVerification(
-                isCompleted = obj.optBoolean("isCompleted", false),
-                confidence = obj.optInt("confidence", 50),
-                feedback = obj.optString("feedback", "Verified screen state"),
-                nextHint = obj.optString("nextHint", "")
-            )
-        }
-        return PhoneTaskVerification(
-            isCompleted = false,
-            confidence = 40,
-            feedback = "Verification inconclusive, continuing observation",
-            nextHint = "Verify target element state"
         )
     }
 
