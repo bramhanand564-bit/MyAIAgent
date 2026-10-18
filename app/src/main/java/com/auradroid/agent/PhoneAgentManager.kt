@@ -98,8 +98,12 @@ object PhoneAgentManager {
             val microPlan = try {
                 val planningTree = touchService.dumpUiTreeSummary()
                 val planningScreenshot = touchService.captureScreenBitmapSuspend()
-                GeminiBrain.buildMicroStepPlan(context, goal, planningTree, planningScreenshot)
-                    .ifEmpty { listOf(TaskMicroStep("Complete requested task", goal, "Visible result matches the user request")) }
+                try {
+                    GeminiBrain.buildMicroStepPlan(context, goal, planningTree, planningScreenshot)
+                        .ifEmpty { listOf(TaskMicroStep("Complete requested task", goal, "Visible result matches the user request")) }
+                } finally {
+                    try { planningScreenshot?.recycle() } catch (_: Exception) {}
+                }
             } catch (e: Exception) {
                 emitLog("[Plan] Planner fallback: ${e.message ?: "unavailable"}")
                 listOf(TaskMicroStep("Complete requested task", goal, "Visible result matches the user request"))
@@ -181,6 +185,7 @@ object PhoneAgentManager {
                             uiTreeSummary = uiTree,
                             screenshot = screenshot
                         )
+                        try { screenshot?.recycle() } catch (_: Exception) {}
                         val verified = verify.isCompleted && verify.confidence >= 80
                         if (verified) {
                             completedPlanSteps.add(activePlanIndex)
@@ -222,6 +227,9 @@ object PhoneAgentManager {
                             delay(500)
                             continue
                         }
+                    }
+                    if (!decision.isDone && decision.action != "DONE") {
+                        try { screenshot?.recycle() } catch (_: Exception) {}
                     }
 
                     when (decision.action) {
