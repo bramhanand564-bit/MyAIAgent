@@ -273,17 +273,7 @@ class AutoTouchService : AccessibilityService() {
         val root = rootInActiveWindow ?: return false
         val (screenWidth, screenHeight) = getRealScreenDimensions()
         try {
-            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            if (focused != null) {
-                try {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                        focused.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)) {
-                        return true
-                    }
-                } finally {
-                    focused.recycle()
-                }
-            }
+            // Use the actual visible keyboard Search or Go accessibility node instead of a guessed key constant.
 
             fun findImeAction(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
                 if (node == null || depth > 12) return null
