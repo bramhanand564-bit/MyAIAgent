@@ -186,7 +186,7 @@ object AutomationReliability {
             sb.append("• Goal: ").append(lessonGoal)
                 .append(" ➔ Fix: ").append(fix)
                 .append(if (score > 0) " [relevance $score]" else "")
-                .append("\\n")
+                .append('\n')
         }
 
         // Reuse only events recorded from an identical privacy-safe screen signature.
@@ -200,7 +200,7 @@ object AutomationReliability {
                     var wroteHeader = false
                     while (cursor.moveToNext()) {
                         if (!wroteHeader) {
-                            sb.append("Passive Teach examples matching this same screen (verify against current UI before reuse):\\n")
+                            sb.append("Passive Teach examples matching this same screen (verify against current UI before reuse):").append('\n')
                             wroteHeader = true
                         }
                         val retry = if (cursor.getInt(5) == 1) " [repeated target/correction]" else ""
@@ -208,7 +208,7 @@ object AutomationReliability {
                             .append(cursor.getString(1)).append(" @(")
                             .append(cursor.getFloat(2).toInt()).append(",")
                             .append(cursor.getFloat(3).toInt()).append(") label='")
-                            .append(cursor.getString(4)).append("'").append(retry).append("\\n")
+                            .append(cursor.getString(4)).append("'").append(retry).append('\n')
                     }
                 }
             } catch (_: Exception) {
@@ -361,7 +361,7 @@ object AutomationReliability {
                         .append(cursor.getString(1)).append(" @(")
                         .append(cursor.getFloat(3).toInt()).append(",")
                         .append(cursor.getFloat(4).toInt()).append(") ")
-                        .append(cursor.getString(5)).append(correction).append("\\n")
+                        .append(cursor.getString(5)).append(correction).append('\n')
                 }
                 if (out.isEmpty()) "No passive teach events yet." else out.toString().trim()
             }
