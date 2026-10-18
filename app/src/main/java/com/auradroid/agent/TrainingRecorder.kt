@@ -77,8 +77,7 @@ object TrainingRecorder {
             }
             val bounds = Rect()
             source.getBoundsInScreen(bounds)
-            val (screenW, screenH) = (context as? AutoTouchService)?.getRealScreenDimensions()
-                ?: Pair(context.resources.displayMetrics.widthPixels.toFloat(), context.resources.displayMetrics.heightPixels.toFloat())
+            val (screenW, screenH) = Pair(context.resources.displayMetrics.widthPixels.toFloat(), context.resources.displayMetrics.heightPixels.toFloat())
             val nx = if (screenW > 0) ((bounds.centerX().toFloat() / screenW).coerceIn(0.01f, 0.99f)).toDouble() else 0.5
             val ny = if (screenH > 0) ((bounds.centerY().toFloat() / screenH).coerceIn(0.01f, 0.99f)).toDouble() else 0.5
 
