@@ -36,7 +36,7 @@ class AutoTouchService : AccessibilityService() {
     }
 
     private fun wasRecentAutomatedGesture(): Boolean =
-        System.currentTimeMillis() - lastAutomatedGestureAt < 900L
+        System.currentTimeMillis() - lastAutomatedGestureAt < 500L
 
     fun getActivePackageName(): String {
         val root = rootInActiveWindow ?: return ""
@@ -45,49 +45,6 @@ class AutoTouchService : AccessibilityService() {
         } finally {
             try { root.recycle() } catch (_: Exception) {}
         }
-    }
-
-    /**
-     * AccessibilityService cannot read the foreground app's raw finger coordinates directly.
-     * This calibration reports physical/logical display bounds and available window insets.
-     */
-    fun getDeviceScreenCalibration(): String {
-        val (realWidth, realHeight) = getRealScreenDimensions()
-        val result = StringBuilder()
-        result.append("model=").append(Build.MODEL)
-            .append("; realWidth=").append(realWidth.toInt())
-            .append("; realHeight=").append(realHeight.toInt())
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                val metrics = wm.currentWindowMetrics
-                val bounds = metrics.bounds
-                val insets = metrics.windowInsets
-                val bars = insets.getInsets(
-                    WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()
-                )
-                val cutout = insets.displayCutout
-                result.append("; windowBounds=")
-                    .append(bounds.left).append(",").append(bounds.top).append(",")
-                    .append(bounds.right).append(",").append(bounds.bottom)
-                    .append("; statusBarTopInset=").append(bars.top)
-                    .append("; navigationBarBottomInset=").append(bars.bottom)
-                    .append("; cutoutSafeInsets=")
-                    .append(cutout?.safeInsetLeft ?: 0).append(",")
-                    .append(cutout?.safeInsetTop ?: 0).append(",")
-                    .append(cutout?.safeInsetRight ?: 0).append(",")
-                    .append(cutout?.safeInsetBottom ?: 0)
-                    .append("; cutoutBoundingRects=")
-                    .append(cutout?.boundingRects?.joinToString(";") { rect ->
-                        "${rect.left},${rect.top},${rect.right},${rect.bottom}"
-                    }.orEmpty())
-            } catch (_: Exception) {
-                result.append("; insetsAndCutout=unavailable")
-            }
-        } else {
-            result.append("; insetsAndCutout=not-exposed-on-this-Android-version")
-        }
-        return result.toString()
     }
 
     override fun onServiceConnected() {
