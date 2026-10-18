@@ -1158,12 +1158,19 @@ Respond ONLY with JSON:
             return Pair(triggerAt, "In ${mins} minutes")
         }
 
-        val hourRegex = Regex("(\\d{1,2})(?::(\\d{2}))?\\s*(baje|[ap]m)?")
+        val hourRegex = Regex("(\\d{1,2})(?::(\\d{2}))?")
         val matches = hourRegex.findAll(lower).toList()
         for (m in matches) {
             var hour = m.groupValues[1].toIntOrNull() ?: continue
             val minute = m.groupValues[2].toIntOrNull() ?: 0
-            val suffix = m.groupValues[3]
+            val suffixText = lower.substring((m.range.last + 1).coerceAtMost(lower.length))
+                .take(8).trimStart()
+            val suffix = when {
+                suffixText.startsWith("baje") -> "baje"
+                suffixText.startsWith("am") -> "am"
+                suffixText.startsWith("pm") -> "pm"
+                else -> ""
+            }
             if (hour in 1..24) {
                 val isNightOrEvening = lower.contains("raat") or
                     lower.contains("shaam") or
