@@ -908,6 +908,31 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
         }
     }
 
+    fun getVisualMemorySummary(context: Context, limit: Int = 10): String {
+        val root = File(context.applicationContext.filesDir, "Memory")
+        if (!root.exists()) return "No app-specific visual memories saved yet."
+        return try {
+            val safeLimit = limit.coerceIn(1, 30)
+            val rows = root.listFiles()
+                ?.filter { it.isDirectory }
+                ?.sortedByDescending { it.lastModified() }
+                ?.flatMap { folder ->
+                    folder.listFiles()
+                        ?.filter { it.isFile && (it.name.startsWith("golden_fix") || it.name == "golden-fixes.txt" || it.name.startsWith("video_training") || it.name.startsWith("human_correction")) }
+                        ?.sortedByDescending { it.lastModified() }
+                        ?.take(safeLimit)
+                        ?.map { file -> "${folder.name}/${file.name} (${file.length()} bytes)" }
+                        .orEmpty()
+                }
+                ?.take(safeLimit)
+                .orEmpty()
+            if (rows.isEmpty()) "No app-specific visual memories saved yet."
+            else rows.joinToString("\n")
+        } catch (_: Exception) {
+            "Visual memory index is unavailable."
+        }
+    }
+
     private fun tokenizeText(text: String): String {
         val words = text.lowercase(Locale.US).split(Regex("[^a-z0-9]+"))
         return words.filter { it.length > 2 }.distinct().joinToString(",")
