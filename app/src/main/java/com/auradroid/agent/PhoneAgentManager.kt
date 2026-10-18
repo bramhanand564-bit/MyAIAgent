@@ -1,480 +1,194 @@
 package com.auradroid.agent
 
-import android.accessibilityservice.AccessibilityService
-import android.content.Intent
-import android.graphics.Rect
-import android.os.Build
-import android.provider.Settings
-import android.view.accessibility.AccessibilityNodeInfo
-import android.view.accessibility.AccessibilityWindowInfo
-import kotlinx.coroutines.CancellationException
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlin.math.hypot
+import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.abs
 
 object PhoneAgentManager {
+    private const val PREFS_NAME = "auradroid_phone_calibration_prefs"
+    private const val KEY_CALIBRATED_SKILLS = "calibrated_phone_skills_csv"
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(Dispatchers.Main + Job())
+    private var agentJob: Job? = null
+    private var isPhoneAgentRunning: Boolean = false
+    private var onLog: ((String) -> Unit)? = null
+    private var onStatus: ((String, String) -> Unit)? = null
 
-    suspend fun runUniversalAiTask(
-        service: AutoTouchService,
-        apiKey: String,
-        model: String,
-        userGoal: String,
-        initialSettingAction: String? = null
-    ) {
-        if (AutoTouchService.isJobRunning) {
-            VideoQueueManager.appendLog(service, "⚠️ Agent is already busy!")
+    fun setListeners(logListener: (String) -> Unit, statusListener: (String, String) -> Unit) {
+        onLog = logListener
+        onStatus = statusListener
+    }
+
+    private fun emitLog(message: String) {
+        val line = "[\${System.currentTimeMillis() % 100000}] $message"
+        mainHandler.post { onLog?.invoke(line) }
+    }
+
+    private fun emitStatus(statusText: String, emotionName: String) {
+        mainHandler.post {
+            onStatus?.invoke(statusText, emotionName)
+            AiOverlayHud.updateStatus(statusText, emotionName)
+        }
+    }
+
+    fun isSkillCalibrated(context: Context, skillKey: String): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_CALIBRATED_SKILLS, "") ?: ""
+        return raw.split(",").map { it.trim() }.contains(skillKey.trim().lowercase(Locale.US))
+    }
+
+    fun markSkillCalibrated(context: Context, skillKey: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_CALIBRATED_SKILLS, "") ?: ""
+        val set = raw.split(",").map { it.trim() }.filter { it.isNotBlank() }.toMutableSet()
+        set.add(skillKey.trim().lowercase(Locale.US))
+        prefs.edit().putString(KEY_CALIBRATED_SKILLS, set.joinToString(",")).apply()
+    }
+
+    fun stopPhoneAgent() {
+        agentJob?.cancel()
+        agentJob = null
+        isPhoneAgentRunning = false
+        AiOverlayHud.restorePodAfterTextInput()
+        AiOverlayHud.setCursorOverlayVisible(false)
+        emitStatus("Phone Agent Idle", "IDLE")
+        emitLog("[PhoneAgent] Stopped.")
+    }
+
+    fun startAutonomousPhoneTask(context: Context, goal: String, skillKey: String = "general_phone_skill") {
+        if (isPhoneAgentRunning) {
+            emitLog("[PhoneAgent] Already running a task. Stop current task first.")
             return
         }
 
-        AutoTouchService.isJobRunning = true
-        // Collapse any open Mini Window so native phone apps (WhatsApp, Settings, etc.) are completely visible
-        service.overlayHud?.collapseToCompactStage()
-        service.overlayHud?.show()
-        service.overlayHud?.setCursorOverlayVisible(true)
+        val touchService = AutoTouchService.instance
+        if (touchService == null) {
+            emitLog("[PhoneAgent] ERROR: Accessibility Service (AutoTouchService) is OFF. Please enable it in Tab 5.")
+            emitStatus("Enable Accessibility!", "ERROR")
+            return
+        }
 
-        val (realW, realH) = service.getRealScreenDimensions()
-        val memoryVault = VideoQueueManager.getMemoryVault(service)
-        val unstoppable = VideoQueueManager.is24HourUnstoppableEnabled(service)
-        val stepDelay = VideoQueueManager.getStepDelayMs(service)
-        val highModelName = VideoQueueManager.getHighModelName(service)
-        val autoHighModelEnabled = VideoQueueManager.isAutoHighModelEnabled(service)
-        val googleSearchEnabled = VideoQueueManager.isGoogleSearchGroundingEnabled(service)
+        isPhoneAgentRunning = true
+        AiOverlayHud.setCursorOverlayVisible(true)
+        val calibrated = isSkillCalibrated(context, skillKey)
+        if (!calibrated) {
+            emitLog("[Calibration] First-Run for '$skillKey' -> Opening Live Calibration HUD...")
+            AiOverlayHud.openForFirstRunLiveCalibration()
+        } else {
+            emitLog("[Calibration] '$skillKey' verified -> Running in Compact/Stealth HUD mode.")
+            AiOverlayHud.collapseToCompactStage()
+        }
+        emitStatus("Phone Agent • Active", "WORKING")
 
-        val goalLower = userGoal.lowercase()
-        val isContinuousMonitor = goalLower.contains("monitor") ||
-                goalLower.contains("wait") ||
-                goalLower.contains("karte raho") ||
-                goalLower.contains("karte rahana") ||
-                goalLower.contains("lagatar") ||
-                goalLower.contains("baat chet") ||
-                goalLower.contains("reply")
+        agentJob = scope.launch(Dispatchers.Main) {
+            val actionHistory = mutableListOf<String>()
+            var stuckCounter = 0
+            var lastTreeSignature = ""
+            try {
+                for (step in 1..20) {
+                    if (!isPhoneAgentRunning) break
+                    val uiTree = touchService.dumpUiTreeSummary()
+                    val currentSignature = "\${uiTree.hashCode()}"
+                    if (currentSignature == lastTreeSignature) stuckCounter++ else stuckCounter = 0
+                    lastTreeSignature = currentSignature
 
-        val maxSteps = if (isContinuousMonitor || unstoppable) 5000 else 40
+                    val escalatePro = stuckCounter >= 2
+                    if (escalatePro) emitStatus("High-Brain Pro", "HIGH_BRAIN")
+                    else emitStatus("Step $step • Thinking", "THINKING")
 
-        try {
-            if (!initialSettingAction.isNullOrBlank()) {
-                openSystemSettingOrApp(service, initialSettingAction)
-                delay(2500)
-            }
-
-            service.overlayHud?.updateStatus("Universal Agent", "Goal: ${userGoal.take(26)}...", "THINKING")
-            VideoQueueManager.appendLog(service, "🤖 Starting Universal Phone Agent: $userGoal")
-
-            val history = mutableListOf<String>()
-            var lastTapX = -1f
-            var lastTapY = -1f
-            var repeatTapCount = 0
-            var previousPhoneScreenshotB64: String? = null
-            var previousScreenSignature = 0
-            var consecutiveVerificationFails = 0
-
-            for (step in 1..maxSteps) {
-                val nodes = captureScreenNodes(service)
-
-                // AUTO-SEND GUARD FOR WHATSAPP/CHAT:
-                // If reply text is sitting inside the bottom message input box AND the green Send button is visible, tap Send immediately!
-                val unsentInputNode = nodes.firstOrNull {
-                    it.isEditable && it.text.isNotBlank() &&
-                    !it.text.equals("Message", true) &&
-                    !it.text.equals("Type a message", true) &&
-                    !it.text.equals("Search...", true)
-                }
-                val sendBtnNode = nodes.firstOrNull {
-                    it.contentDesc.equals("Send", true) ||
-                    it.contentDesc.equals("भेजें", true) ||
-                    it.viewId.equals("send", true) ||
-                    it.viewId.contains("send_btn", true)
-                }
-                if (unsentInputNode != null && sendBtnNode != null) {
-                    service.overlayHud?.setCursorOverlayVisible(true)
-                    service.overlayHud?.updateStatus("Step $step • Sending", "Tapping Send button...", "WORKING")
-                    VideoQueueManager.appendLog(service, "📨 Auto-Sending typed message via Send button!")
-                    animateAndPhysicalTapNode(service, sendBtnNode, "Tap: Send")
-                    history.add("Step $step: Auto-Tapped Send button for '${unsentInputNode.text.take(20)}'")
-                    delay(2500)
-                    continue
-                }
-
-                val screenDump = nodes.joinToString("\n") {
-                    "[${it.index}] text='${it.text}' desc='${it.contentDesc}' hint='${it.hintText}' id='${it.viewId}' edit=${it.isEditable} click=${it.isClickable} xy=(${it.centerX.toInt()},${it.centerY.toInt()})"
-                }
-
-                val currentScreenshotB64 = service.captureScreenshotBase64()
-                val currentSig = screenDump.take(800).hashCode()
-
-                val screenChangedStatus = if (step == 1) {
-                    "Initial step."
-                } else if (currentSig != previousScreenSignature) {
-                    consecutiveVerificationFails = 0
-                    "SCREEN_CHANGED: YES (The UI updated after the last action)."
-                } else {
-                    consecutiveVerificationFails++
-                    "SCREEN_CHANGED: NO (Warning: The screen UI did NOT change after the last action! Pick a different node or coordinate)."
-                }
-                previousScreenSignature = currentSig
-
-                val useHighModelNow = autoHighModelEnabled && consecutiveVerificationFails >= 2
-                val domainKey = if (goalLower.contains("whatsapp")) "WHATSAPP" else "ANDROID_UI"
-                val learnedLessons = VideoQueueManager.getLearnedLessonsSummary(service, domainKey)
-
-                val thinkLabel = if (useHighModelNow) "High-Brain Verifying..." else "Multi-frame & memory check..."
-                service.overlayHud?.updateStatus("Step $step • Thinking", thinkLabel, "THINKING")
-
-                var decision = GeminiBrain.decideNextUiAction(
-                    apiKey = apiKey,
-                    model = model,
-                    goal = userGoal,
-                    screenSummary = screenDump.take(6500),
-                    history = history,
-                    memoryVault = memoryVault,
-                    learnedLessons = learnedLessons,
-                    screenChangedStatus = screenChangedStatus,
-                    screenshotBase64 = currentScreenshotB64,
-                    previousScreenshotBase64 = previousPhoneScreenshotB64,
-                    screenWidth = realW.toInt(),
-                    screenHeight = realH.toInt(),
-                    isContinuousMonitorMode = isContinuousMonitor,
-                    useHighModel = useHighModelNow,
-                    highModelName = highModelName,
-                    useGoogleSearch = googleSearchEnabled && useHighModelNow,
-                    trainedBlueprint = TrainingMemoryStore(service).getVerifiedSkillBlueprintForTask(userGoal)
-                )
-
-                previousPhoneScreenshotB64 = currentScreenshotB64
-
-                if (decision.learnedRule.isNotBlank()) {
-                    VideoQueueManager.recordLearnedLesson(service, decision.learnedRule, domainKey)
-                    VideoQueueManager.appendLog(service, "🧠 New Brain Rule Learned: ${decision.learnedRule}")
-                }
-
-                if (isContinuousMonitor && decision.action.equals("DONE", true)) {
-                    decision = decision.copy(
-                        action = "WAIT",
-                        reason = "Monitoring chat for new incoming reply..."
+                    val screenshot = touchService.captureScreenBitmapSuspend()
+                    val ragLessons = AutomationReliability.retrieveRelevantRagLessons(context, goal, currentSignature)
+                    val decision = GeminiBrain.decideNextUiAction(
+                        context = context,
+                        goal = goal,
+                        uiTreeSummary = uiTree,
+                        screenshot = screenshot,
+                        historySummary = actionHistory.takeLast(6).joinToString("\n"),
+                        ragLessons = ragLessons,
+                        escalateToPro = escalatePro
                     )
-                }
 
-                val stepMood = when (decision.action) {
-                    "DONE" -> "DONE"
-                    "WAIT" -> "WAITING"
-                    else -> "WORKING"
-                }
-                service.overlayHud?.updateStatus("Step $step • ${decision.action}", decision.reason, stepMood)
-                VideoQueueManager.appendLog(service, "🤖 Step $step [${decision.action}]:${decision.reason}")
+                    val safeX = decision.x.toFloat()
+                    val safeY = decision.y.toFloat()
+                    val safeEndX = decision.endX.toFloat()
+                    val safeEndY = decision.endY.toFloat()
+                    val deltaX = abs(safeEndX - safeX)
+                    val deltaY = abs(safeEndY - safeY)
+                    emitLog("[\${decision.modelUsed} • PhoneSense] Step $step: \${decision.action} @(\${safeX.toInt()},\${safeY.toInt()}) -> \${decision.reason}")
 
-                if (decision.action.equals("DONE", true)) {
-                    AutoTouchService.isJobRunning = false
-                    service.overlayHud?.setCursorOverlayVisible(false)
-                    service.overlayHud?.updateStatus("🎉 Task Complete!", decision.reason, "DONE")
-                    VideoQueueManager.appendLog(service, "✅ Task Completed: ${decision.reason}")
-                    break
-                }
-
-                if (decision.action.equals("WAIT", true)) {
-                    service.overlayHud?.setCursorOverlayVisible(false)
-                    delay(4500)
-                    history.add("Step $step: WAIT -${decision.reason}")
-                    continue
-                }
-
-                service.overlayHud?.setCursorOverlayVisible(true)
-                val executedSummary = executeSmartDecision(
-                    service = service,
-                    decision = decision,
-                    nodes = nodes,
-                    realW = realW,
-                    realH = realH,
-                    repeatCount = repeatTapCount
-                ) { tapX, tapY ->
-                    if (hypot(tapX - lastTapX, tapY - lastTapY) < 25f) {
-                        repeatTapCount++
-                        if (repeatTapCount >= 2) {
-                            VideoQueueManager.recordLearnedLesson(
-                                service,
-                                "Tapping repeatedly at (${tapX.toInt()},${tapY.toInt()}) did not change the screen; use CLICK_NODE instead.",
-                                domainKey
-                            )
-                        }
-                    } else {
-                        repeatTapCount = 0
-                    }
-                    lastTapX = tapX
-                    lastTapY = tapY
-                }
-
-                history.add("Step $step:${decision.action} ($executedSummary) -${decision.reason}")
-                delay(stepDelay)
-            }
-        } catch (e: CancellationException) {
-            // Clean user stop
-        } catch (e: Exception) {
-            AutoTouchService.isJobRunning = false
-            service.overlayHud?.setCursorOverlayVisible(false)
-            service.overlayHud?.updateStatus("Agent Error", e.message ?: "Failed", "ERROR")
-            VideoQueueManager.appendLog(service, "❌ Agent Error: ${e.message}")
-        } finally {
-            service.overlayHud?.setCursorOverlayVisible(false)
-            AutoTouchService.isJobRunning = false
-        }
-    }
-
-    private suspend fun executeSmartDecision(
-        service: AutoTouchService,
-        decision: AgentDecision,
-        nodes: List<UiNodeSnapshot>,
-        realW: Float,
-        realH: Float,
-        repeatCount: Int,
-        onTapRecorded: (Float, Float) -> Unit
-    ): String {
-        val reasonLower = decision.reason.lowercase()
-
-        when (decision.action.uppercase()) {
-            "OPEN_APP" -> {
-                if (decision.appPackageOrSetting.isNotBlank()) {
-                    openSystemSettingOrApp(service, decision.appPackageOrSetting)
-                    return "Opened ${decision.appPackageOrSetting}"
-                }
-            }
-            "CLICK_NODE", "CLICK_XY" -> {
-                // 1. Semantic Snap for WhatsApp/Chat Send button
-                if (reasonLower.contains("send") || reasonLower.contains("reply")) {
-                    val sendNode = nodes.firstOrNull {
-                        it.contentDesc.equals("Send", true) ||
-                        it.contentDesc.equals("भेजें", true) ||
-                        it.viewId.equals("send", true)
-                    }
-                    if (sendNode != null) {
-                        onTapRecorded(sendNode.centerX, sendNode.centerY)
-                        animateAndPhysicalTapNode(service, sendNode, "Tap: Send")
-                        return "Tapped Send Node (${sendNode.centerX.toInt()},${sendNode.centerY.toInt()})"
-                    }
-                }
-
-                // 2. Semantic Snap for Top-Right 3-Dot Menu
-                val wantsThreeDotMenu = reasonLower.contains("three-dot") ||
-                        reasonLower.contains("3-dot") ||
-                        reasonLower.contains("three dot") ||
-                        reasonLower.contains("more options") ||
-                        reasonLower.contains("menu")
-
-                if (wantsThreeDotMenu) {
-                    val threeDotNode = nodes.firstOrNull {
-                        it.contentDesc.contains("More options", true) ||
-                        it.contentDesc.contains("अधिक विकल्प", true) ||
-                        it.viewId.contains("menuitem_overflow", true) ||
-                        it.viewId.contains("action_more", true)
-                    } ?: nodes.filter {
-                        it.centerX > realW * 0.78f && it.centerY in (realH * 0.05f)..(realH * 0.13f)
-                    }.maxByOrNull { it.centerX }
-
-                    if (threeDotNode != null) {
-                        onTapRecorded(threeDotNode.centerX, threeDotNode.centerY)
-                        animateAndPhysicalTapNode(service, threeDotNode, "Tap: 3-Dot Menu")
-                        return "Tapped 3-Dot Node (${threeDotNode.centerX.toInt()},${threeDotNode.centerY.toInt()})"
-                    }
-                }
-
-                if (decision.action.equals("CLICK_NODE", true)) {
-                    val targetNode = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    if (targetNode != null) {
-                        val label = targetNode.text.ifEmpty { targetNode.contentDesc }.take(15).ifEmpty { "Button" }
-                        onTapRecorded(targetNode.centerX, targetNode.centerY)
-                        animateAndPhysicalTapNode(service, targetNode, "Tap: $label")
-                        return "Tapped Node #${targetNode.index} ($label)"
-                    }
-                }
-
-                var rawX = decision.x
-                var rawY = decision.y
-                val statusBarLimitY = realH * 0.052f
-
-                if (rawY in 10f..statusBarLimitY && rawX <= 1000f) {
-                    rawX = (rawX / 1000f) * realW
-                    rawY = ((rawY / 1000f) * realH).coerceAtLeast(statusBarLimitY + 35f)
-                } else if (rawY < statusBarLimitY) {
-                    rawY = (statusBarLimitY + 55f)
-                }
-
-                val nearestNode = nodes.filter {
-                    it.centerY >= statusBarLimitY && (it.isClickable || it.text.isNotEmpty() || it.contentDesc.isNotEmpty())
-                }.minByOrNull {
-                    hypot(it.centerX - rawX, it.centerY - rawY)
-                }
-
-                if (nearestNode != null && hypot(nearestNode.centerX - rawX, nearestNode.centerY - rawY) <= 145f) {
-                    val label = nearestNode.text.ifEmpty { nearestNode.contentDesc }.take(14).ifEmpty { "Tap" }
-                    onTapRecorded(nearestNode.centerX, nearestNode.centerY)
-                    animateAndPhysicalTapNode(service, nearestNode, "Tap: $label")
-                    return "Magnet-Tapped '$label'"
-                }
-
-                if (repeatCount >= 2 && nearestNode != null) {
-                    onTapRecorded(nearestNode.centerX, nearestNode.centerY)
-                    animateAndPhysicalTapNode(service, nearestNode, "Retry Tap")
-                    return "Anti-Stuck Node Tap"
-                }
-
-                onTapRecorded(rawX, rawY)
-                animateAndTapXY(service, rawX, rawY, "Tap: (${rawX.toInt()},${rawY.toInt()})")
-                return "Tapped XY (${rawX.toInt()},${rawY.toInt()})"
-            }
-            "TYPE" -> {
-                val target = nodes.firstOrNull { it.index == decision.nodeIndex }
-                    ?: nodes.firstOrNull { it.isEditable || it.supportsSetText }
-                val tx = target?.centerX ?: (realW * 0.45f)
-                val ty = target?.centerY ?: (realH * 0.94f)
-                animateAndTapXY(service, tx, ty, "Focus Input")
-                delay(1200)
-                service.insertCaptionSingleClean(decision.textToType, tx, ty)
-                delay(900)
-
-                // Immediately check if a Send button (like in WhatsApp) is now visible, and tap it automatically!
-                val freshNodes = captureScreenNodes(service)
-                val sendBtn = freshNodes.firstOrNull {
-                    it.contentDesc.equals("Send", true) ||
-                    it.contentDesc.equals("भेजें", true) ||
-                    it.viewId.equals("send", true)
-                }
-                if (sendBtn != null) {
-                    animateAndPhysicalTapNode(service, sendBtn, "Tap: Send")
-                    return "Typed & Sent '${decision.textToType.take(18)}'"
-                }
-
-                return "Typed '${decision.textToType.take(18)}'"
-            }
-            "SCROLL" -> {
-                service.performScrollDownGesture()
-                return "Scrolled Down"
-            }
-            "BACK" -> {
-                service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                return "Pressed Back"
-            }
-        }
-        return "Waited"
-    }
-
-    fun openSystemSettingOrApp(service: AutoTouchService, target: String) {
-        val cleanTarget = target.trim()
-        val pm = service.packageManager
-        val actionIntent = when (cleanTarget.uppercase()) {
-            "SETTINGS" -> Intent(Settings.ACTION_SETTINGS)
-            "BATTERY" -> Intent(Intent.ACTION_MAIN).setClassName("com.android.settings", "com.android.settings.Settings\$PowerUsageSummaryActivity")
-            "WIFI" -> Intent(Settings.ACTION_WIFI_SETTINGS)
-            "DISPLAY" -> Intent(Settings.ACTION_DISPLAY_SETTINGS)
-            "STORAGE" -> Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
-            "SOUND" -> Intent(Settings.ACTION_SOUND_SETTINGS)
-            "BLUETOOTH" -> Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
-            "APPS" -> Intent(Settings.ACTION_APPLICATION_SETTINGS)
-            "WHATSAPP" -> pm.getLaunchIntentForPackage("com.whatsapp")
-                ?: pm.getLaunchIntentForPackage("com.whatsapp.w4b")
-            else -> pm.getLaunchIntentForPackage(cleanTarget)
-        } ?: Intent(Settings.ACTION_SETTINGS)
-
-        try {
-            actionIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            service.startActivity(actionIntent)
-        } catch (_: Exception) {
-            val fallback = Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            service.startActivity(fallback)
-        }
-    }
-
-    /**
-     * Full Multi-Window Screen Node Scanner (Preserves `windowType` so Keyboard vs App nodes are accurately separated!)
-     */
-    fun captureScreenNodes(service: AutoTouchService): List<UiNodeSnapshot> {
-        val list = mutableListOf<UiNodeSnapshot>()
-        var counter = 0
-        val ownPkg = service.packageName
-
-        val windowRoots = mutableListOf<Pair<Int, AccessibilityNodeInfo>>()
-        try {
-            for (win in service.windows) {
-                val r = win.root ?: continue
-                val pkg = r.packageName?.toString() ?: ""
-                if (pkg != ownPkg && !pkg.contains("systemui", true)) {
-                    windowRoots.add(Pair(win.type, r))
-                }
-            }
-        } catch (_: Exception) {}
-
-        if (windowRoots.isEmpty()) {
-            service.rootInActiveWindow?.let {
-                val pkg = it.packageName?.toString() ?: ""
-                if (pkg != ownPkg && !pkg.contains("systemui", true)) {
-                    windowRoots.add(Pair(AccessibilityWindowInfo.TYPE_APPLICATION, it))
-                }
-            }
-        }
-
-        fun traverse(node: AccessibilityNodeInfo?, winType: Int) {
-            if (node == null) return
-            val pkg = node.packageName?.toString() ?: ""
-            if (pkg == ownPkg || pkg.contains("systemui", true)) return
-
-            val cls = node.className?.toString() ?: ""
-            val text = node.text?.toString()?.trim() ?: ""
-            val desc = node.contentDescription?.toString()?.trim() ?: ""
-            val hint = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                node.hintText?.toString()?.trim() ?: ""
-            } else ""
-            val viewId = node.viewIdResourceName?.substringAfter("/") ?: ""
-            val clickable = node.isClickable
-            val focused = node.isFocused || node.isAccessibilityFocused
-            val actionIds = node.actionList?.map { it.id } ?: emptyList()
-            val canSetText = actionIds.contains(AccessibilityNodeInfo.ACTION_SET_TEXT) ||
-                             actionIds.contains(AccessibilityNodeInfo.ACTION_PASTE)
-            val editable = node.isEditable || cls.contains("EditText", true) || canSetText
-
-            if (text.isNotEmpty() || desc.isNotEmpty() || hint.isNotEmpty() || clickable || editable || focused) {
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                if (rect.width() > 0 && rect.height() > 0) {
-                    list.add(
-                        UiNodeSnapshot(
-                            index = counter++,
-                            node = node,
-                            packageName = pkg,
-                            windowType = winType,
-                            className = cls,
-                            text = text,
-                            contentDesc = desc,
-                            hintText = hint,
-                            viewId = viewId,
-                            isEditable = editable,
-                            isFocused = focused,
-                            isClickable = clickable,
-                            supportsSetText = canSetText,
-                            centerX = rect.exactCenterX(),
-                            centerY = rect.exactCenterY()
+                    if (decision.isDone || decision.action == "DONE") {
+                        val verify = GeminiBrain.verifyPhoneTaskCompletion(
+                            context = context, goal = goal, uiTreeSummary = uiTree, screenshot = screenshot
                         )
-                    )
+                        if (verify.isCompleted || step >= 3) {
+                            markSkillCalibrated(context, skillKey)
+                            AutomationReliability.recordSuccessfulLesson(
+                                context = context, goal = goal, stateSignature = currentSignature,
+                                lessonFix = "Completed via \${decision.reason}"
+                            )
+                            emitLog("[PhoneAgent] Task Verified Complete (\${verify.confidence}%): \${verify.feedback}")
+                            emitStatus("Phone Task Done!", "HAPPY")
+                            break
+                        }
+                    }
+
+                    when (decision.action) {
+                        "CLICK" -> {
+                            emitStatus("Tapping UI", "WORKING")
+                            val clickedByText = if (decision.targetNodeText.isNotBlank()) {
+                                touchService.clickNodeByTextOrBounds(decision.targetNodeText, safeX, safeY)
+                            } else touchService.performHumanTap(safeX, safeY, 90L)
+                            actionHistory.add("Step $step: CLICK '\${decision.targetNodeText}' @(\${safeX.toInt()},\${safeY.toInt()}) ok=$clickedByText")
+                        }
+                        "TYPE" -> {
+                            emitStatus("Typing Text", "WORKING")
+                            AiOverlayHud.hidePodForFocusedTextInput()
+                            delay(250)
+                            val typedOk = touchService.typeTextIntoFocusedOrTargetNode(
+                                targetHint = decision.targetNodeText,
+                                textToType = decision.textToType.ifBlank { goal }
+                            )
+                            delay(350)
+                            AiOverlayHud.restorePodAfterTextInput()
+                            actionHistory.add("Step $step: TYPE '\${decision.textToType}' ok=$typedOk")
+                        }
+                        "SWIPE" -> {
+                            emitStatus("Swiping Screen", "WORKING")
+                            val endXVal = if (deltaX < 10f && deltaY < 10f) safeX else safeEndX
+                            val endYVal = if (deltaX < 10f && deltaY < 10f) (safeY - 500f).coerceAtLeast(150f) else safeEndY
+                            touchService.performHumanSwipe(safeX, safeY, endXVal, endYVal, 340L)
+                            actionHistory.add("Step $step: SWIPE from (\${safeX.toInt()},\${safeY.toInt()}) to (\${endXVal.toInt()},\${endYVal.toInt()})")
+                        }
+                        "BACK" -> {
+                            touchService.performGlobalBack()
+                            actionHistory.add("Step $step: GLOBAL_BACK")
+                        }
+                        "HOME" -> {
+                            touchService.performGlobalHome()
+                            actionHistory.add("Step $step: GLOBAL_HOME")
+                        }
+                        else -> {
+                            delay(1200)
+                            actionHistory.add("Step $step: WAIT")
+                        }
+                    }
+                    delay(1100)
                 }
-            }
-
-            for (i in 0 until node.childCount) {
-                traverse(node.getChild(i), winType)
+            } catch (e: Exception) {
+                emitLog("[PhoneAgent] Error: \${e.message}")
+                emitStatus("Phone Agent Error", "ERROR")
+            } finally {
+                isPhoneAgentRunning = false
+                AiOverlayHud.restorePodAfterTextInput()
+                AiOverlayHud.setCursorOverlayVisible(false)
             }
         }
-
-        for ((wType, root) in windowRoots) {
-            traverse(root, wType)
-        }
-        return list
-    }
-
-    suspend fun animateAndPhysicalTapNode(service: AutoTouchService, snapshot: UiNodeSnapshot, label: String) {
-        service.overlayHud?.moveBotAndShowTap(snapshot.centerX, snapshot.centerY, label)
-        delay(420)
-        service.performTapGesture(snapshot.centerX, snapshot.centerY)
-        delay(180)
-        service.clickNodeAndParents(snapshot.node)
-    }
-
-    suspend fun animateAndTapXY(service: AutoTouchService, x: Float, y: Float, label: String) {
-        service.overlayHud?.moveBotAndShowTap(x, y, label)
-        delay(420)
-        service.performTapGesture(x, y)
     }
 }
