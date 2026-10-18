@@ -761,10 +761,12 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
         if (bitmap == null || bitmap.isRecycled) return false
         return try {
             destination.parentFile?.mkdirs()
+            var compressed = false
             FileOutputStream(destination).use { output ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)
+                compressed = bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)
                 output.flush()
             }
+            compressed && destination.exists() && destination.length() > 0L
         } catch (_: Exception) {
             false
         }
