@@ -38,7 +38,7 @@ data class YouTubeSeoMetadata(
 
 object VideoQueueManager {
 
-    private const val PREFS_NAME = "auradroid_video_queue_prefs"
+    const val PREFS_NAME = "auradroid_video_queue_prefs"
     private const val KEY_CUSTOM_FOLDER_URI = "custom_folder_uri"
     private const val KEY_UPLOAD_NEWEST_FIRST = "upload_newest_first"
     private const val KEY_UPLOADED_IDS = "uploaded_video_ids_json"
