@@ -634,7 +634,10 @@ object PhoneAgentManager {
                                 stepKind == "SHARE_SEND" -> touchService.clickBottomExactLabel("Send")
                                 stepKind == "PLAY_VIDEO" -> touchService.clickFirstVideoGridTile()
                                 stepKind == "SEARCH_QUERY" && searchQueryTyped ->
-                                    touchService.clickKeyboardSearchAction()
+                                    touchService.clickKeyboardSearchAction() ||
+                                        (safeY >= screenHeightPx * 0.52f &&
+                                            safeX >= screenWidthPx * 0.42f &&
+                                            touchService.performHumanTap(safeX, safeY, 90L))
                                 stepKind == "LIKE_VIDEO" ->
                                     touchService.clickExactLabel("Like", "Like reel", "Like post")
                                         .takeIf { it } ?: touchService.clickNodeByTextOrBounds(
