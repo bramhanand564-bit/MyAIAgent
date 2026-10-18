@@ -430,15 +430,41 @@ object WebPipelineManager {
     }
 
     private suspend fun downloadBytesFromUrl(url: String): ByteArray? = withContext(Dispatchers.IO) {
+        val maxBytes = 180L * 1024L * 1024L
         try {
-            val req = Request.Builder().url(url).build()
+            val req = Request.Builder().url(url).get().build()
             httpClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    return@withContext resp.body?.bytes()
+                if (!resp.isSuccessful) return@withContext null
+                val body = resp.body ?: return@withContext null
+                val declaredLength = body.contentLength()
+                if (declaredLength > maxBytes) {
+                    log("[Download] Skipped oversized video (${declaredLength / (1024L * 1024L)} MB).")
+                    return@withContext null
                 }
+                val initialCapacity = if (declaredLength > 0L) {
+                    minOf(declaredLength, 1024L * 1024L).toInt()
+                } else {
+                    64 * 1024
+                }
+                val buffer = java.io.ByteArrayOutputStream(initialCapacity)
+                val chunk = ByteArray(64 * 1024)
+                var total = 0L
+                body.byteStream().use { input ->
+                    while (true) {
+                        val read = input.read(chunk)
+                        if (read < 0) break
+                        total += read
+                        if (total > maxBytes) {
+                            log("[Download] Stopped video stream above 180 MB memory limit.")
+                            return@withContext null
+                        }
+                        buffer.write(chunk, 0, read)
+                    }
+                }
+                buffer.toByteArray()
             }
         } catch (_: Exception) {
+            null
         }
-        return@withContext null
     }
 }
