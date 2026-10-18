@@ -299,6 +299,7 @@ object WebPipelineManager {
                 val arcState = VideoQueueManager.getStoryArcState(context)
                 var currentEp = arcState.currentEpisode
                 var generatedVideoCount = 0
+                var stoppedOnFailedEpisode = false
 
                 for (epIndex in 1..episodeCount) {
                     if (!isRunning) break
@@ -391,6 +392,7 @@ object WebPipelineManager {
                     }
                     endFlowVideoCapture()
                     if (!episodeSaved) {
+                        stoppedOnFailedEpisode = true
                         log("[Pipeline] Episode $currentEp did not produce a saved video. Stopping instead of silently skipping an episode.")
                         break
                     }
@@ -401,8 +403,15 @@ object WebPipelineManager {
                     log("[Upload] $generatedVideoCount new video(s) queued. Opening one YouTube share/review flow; publishing is completed in YouTube by the user.")
                     val handoff = runYouTubeAutoUpload(context, webView, skipFlowRouting = true)
                     if (handoff.started) {
-                        updateStatus("Generation Done • YouTube Review", "WORKING")
-                        log("[Pipeline] Review and publish the selected queued video in YouTube; confirm upload in AuraDroid afterwards.")
+                        updateStatus(
+                            if (stoppedOnFailedEpisode) "Partial Generation • YouTube Review" else "Generation Done • YouTube Review",
+                            "WORKING"
+                        )
+                        if (stoppedOnFailedEpisode) {
+                            log("[Pipeline] Partial generation: $generatedVideoCount video(s) were saved before the failed episode. Review/publish the queued video, then retry the failed episode separately.")
+                        } else {
+                            log("[Pipeline] Review and publish the selected queued video in YouTube; confirm upload in AuraDroid afterwards.")
+                        }
                     } else {
                         updateStatus("Generation Done • Upload Handoff Failed", "ERROR")
                         log("[Pipeline] Videos were saved, but the YouTube share flow could not start: ${handoff.message}")
@@ -411,8 +420,15 @@ object WebPipelineManager {
                     updateStatus("No New Video To Upload", "ERROR")
                     log("[Pipeline] No new video was saved, so automatic upload handoff was skipped. Existing queue items were left untouched.")
                 } else {
-                    updateStatus(if (generatedVideoCount > 0) "Pipeline Complete!" else "No Video Saved", if (generatedVideoCount > 0) "HAPPY" else "ERROR")
-                    log("[Pipeline] Saved ${generatedVideoCount} new video(s). Review the queue before uploading.")
+                    val finalStatus = when {
+                        stoppedOnFailedEpisode && generatedVideoCount > 0 -> "Partial Generation"
+                        stoppedOnFailedEpisode -> "Generation Failed"
+                        generatedVideoCount > 0 -> "Pipeline Complete!"
+                        else -> "No Video Saved"
+                    }
+                    val finalEmotion = if (stoppedOnFailedEpisode || generatedVideoCount == 0) "ERROR" else "HAPPY"
+                    updateStatus(finalStatus, finalEmotion)
+                    log("[Pipeline] Saved ${generatedVideoCount} new video(s); partialFailure=$stoppedOnFailedEpisode. Review the queue before uploading.")
                 }
             } catch (e: Exception) {
                 log("[Error] Pipeline exception: ${e.message}")
