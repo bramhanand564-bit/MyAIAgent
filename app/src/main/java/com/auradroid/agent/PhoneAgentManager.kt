@@ -292,8 +292,18 @@ object PhoneAgentManager {
                             emitStatus("Swiping Screen", "WORKING")
                             val endXVal = if (deltaX < 10f && deltaY < 10f) safeX else safeEndX
                             val endYVal = if (deltaX < 10f && deltaY < 10f) (safeY - 500f).coerceAtLeast(150f) else safeEndY
-                            touchService.performHumanSwipe(safeX, safeY, endXVal, endYVal, 340L)
-                            actionHistory.add("Step $step: SWIPE from (${safeX.toInt()},${safeY.toInt()}) to (${endXVal.toInt()},${endYVal.toInt()})")
+                            val swiped = touchService.performHumanSwipe(safeX, safeY, endXVal, endYVal, 320L)
+                            actionHistory.add("Step $step: SWIPE 320ms from (${safeX.toInt()},${safeY.toInt()}) to (${endXVal.toInt()},${endYVal.toInt()}) ok=$swiped")
+                        }
+                        "SCROLL_DOWN" -> {
+                            emitStatus("Safe-zone scroll down", "WORKING")
+                            val swiped = touchService.swipeScrollDown()
+                            actionHistory.add("Step $step: SCROLL_DOWN safe zone x=72%, y=75%-24%, 320ms ok=$swiped")
+                        }
+                        "SCROLL_UP" -> {
+                            emitStatus("Safe-zone scroll up", "WORKING")
+                            val swiped = touchService.swipeScrollUp()
+                            actionHistory.add("Step $step: SCROLL_UP safe zone x=72%, y=25%-75%, 320ms ok=$swiped")
                         }
                         "BACK" -> {
                             touchService.performGlobalBack()
