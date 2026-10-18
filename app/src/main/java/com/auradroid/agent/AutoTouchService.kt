@@ -117,6 +117,17 @@ class AutoTouchService : AccessibilityService() {
         return "${root.packageName ?: "unknown"}:${fragments.joinToString("|").hashCode().toUInt().toString(16)}"
     }
 
+    fun currentPrivacySafeScreenSignature(): String {
+        val root = rootInActiveWindow ?: return ""
+        return try {
+            buildPrivacySafeScreenSignature(root)
+        } catch (_: Exception) {
+            ""
+        } finally {
+            try { root.recycle() } catch (_: Exception) {}
+        }
+    }
+
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
