@@ -4,13 +4,21 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
 
 class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "auradroid_brain.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
 
         private const val TABLE_SKILLS = "skill_blueprints"
         private const val TABLE_RAG = "vector_rag_memory"
@@ -44,6 +52,8 @@ class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATAB
             timestamp INTEGER NOT NULL
         )"""
         )
+
+        createVisualMemoryTable(db)
 
         db.execSQL(
             """CREATE TABLE IF NOT EXISTS shadow_teach_events (
@@ -87,6 +97,28 @@ class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATAB
             timestamp INTEGER NOT NULL
         )"""
         )
+        createVisualMemoryTable(db)
+    }
+
+    private fun createVisualMemoryTable(db: SQLiteDatabase) {
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS visual_memory (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                package_name TEXT NOT NULL,
+                app_folder TEXT NOT NULL,
+                task_goal TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                image_path TEXT NOT NULL DEFAULT '',
+                tap_x REAL NOT NULL DEFAULT -1,
+                tap_y REAL NOT NULL DEFAULT -1,
+                bounds_text TEXT NOT NULL DEFAULT '',
+                button_label TEXT NOT NULL DEFAULT '',
+                golden_fix TEXT NOT NULL DEFAULT '',
+                timestamp INTEGER NOT NULL
+            )"""
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_visual_memory_package ON visual_memory(package_name, timestamp)")
     }
 }
 
@@ -367,6 +399,336 @@ object AutomationReliability {
             }
         } catch (_: Exception) {
             "Passive teach history unavailable."
+        }
+    }
+
+
+    private data class VisualFrameRecord(
+        val id: Long,
+        val packageName: String,
+        val appFolder: String,
+        val taskGoal: String,
+        val stage: String,
+        val imagePath: String,
+        val buttonLabel: String,
+        val tapX: Float,
+        val tapY: Float,
+        val goldenFix: String
+    )
+
+    private fun safeFolderName(raw: String): String {
+        return raw.trim()
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .trim('_', '.', '-')
+            .take(60)
+            .ifBlank { "General" }
+    }
+
+    private fun resolveAppFolder(context: Context, packageName: String, description: String = ""): String {
+        val lower = (packageName + " " + description).lowercase(Locale.US)
+        val mapped = when {
+            lower.contains("instagram") -> "Instagram"
+            lower.contains("youtube") || lower.contains("yt studio") -> "YouTube"
+            lower.contains("whatsapp") -> "WhatsApp"
+            lower.contains("telegram") -> "Telegram"
+            lower.contains("chrome") || lower.contains("browser") -> "Chrome"
+            else -> ""
+        }
+        if (mapped.isNotBlank()) return mapped
+        val label = try {
+            val info = context.packageManager.getApplicationInfo(packageName, 0)
+            context.packageManager.getApplicationLabel(info).toString()
+        } catch (_: Exception) {
+            packageName.substringAfterLast('.').ifBlank { "General" }
+        }
+        return safeFolderName(label)
+    }
+
+    private fun getAppMemoryDirectory(context: Context, appFolder: String): File {
+        val root = File(context.filesDir, "Memory")
+        val appDir = File(root, safeFolderName(appFolder))
+        if (!appDir.exists()) appDir.mkdirs()
+        return appDir
+    }
+
+    private fun saveBitmapLossless(bitmap: Bitmap, destination: File): Boolean {
+        return try {
+            FileOutputStream(destination).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                out.flush()
+            }
+            destination.exists() && destination.length() > 0L
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Called only after the VLA loop has detected a stuck screen and a human corrects it.
+     * Android accessibility click events do not expose raw touch coordinates, so x/y are the
+     * center of the clicked node's screen bounds, not a claim about the exact finger contact.
+     */
+    fun saveHumanCorrectionEpisode(
+        context: Context,
+        packageName: String,
+        taskGoal: String,
+        beforeFrame: Bitmap?,
+        afterFrame: Bitmap?,
+        tapX: Float,
+        tapY: Float,
+        boundsText: String,
+        buttonLabel: String
+    ): Boolean {
+        if (packageName.isBlank() || taskGoal.isBlank()) return false
+        if (!tapX.isFinite() || !tapY.isFinite() || tapX < 0f || tapY < 0f) return false
+        init(context)
+        val folder = resolveAppFolder(context, packageName, taskGoal)
+        val directory = getAppMemoryDirectory(context, folder)
+        val stamp = System.currentTimeMillis()
+        val beforeFile = beforeFrame?.let { File(directory, "human_correction_${stamp}_before.png") }
+        val afterFile = afterFrame?.let { File(directory, "human_correction_${stamp}_after.png") }
+        val beforeSaved = beforeFrame != null && beforeFile != null && saveBitmapLossless(beforeFrame, beforeFile)
+        val afterSaved = afterFrame != null && afterFile != null && saveBitmapLossless(afterFrame, afterFile)
+        val db = dbHelper?.writableDatabase ?: return false
+        return try {
+            db.beginTransaction()
+            fun insertFrame(stage: String, file: File?) {
+                val cv = ContentValues().apply {
+                    put("package_name", packageName.take(180))
+                    put("app_folder", folder)
+                    put("task_goal", taskGoal.take(1000))
+                    put("actor", "HUMAN_CORRECTION")
+                    put("stage", stage)
+                    put("image_path", file?.absolutePath.orEmpty())
+                    put("tap_x", tapX)
+                    put("tap_y", tapY)
+                    put("bounds_text", boundsText.take(160))
+                    put("button_label", buttonLabel.take(160))
+                    put("timestamp", stamp)
+                }
+                db.insert("visual_memory", null, cv)
+            }
+            insertFrame("BEFORE", if (beforeSaved) beforeFile else null)
+            insertFrame("AFTER", if (afterSaved) afterFile else null)
+            db.setTransactionSuccessful()
+            beforeSaved || afterSaved
+        } catch (_: Exception) {
+            try { beforeFile?.takeIf { !beforeSaved }?.delete() } catch (_: Exception) {}
+            try { afterFile?.takeIf { !afterSaved }?.delete() } catch (_: Exception) {}
+            false
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Visual memory is intentionally fetched on demand, only when the agent detects a stall. */
+    fun retrieveVisualMemoryForStuck(context: Context, packageName: String, taskGoal: String): String {
+        init(context)
+        val db = dbHelper?.readableDatabase ?: return ""
+        val folder = resolveAppFolder(context, packageName, taskGoal)
+        val queryTokens = taskGoal.lowercase(Locale.US).split(Regex("[^a-z0-9]+")).filter { it.length > 2 }.toSet()
+        val rows = mutableListOf<Triple<Int, String, String>>()
+        try {
+            db.rawQuery(
+                "SELECT task_goal, stage, button_label, golden_fix, tap_x, tap_y FROM visual_memory WHERE package_name = ? AND app_folder = ? ORDER BY timestamp DESC LIMIT 40",
+                arrayOf(packageName, folder)
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val oldGoal = cursor.getString(0).orEmpty()
+                    val stage = cursor.getString(1).orEmpty()
+                    val label = cursor.getString(2).orEmpty()
+                    val fix = cursor.getString(3).orEmpty()
+                    val x = cursor.getFloat(4)
+                    val y = cursor.getFloat(5)
+                    val oldTokens = oldGoal.lowercase(Locale.US).split(Regex("[^a-z0-9]+")).filter { it.length > 2 }.toSet()
+                    val score = queryTokens.intersect(oldTokens).size
+                    val text = when {
+                        fix.isNotBlank() -> "Golden Fix for '$oldGoal': $fix"
+                        stage == "BEFORE" || stage == "AFTER" ->
+                            "Prior HUMAN_CORRECTION: task='$oldGoal', stage=$stage, user-selected node='$label', node-center=($x,$y). Inspect saved screenshots before reusing this hint."
+                        else -> ""
+                    }
+                    if (text.isNotBlank()) rows.add(Triple(score, oldGoal, text))
+                }
+            }
+        } catch (_: Exception) {
+            return ""
+        }
+        return rows.sortedByDescending { it.first }.take(5).joinToString("\n").take(5000)
+    }
+
+    private fun saveGoldenFixRecord(
+        context: Context,
+        packageName: String,
+        appFolder: String,
+        taskGoal: String,
+        goldenFix: String,
+        imagePaths: List<String> = emptyList()
+    ) {
+        init(context)
+        val db = dbHelper?.writableDatabase ?: return
+        val now = System.currentTimeMillis()
+        val directory = getAppMemoryDirectory(context, appFolder)
+        try {
+            File(directory, "golden-fixes.txt").appendText(
+                "\n\n[$now] Goal: ${taskGoal.take(500)}\n$goldenFix\n"
+            )
+        } catch (_: Exception) {
+        }
+        val cv = ContentValues().apply {
+            put("package_name", packageName.take(180))
+            put("app_folder", appFolder)
+            put("task_goal", taskGoal.take(1000))
+            put("actor", "AI_DEEP_ANALYSIS")
+            put("stage", "GOLDEN_FIX")
+            put("image_path", imagePaths.firstOrNull().orEmpty())
+            put("button_label", "")
+            put("golden_fix", goldenFix.take(8000))
+            put("timestamp", now)
+        }
+        try { db.insert("visual_memory", null, cv) } catch (_: Exception) {}
+    }
+
+    /** High-effort post-task analysis runs in the background after a completed task. */
+    suspend fun analyzeHumanCorrectionsAndSaveGoldenFix(
+        context: Context,
+        packageName: String,
+        taskGoal: String
+    ): String = withContext(Dispatchers.IO) {
+        init(context)
+        val db = dbHelper?.readableDatabase ?: return@withContext ""
+        val folder = resolveAppFolder(context, packageName, taskGoal)
+        val frames = mutableListOf<VisualFrameRecord>()
+        try {
+            db.rawQuery(
+                "SELECT id, package_name, app_folder, task_goal, stage, image_path, button_label, tap_x, tap_y, golden_fix FROM visual_memory WHERE package_name = ? AND app_folder = ? AND actor = 'HUMAN_CORRECTION' ORDER BY timestamp DESC LIMIT 8",
+                arrayOf(packageName, folder)
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    frames.add(
+                        VisualFrameRecord(
+                            cursor.getLong(0), cursor.getString(1), cursor.getString(2),
+                            cursor.getString(3), cursor.getString(4), cursor.getString(5),
+                            cursor.getString(6), cursor.getFloat(7), cursor.getFloat(8),
+                            cursor.getString(9)
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            return@withContext ""
+        }
+        val ordered = frames.asReversed()
+        if (ordered.isEmpty()) return@withContext ""
+        val images = mutableListOf<Bitmap>()
+        val usedPaths = mutableListOf<String>()
+        try {
+            ordered.forEach { frame ->
+                if (frame.imagePath.isNotBlank()) {
+                    val bitmap = BitmapFactory.decodeFile(frame.imagePath)
+                    if (bitmap != null) {
+                        images.add(bitmap)
+                        usedPaths.add(frame.imagePath)
+                    }
+                }
+            }
+            val correctionNotes = ordered.joinToString("\n") {
+                "stage=${it.stage}, nodeCenter=(${it.tapX.toInt()},${it.tapY.toInt()}), bounds=${it.buttonLabel}, goal=${it.taskGoal}"
+            }
+            val prompt = """
+You are reviewing a human correction for an Android screen-agent task after the task finished.
+Compare the attached BEFORE and AFTER screenshots in chronological order. The accessibility API only provides the clicked node's center, not raw finger coordinates.
+Task goal: ${taskGoal.take(1000)}
+App package: $packageName
+Correction event notes:
+$correctionNotes
+Create a concise Golden Fix with: screen/app context, what the human corrected, the safe action to repeat next time, visible state cue, and a caution for ambiguous screens. Do not infer credentials or private text. Never suggest re-toggling a control that is already in the desired state.
+Return plain text only.
+""".trimIndent()
+            val (analysis, modelUsed) = GeminiBrain.callGeminiWithFallback(
+                context = context,
+                prompt = prompt,
+                bitmaps = images,
+                preferPro = true,
+                taskType = "HIGH_BRAIN_VISION"
+            )
+            val fix = analysis.trim().takeIf { it.isNotBlank() }.orEmpty()
+            if (fix.isNotBlank()) {
+                saveGoldenFixRecord(context, packageName, folder, taskGoal, "Model=$modelUsed\n$fix", usedPaths)
+            }
+            fix
+        } finally {
+            images.forEach { try { it.recycle() } catch (_: Exception) {} }
+        }
+    }
+
+    /** Extract a bounded set of keyframes from a selected MP4 and learn its visible workflow. */
+    suspend fun trainMemoryFromVideo(
+        context: Context,
+        videoUri: Uri,
+        description: String
+    ): String = withContext(Dispatchers.IO) {
+        val note = description.trim()
+        if (note.isBlank()) return@withContext "Write a short description of what the recording demonstrates first."
+        val appFolder = resolveAppFolder(context, "", note)
+        val packageName = when (appFolder) {
+            "Instagram" -> "com.instagram.android"
+            "YouTube" -> "com.google.android.youtube"
+            "WhatsApp" -> "com.whatsapp"
+            "Telegram" -> "org.telegram.messenger"
+            "Chrome" -> "com.android.chrome"
+            else -> "user-trained-${safeFolderName(appFolder).lowercase(Locale.US)}"
+        }
+        val directory = getAppMemoryDirectory(context, appFolder)
+        val retriever = MediaMetadataRetriever()
+        val frames = mutableListOf<Bitmap>()
+        val paths = mutableListOf<String>()
+        try {
+            retriever.setDataSource(context, videoUri)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()?.coerceAtLeast(1L) ?: 1L
+            val count = minOf(8, maxOf(1, (durationMs / 2000L).toInt()))
+            val spacingMs = if (count <= 1) 0L else (durationMs / count).coerceAtLeast(250L)
+            val stamp = System.currentTimeMillis()
+            for (index in 0 until count) {
+                val timestampMs = (index * spacingMs).coerceAtMost(durationMs - 1L)
+                val frame = try {
+                    retriever.getFrameAtTime(timestampMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                } catch (_: Exception) { null } ?: continue
+                val scaled = if (frame.width > 1280) {
+                    val targetHeight = (frame.height * (1280f / frame.width)).toInt().coerceAtLeast(1)
+                    Bitmap.createScaledBitmap(frame, 1280, targetHeight, true).also {
+                        if (it !== frame) frame.recycle()
+                    }
+                } else frame
+                val output = File(directory, "video_training_${stamp}_${index + 1}.png")
+                if (saveBitmapLossless(scaled, output)) paths.add(output.absolutePath)
+                frames.add(scaled)
+            }
+            if (frames.isEmpty()) return@withContext "Unable to extract readable frames from this video."
+            val prompt = """
+You are the visual-workflow teacher for AuraDroid OS.
+The user-uploaded screen recording was described as:
+$note
+The attached frames are selected in chronological order from the same recording. Infer the app/workflow only from visible evidence. Describe the steps sequentially, identify visible buttons and state changes, and provide a safe reusable Golden Fix for ambiguous popups. Never infer or preserve passwords, one-time codes, payment details, or private message contents.
+Return plain text with a short workflow title, numbered visible steps, cues for when each step applies, and warnings about uncertain transitions.
+""".trimIndent()
+            val (analysis, modelUsed) = GeminiBrain.callGeminiWithFallback(
+                context = context,
+                prompt = prompt,
+                bitmaps = frames,
+                preferPro = true,
+                taskType = "HIGH_BRAIN_VISION"
+            )
+            val result = analysis.trim()
+            if (result.isBlank()) return@withContext "The video frames were extracted, but the free-tier model ladder returned no analysis."
+            saveGoldenFixRecord(context, packageName, appFolder, note, "Video-trained workflow (model=$modelUsed)\n$result", paths)
+            "Learned ${frames.size} keyframes for $appFolder.\n$result"
+        } catch (error: Exception) {
+            "Video training failed: ${error.message ?: error.javaClass.simpleName}"
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+            frames.forEach { try { it.recycle() } catch (_: Exception) {} }
         }
     }
 
