@@ -558,7 +558,7 @@ object AiOverlayHud {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - touchX).toInt()
                     val dy = (event.rawY - touchY).toInt()
-                    if (kotlin.math.abs(dx) > 8 or (kotlin.math.abs(dy) > 8)) {
+                    if (kotlin.math.abs(dx) > 8 || (kotlin.math.abs(dy) > 8)) {
                         movedSignificantly = true
                     }
                     params.x = initialX + dx
@@ -836,7 +836,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (rippleProgress <= 0.01f or (tapPoint.x < 0f)) return
+        if (rippleProgress <= 0.01f || (tapPoint.x < 0f)) return
 
         val alpha = ((1.0f - rippleProgress) * 255).toInt().coerceIn(0, 255)
         ringPaint.alpha = alpha
