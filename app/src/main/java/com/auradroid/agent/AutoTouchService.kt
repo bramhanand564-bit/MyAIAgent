@@ -320,15 +320,68 @@ class AutoTouchService : AccessibilityService() {
         return performHumanSwipe(safeStartX, screenHeight * 0.25f, safeStartX, screenHeight * 0.75f, GESTURE_SWIPE_MS)
     }
 
-    fun launchAppDirectly(packageName: String): Boolean {
-        if (packageName.isBlank()) return false
+    fun resolveLaunchablePackage(appPackageOrLabel: String): String? {
+        val needle = appPackageOrLabel.trim().lowercase(Locale.US)
+            .removePrefix("open ").removePrefix("launch ").trim()
+        if (needle.isBlank()) return null
+
+        val aliases = listOf(
+            "chrome" to "com.android.chrome",
+            "youtube" to "com.google.android.youtube",
+            "youtube studio" to "com.google.android.apps.youtube.creator",
+            "whatsapp" to "com.whatsapp",
+            "google photos" to "com.google.android.apps.photos",
+            "photos" to "com.google.android.apps.photos",
+            "gmail" to "com.google.android.gm",
+            "settings" to "com.android.settings",
+            "play store" to "com.android.vending",
+            "telegram" to "org.telegram.messenger"
+        )
+        val normalizedPackage = aliases.firstOrNull { (label, _) -> needle == label || needle.endsWith(" $label") }
+            ?.second ?: needle
+        try {
+            if (normalizedPackage.contains('.') &&
+                packageManager.getLaunchIntentForPackage(normalizedPackage) != null) {
+                return normalizedPackage
+            }
+        } catch (_: Exception) {}
+
         return try {
-            val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+            val apps = packageManager.getInstalledApplications(0)
+            val launchable = apps.mapNotNull { info ->
+                val pkg = info.packageName ?: return@mapNotNull null
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg) ?: return@mapNotNull null
+                val label = try { packageManager.getApplicationLabel(info).toString().lowercase(Locale.US) }
+                    catch (_: Exception) { "" }
+                Triple(pkg, label, launchIntent)
+            }
+            launchable.firstOrNull { it.first.equals(needle, true) || it.second == needle }?.first
+                ?: launchable.firstOrNull { it.second.isNotBlank() && needle.length >= 3 && it.second.contains(needle) }?.first
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun launchAppDirectly(packageNameOrLabel: String): Boolean {
+        val resolvedPackage = resolveLaunchablePackage(packageNameOrLabel) ?: return false
+        return try {
+            val intent = packageManager.getLaunchIntentForPackage(resolvedPackage) ?: return false
             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    fun currentForegroundPackageName(): String {
+        val root = rootInActiveWindow ?: return ""
+        return try {
+            root.packageName?.toString().orEmpty()
+        } catch (_: Exception) {
+            ""
+        } finally {
+            try { root.recycle() } catch (_: Exception) {}
         }
     }
 
