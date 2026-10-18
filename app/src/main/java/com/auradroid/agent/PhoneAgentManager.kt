@@ -134,10 +134,7 @@ object PhoneAgentManager {
                     emitLog("[VLA] $action at (${x.toInt()}, ${y.toInt()}): ${decision.reason}")
 
                     val succeeded = when (action) {
-                        "CLICK" -> {
-                            AiOverlayHud.moveBotAndShowTap(x, y, "TAP")
-                            touchService.performHumanTap(x, y, 90L)
-                        }
+                        "CLICK" -> touchService.performHumanTap(x, y, 90L)
 
                         "TYPE" -> {
                             AiOverlayHud.hidePodForFocusedTextInput()
@@ -150,10 +147,7 @@ object PhoneAgentManager {
                             typed
                         }
 
-                        "SWIPE" -> {
-                            AiOverlayHud.animateSwipe(x, y, endX, endY)
-                            touchService.performHumanSwipe(x, y, endX, endY, 320L)
-                        }
+                        "SWIPE" -> touchService.performHumanSwipe(x, y, endX, endY, 320L)
 
                         "BACK" -> touchService.performGlobalBack()
                         "HOME" -> touchService.performGlobalHome()
