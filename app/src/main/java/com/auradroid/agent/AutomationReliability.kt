@@ -2,6 +2,7 @@ package com.auradroid.agent
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.graphics.Bitmap
@@ -12,7 +13,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
@@ -729,6 +734,177 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
         } finally {
             try { retriever.release() } catch (_: Exception) {}
             frames.forEach { try { it.recycle() } catch (_: Exception) {} }
+        }
+    }
+
+    /**
+     * Resolve app-specific memory beneath private app storage. No normal VLA step calls this;
+     * the phone agent asks for hints only after repeated failure or a human correction.
+     */
+    fun appMemoryFolder(context: Context, appNameOrPackage: String): File {
+        val raw = appNameOrPackage.trim().lowercase(Locale.US)
+        val appKey = when {
+            raw.contains("instagram") -> "Instagram"
+            raw.contains("youtube") -> "YouTube"
+            raw.contains("whatsapp") -> "WhatsApp"
+            raw.contains("chrome") -> "Chrome"
+            raw.contains("telegram") -> "Telegram"
+            else -> raw.substringAfterLast('.').ifBlank { "UnknownApp" }
+                .replace(Regex("[^A-Za-z0-9_-]"), "_")
+                .take(60)
+                .replaceFirstChar { it.uppercase(Locale.US) }
+        }
+        return File(File(context.applicationContext.filesDir, "Memory"), appKey).apply { mkdirs() }
+    }
+
+    private fun saveBitmapJpeg(bitmap: Bitmap?, destination: File): Boolean {
+        if (bitmap == null || bitmap.isRecycled) return false
+        return try {
+            destination.parentFile?.mkdirs()
+            FileOutputStream(destination).use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)
+                output.flush()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Save the before/after screen and accessibility target data only when the caller has
+     * established that the agent is stuck and a human correction likely occurred.
+     */
+    fun saveHumanCorrection(
+        context: Context,
+        packageName: String,
+        beforeScreenshot: Bitmap?,
+        targetCenterX: Float,
+        targetCenterY: Float,
+        targetLabel: String,
+        targetBounds: String,
+        afterScreenshot: Bitmap?
+    ): Boolean {
+        if (beforeScreenshot == null || afterScreenshot == null) return false
+        val folder = appMemoryFolder(context, packageName)
+        val stamp = System.currentTimeMillis()
+        val beforeFile = File(folder, "correction_${stamp}_before.jpg")
+        val afterFile = File(folder, "correction_${stamp}_after.jpg")
+        if (!saveBitmapJpeg(beforeScreenshot, beforeFile)) return false
+        if (!saveBitmapJpeg(afterScreenshot, afterFile)) {
+            beforeFile.delete()
+            return false
+        }
+        return try {
+            val manifest = JSONObject()
+                .put("actor", "HUMAN_CORRECTION")
+                .put("packageName", packageName.take(200))
+                .put("timestamp", stamp)
+                .put("targetCenterX", targetCenterX)
+                .put("targetCenterY", targetCenterY)
+                .put("targetLabel", targetLabel.replace(Regex("\\s+"), " ").take(120))
+                .put("targetBounds", targetBounds.take(120))
+                .put("beforeScreenshot", beforeFile.name)
+                .put("afterScreenshot", afterFile.name)
+                .put("coordinateSource", "Accessibility node center; raw finger coordinates are not exposed by TYPE_VIEW_CLICKED")
+            File(folder, "correction_${stamp}.json").writeText(manifest.toString(2), Charsets.UTF_8)
+            true
+        } catch (_: Exception) {
+            beforeFile.delete()
+            afterFile.delete()
+            false
+        }
+    }
+
+    fun getAppSpecificMemoryHints(context: Context, appNameOrPackage: String, goal: String): String {
+        val folder = appMemoryFolder(context, appNameOrPackage)
+        if (!folder.exists()) return ""
+        return try {
+            val files = folder.listFiles()
+                ?.filter { it.isFile && (it.extension.equals("json", true) || it.extension.equals("txt")) }
+                ?.sortedByDescending { it.lastModified() }
+                ?.take(5)
+                .orEmpty()
+            if (files.isEmpty()) return ""
+            buildString {
+                append("App-specific learned memory for ")
+                    .append(appNameOrPackage.take(100))
+                    .append(". Verify every hint against the current screenshot. Goal: ")
+                    .append(goal.take(220))
+                    .append('\n')
+                files.forEach { file ->
+                    val content = try { file.readText(Charsets.UTF_8) } catch (_: Exception) { "" }
+                    if (content.isNotBlank()) {
+                        append("\n")
+                        append(content.take(1300))
+                        append('\n')
+                    }
+                }
+            }.take(6000)
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    fun saveGoldenFix(
+        context: Context,
+        appNameOrPackage: String,
+        goal: String,
+        analysis: String
+    ): Boolean {
+        val cleanAnalysis = analysis.trim().take(12000)
+        if (cleanAnalysis.isBlank()) return false
+        val folder = appMemoryFolder(context, appNameOrPackage)
+        val stamp = System.currentTimeMillis()
+        return try {
+            val record = JSONObject()
+                .put("actor", "GOLDEN_FIX")
+                .put("app", appNameOrPackage.take(200))
+                .put("goal", goal.take(800))
+                .put("createdAt", stamp)
+                .put("analysis", cleanAnalysis)
+            File(folder, "golden_fix_${stamp}.json").writeText(record.toString(2), Charsets.UTF_8)
+            recordSuccessfulLesson(context, goal, appNameOrPackage, cleanAnalysis)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun saveLearningKeyframe(
+        context: Context,
+        appNameOrPackage: String,
+        bitmap: Bitmap,
+        frameIndex: Int
+    ): String? {
+        val folder = appMemoryFolder(context, appNameOrPackage)
+        val destination = File(folder, "training_frame_${System.currentTimeMillis()}_${frameIndex.coerceAtLeast(0)}.jpg")
+        return if (saveBitmapJpeg(bitmap, destination)) destination.absolutePath else null
+    }
+
+    fun saveVideoTrainingRecord(
+        context: Context,
+        appNameOrPackage: String,
+        userDescription: String,
+        analysis: String,
+        keyframePaths: List<String>
+    ): Boolean {
+        val folder = appMemoryFolder(context, appNameOrPackage)
+        val stamp = System.currentTimeMillis()
+        return try {
+            val paths = JSONArray()
+            keyframePaths.take(12).forEach { paths.put(File(it).name) }
+            val record = JSONObject()
+                .put("actor", "VIDEO_TRAINING")
+                .put("app", appNameOrPackage.take(200))
+                .put("userDescription", userDescription.take(1200))
+                .put("analysis", analysis.take(12000))
+                .put("keyframes", paths)
+                .put("createdAt", stamp)
+            File(folder, "video_training_${stamp}.json").writeText(record.toString(2), Charsets.UTF_8)
+            recordSuccessfulLesson(context, userDescription, appNameOrPackage, analysis)
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
