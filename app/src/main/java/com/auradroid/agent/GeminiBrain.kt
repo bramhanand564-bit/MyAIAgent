@@ -124,17 +124,20 @@ object GeminiBrain {
         "gemini-flash-latest",
         "gemini-robotics-er-2-preview",
         "gemini-3.1-pro-preview",
-        "gemini-pro-latest",
-        "gemma-4-31b-it",
-        "gemma-4-26b-a4b-it"
+        "gemma-4-31b-it"
     )
 
+    // One strict free-tier ladder for both ordinary VLA decisions and higher-effort retries.
+    // Unavailable models are skipped by persistent per-key health state before each request.
     private val HIGH_BRAIN_VISION_MODEL_LADDER = listOf(
+        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
         "gemini-3.8-flash",
+        "gemini-flash-latest",
         "gemini-robotics-er-2-preview",
         "gemini-3.1-pro-preview",
-        "gemini-3.5-flash-lite",
-        "gemini-2.5-flash"
+        "gemma-4-31b-it"
     )
 
     private val IMAGE_GEN_MODEL_LADDER = listOf(
@@ -479,10 +482,10 @@ object GeminiBrain {
             )
 
         when {
-            code == 404 -> storePermanentBlock(context, modelId, code)
-            code == 403 && paidRequired -> storePermanentBlock(context, modelId, code)
-            code == 429 || resourceExhausted -> storeCooldown(context, modelId, QUOTA_COOLDOWN_MS, "HTTP $code or RESOURCE_EXHAUSTED")
-            code == 400 && unsupportedModel -> storePermanentBlock(context, modelId, code)
+            code == 400 || code == 403 || code == 404 ->
+                storePermanentBlock(context, modelId, code)
+            code == 429 || resourceExhausted ->
+                storeCooldown(context, modelId, QUOTA_COOLDOWN_MS, "HTTP $code or RESOURCE_EXHAUSTED")
             code == 500 || code == 503 -> recordServerStrike(
                 context, modelId, taskType, models, modelIndex, "HTTP $code"
             )
@@ -501,8 +504,9 @@ object GeminiBrain {
         val ladder = taskLadder(normalizedTask)
         // Keep the task's prescribed first-choice order until a working model is learned.
         // A learned preferred model may lead only when it belongs to that task's own ladder.
-        val preferred = preferredWorkingModel(context, normalizedTask).takeIf { it in ladder }.orEmpty()
-        val ordered = (listOf(preferred).filter { it.isNotBlank() } + ladder).distinct()
+        // Keep deterministic fast-to-high-thinking order. Persisted failure state advances
+        // the first eligible model; a previously successful slower model never jumps the queue.
+        val ordered = ladder.distinct()
         val active = ordered.filter { modelId ->
             if (!isModelEligibleForFreeTier(modelId)) {
                 routerLog(context, "[ModelBlocker] Refused model before network call because it is blocked or not on the free-tier allowlist: $modelId [BLOCKED].")
@@ -872,7 +876,8 @@ Respond ONLY with a valid JSON object:
         ragLessons: String,
         escalateToPro: Boolean = false,
         screenWidthPx: Int = context.resources.displayMetrics.widthPixels,
-        screenHeightPx: Int = context.resources.displayMetrics.heightPixels
+        screenHeightPx: Int = context.resources.displayMetrics.heightPixels,
+        screenCalibration: String = ""
     ): PhoneUiDecision {
         val prompt = """
 You are Nax Bot, an autonomous Android agent controlled by a Vision-Language-Action loop.
@@ -890,12 +895,15 @@ ${uiTreeSummary}
 SCREEN SIZE IN PHYSICAL PIXELS:
 Width = ${screenWidthPx}, height = ${screenHeightPx}. Return absolute pixel coordinates in this space.
 
-Choose ONE next action from CLICK, TYPE, SWIPE, BACK, HOME, or DONE. Think across the complete goal, not a hardcoded sub-step, and use only what the screenshot currently shows.
-For CLICK, set x and y to the exact center of the target in physical pixels. If useful, take the center from the live Accessibility UI Tree bounds.
-For TYPE, set textToType to only the text that should be entered into the currently focused field. If the correct field is not focused, CLICK it first and observe again.
+DEVICE AND SAFE-AREA CALIBRATION:
+${screenCalibration.ifBlank { "Device calibration metadata is unavailable. Use the supplied screenshot and live UI tree only." }}
+
+Choose ONE next action from CLICK, TYPE, SWIPE, BACK, HOME, or DONE. Use visual reasoning over the full user goal and current screen rather than a hardcoded task checklist.
+For CLICK, set x and y to the center of the visible target in physical pixels. Prefer live accessibility bounds when they describe that same visible control. Avoid status-bar, navigation-bar, camera-cutout, and other obstructed or unsafe areas.
+For TYPE, return only the text to enter into the currently focused field. If the right field is not focused, click that field first and observe again.
 For SWIPE, include endX and endY in physical pixels. For BACK and HOME, coordinates may be zero.
-For Like and other toggle controls, inspect their visual state. If the heart is already red or filled, do not click it again; continue with the next unfinished part of the goal. Before sharing, identify the intended recipient in the screenshot. After each action, expect the executor to capture a fresh screenshot and decide again.
-Return DONE only when the entire user goal is visibly complete.
+Infer the state of controls from the screenshot and accessible labels. Do not repeat an action whose desired result is already visibly complete. Do not toggle a control back off merely to verify it. Before a send/share action, visually confirm the intended recipient and destination.
+Return DONE immediately once the whole user goal is visibly complete. Do not take an extra verification action after completion.
 
 Return ONLY valid JSON, with no markdown and no extra text:
 {
