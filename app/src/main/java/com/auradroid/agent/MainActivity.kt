@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var rbModePhoneVision: RadioButton
     private lateinit var svChatHistory: ScrollView
     private lateinit var tvChatHistory: TextView
+    private lateinit var tvLiveTaskProgress: TextView
     private lateinit var etChatMessage: EditText
     private lateinit var btnVoiceMic: Button
     private lateinit var btnSendChat: Button
@@ -234,6 +235,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         GeminiBrain.setModelRouterLogListener(null)
+        PhoneAgentManager.setProgressListener(null)
         super.onDestroy()
     }
 
@@ -264,6 +266,7 @@ class MainActivity : AppCompatActivity() {
         rbModePhoneVision = findViewById(R.id.rbModePhoneVision)
         svChatHistory = findViewById(R.id.svChatHistory)
         tvChatHistory = findViewById(R.id.tvChatHistory)
+        tvLiveTaskProgress = findViewById(R.id.tvLiveTaskProgress)
         etChatMessage = findViewById(R.id.etChatMessage)
         btnVoiceMic = findViewById(R.id.btnVoiceMic)
         btnSendChat = findViewById(R.id.btnSendChat)
@@ -452,15 +455,16 @@ class MainActivity : AppCompatActivity() {
 
         PhoneAgentManager.setListeners(
             logListener = { line ->
+                // Technical telemetry belongs only in Tab 5 Engine Logs.
                 appendConsoleLog(line)
-                if (line.contains("[Plan]") || line.contains("[Checklist]") || line.contains("[Verify]")) {
-                    appendChatLine("🧭 $line")
-                }
             },
             statusListener = { status, emotion ->
                 tvHeaderStatus.text = "Nax Bot • $status ($emotion)"
             }
         )
+        PhoneAgentManager.setProgressListener { heading, steps, completed, total ->
+            renderLiveTaskProgress(heading, steps, completed, total)
+        }
 
         rgExecutionMode.setOnCheckedChangeListener { _, checkedId ->
             if (syncingExecutionMode) return@setOnCheckedChangeListener
@@ -859,7 +863,8 @@ class MainActivity : AppCompatActivity() {
 
                 "WEB_TASK" -> {
                     if (rbModePhoneVision.isChecked) {
-                        appendChatLine("📱 Using native Android accessibility for this task.")
+                        appendChatLine("📱 Running this mission with native Android accessibility.")
+                        tvLiveTaskProgress.text = "🎯 Preparing mission checklist..."
                         PhoneAgentManager.startAutonomousPhoneTask(
                             context = this@MainActivity,
                             goal = plan.targetGoal
@@ -985,6 +990,36 @@ class MainActivity : AppCompatActivity() {
             "=== Personal Rules & Pinned URLs ===\n$memories" +
             "\n\n=== Vector RAG Self-Healing Lessons ===\n$ragLessons" +
             "\n\n=== Passive Shadow Teach ($teachState; $teachCount/500 events) ===\n$teachSummary"
+    }
+
+    private fun renderLiveTaskProgress(
+        heading: String,
+        steps: List<PhoneTaskProgressItem>,
+        completed: Int,
+        total: Int
+    ) {
+        val text = StringBuilder()
+        text.append(heading)
+            .append(" • ")
+            .append(completed)
+            .append("/")
+            .append(total)
+            .append(" Steps Done")
+        steps.forEachIndexed { index, item ->
+            val icon = when (item.state) {
+                "DONE" -> "✅"
+                "RUNNING" -> "🔄"
+                else -> "⏳"
+            }
+            text.append("\n")
+                .append(icon)
+                .append(" ")
+                .append(index + 1)
+                .append(". ")
+                .append(item.title)
+            if (item.state == "RUNNING") text.append(" (Running...)")
+        }
+        tvLiveTaskProgress.text = text.toString()
     }
 
     private fun appendChatLine(line: String) {
