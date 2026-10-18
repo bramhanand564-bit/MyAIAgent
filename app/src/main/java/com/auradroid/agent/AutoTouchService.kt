@@ -139,6 +139,266 @@ class AutoTouchService : AccessibilityService() {
         return Pair(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
     }
 
+    /**
+     * Gemini may return the historical 540 by 960 design-space coordinates.
+     * Callers must prefer node bounds before using this fallback conversion.
+     */
+    fun scaleAiCoordinates(aiX: Float, aiY: Float): PointCenter {
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        if (screenWidth <= 0f || screenHeight <= 0f) return PointCenter(aiX, aiY)
+        val isLegacyDesignSpace = screenWidth != 540f && screenHeight != 960f &&
+            aiX in 0f..540f && aiY in 0f..960f
+        return if (isLegacyDesignSpace) {
+            PointCenter(
+                (aiX / 540f * screenWidth).coerceIn(0.5f, screenWidth - 0.5f),
+                (aiY / 960f * screenHeight).coerceIn(0.5f, screenHeight - 0.5f)
+            )
+        } else {
+            PointCenter(
+                aiX.coerceIn(0.5f, screenWidth - 0.5f),
+                aiY.coerceIn(0.5f, screenHeight - 0.5f)
+            )
+        }
+    }
+
+    fun findNodeCenterByExactLabel(vararg labels: String): PointCenter? {
+        val targetLabels = labels.map { it.trim().lowercase(Locale.US) }.filter { it.isNotBlank() }.toSet()
+        if (targetLabels.isEmpty()) return null
+        val root = rootInActiveWindow ?: return null
+        return try {
+            val node = findExactNodeRecursive(root, targetLabels, requireClickable = true)
+                ?: findExactNodeRecursive(root, targetLabels, requireClickable = false)
+                ?: return null
+            try {
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.width() <= 0 || rect.height() <= 0) null else PointCenter(
+                    (rect.left + rect.right) / 2f,
+                    (rect.top + rect.bottom) / 2f
+                )
+            } finally {
+                node.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    fun clickExactLabel(vararg labels: String): Boolean {
+        val targetLabels = labels.map { it.trim().lowercase(Locale.US) }.filter { it.isNotBlank() }.toSet()
+        if (targetLabels.isEmpty()) return false
+        val root = rootInActiveWindow ?: return false
+        try {
+            val matched = findExactNodeRecursive(root, targetLabels, requireClickable = true)
+                ?: findExactNodeRecursive(root, targetLabels, requireClickable = false)
+                ?: return false
+            try {
+                val rect = Rect()
+                matched.getBoundsInScreen(rect)
+                if (rect.width() <= 0 || rect.height() <= 0) return false
+                val cx = (rect.left + rect.right) / 2f
+                val cy = (rect.top + rect.bottom) / 2f
+                AiOverlayHud.moveBotAndShowTap(cx, cy, labels.firstOrNull().orEmpty().take(18))
+                if (matched.isClickable && matched.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                return performHumanTap(cx, cy, GESTURE_TAP_MS)
+            } finally {
+                matched.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun findExactNodeRecursive(
+        node: AccessibilityNodeInfo?,
+        labels: Set<String>,
+        requireClickable: Boolean
+    ): AccessibilityNodeInfo? {
+        if (node == null) return null
+        val text = node.text?.toString().orEmpty().trim().lowercase(Locale.US)
+        val description = node.contentDescription?.toString().orEmpty().trim().lowercase(Locale.US)
+        val exactMatch = text in labels || description in labels
+        if (exactMatch && (!requireClickable || node.isClickable)) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+        for (index in 0 until node.childCount) {
+            val child = try { node.getChild(index) } catch (_: Exception) { null }
+            if (child != null) {
+                try {
+                    val found = findExactNodeRecursive(child, labels, requireClickable)
+                    if (found != null) return found
+                } finally {
+                    child.recycle()
+                }
+            }
+        }
+        return null
+    }
+
+    fun hasSearchNavigationOrBar(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        fun walk(node: AccessibilityNodeInfo?, depth: Int): Boolean {
+            if (node == null || depth > 12) return false
+            val text = node.text?.toString().orEmpty().trim().lowercase(Locale.US)
+            val desc = node.contentDescription?.toString().orEmpty().trim().lowercase(Locale.US)
+            val combined = "$text $desc"
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            val inBottomNavigation = rect.top >= screenHeight * 0.70f
+            val isSearchEntry = node.isEditable &&
+                (combined.contains("search") || combined.contains("find"))
+            val isSearchLabel = text == "search" || desc == "search" ||
+                text == "explore" || desc == "explore" ||
+                text == "search and explore" || desc == "search and explore" ||
+                text == "search & explore" || desc == "search & explore"
+            if (isSearchEntry || isSearchLabel || (inBottomNavigation &&
+                    (combined.contains("search") || combined.contains("explore")))) return true
+            for (index in 0 until node.childCount) {
+                val child = try { node.getChild(index) } catch (_: Exception) { null }
+                if (child != null) {
+                    try {
+                        if (walk(child, depth + 1)) return true
+                    } finally {
+                        child.recycle()
+                    }
+                }
+            }
+            return false
+        }
+        return try { walk(root, 0) } finally { root.recycle() }
+    }
+
+    fun clickBottomSearchTab(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val (_, screenHeight) = getRealScreenDimensions()
+        try {
+            fun findBottomSearchNode(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
+                if (node == null || depth > 12) return null
+                val text = node.text?.toString().orEmpty().trim().lowercase(Locale.US)
+                val desc = node.contentDescription?.toString().orEmpty().trim().lowercase(Locale.US)
+                val labelMatches = text == "search" || desc == "search" ||
+                    text == "explore" || desc == "explore" ||
+                    text == "search and explore" || desc == "search and explore" ||
+                    text == "search & explore" || desc == "search & explore"
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (labelMatches && rect.top >= screenHeight * 0.70f &&
+                    rect.width() > 8 && rect.height() > 8) {
+                    return AccessibilityNodeInfo.obtain(node)
+                }
+                for (index in 0 until node.childCount) {
+                    val child = try { node.getChild(index) } catch (_: Exception) { null }
+                    if (child != null) {
+                        try {
+                            val found = findBottomSearchNode(child, depth + 1)
+                            if (found != null) return found
+                        } finally {
+                            child.recycle()
+                        }
+                    }
+                }
+                return null
+            }
+            val node = findBottomSearchNode(root, 0) ?: return false
+            try {
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                val cx = (rect.left + rect.right) / 2f
+                val cy = (rect.top + rect.bottom) / 2f
+                AiOverlayHud.moveBotAndShowTap(cx, cy, "Search")
+                if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                return performHumanTap(cx, cy, GESTURE_TAP_MS)
+            } finally {
+                node.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    fun findFirstVideoGridTileCenter(): PointCenter? {
+        val root = rootInActiveWindow ?: return null
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        data class GridCandidate(val top: Int, val area: Long, val node: AccessibilityNodeInfo)
+        val candidates = mutableListOf<GridCandidate>()
+        fun excludedContent(node: AccessibilityNodeInfo?, depth: Int): Boolean {
+            if (node == null || depth > 3) return false
+            val label = (node.text?.toString().orEmpty() + " " +
+                node.contentDescription?.toString().orEmpty()).lowercase(Locale.US)
+            if (label.contains("ask anything") || label == "more" ||
+                label.contains("meta ai") || label.contains("ask meta ai")) return true
+            for (index in 0 until node.childCount) {
+                val child = try { node.getChild(index) } catch (_: Exception) { null }
+                if (child != null) {
+                    try {
+                        if (excludedContent(child, depth + 1)) return true
+                    } finally {
+                        child.recycle()
+                    }
+                }
+            }
+            return false
+        }
+        fun hasImageDescendant(node: AccessibilityNodeInfo?, depth: Int): Boolean {
+            if (node == null || depth > 3) return false
+            if (node.className?.toString().orEmpty().contains("ImageView", true)) return true
+            for (index in 0 until node.childCount) {
+                val child = try { node.getChild(index) } catch (_: Exception) { null }
+                if (child != null) {
+                    try {
+                        if (hasImageDescendant(child, depth + 1)) return true
+                    } finally {
+                        child.recycle()
+                    }
+                }
+            }
+            return false
+        }
+        fun walk(node: AccessibilityNodeInfo?, depth: Int) {
+            if (node == null || depth > 14 || candidates.size >= 40) return
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            val className = node.className?.toString().orEmpty()
+            val isGridVisual = className.contains("ImageView", true) ||
+                (node.isClickable && hasImageDescendant(node, 0))
+            if (isGridVisual && rect.top > screenHeight * 0.35f &&
+                rect.width() >= screenWidth * 0.40f && rect.height() >= 60 &&
+                !excludedContent(node, 0)) {
+                candidates.add(GridCandidate(
+                    rect.top,
+                    rect.width().toLong() * rect.height().toLong(),
+                    AccessibilityNodeInfo.obtain(node)
+                ))
+            }
+            for (index in 0 until node.childCount) {
+                if (candidates.size >= 40) break
+                val child = try { node.getChild(index) } catch (_: Exception) { null }
+                if (child != null) {
+                    try { walk(child, depth + 1) } finally { child.recycle() }
+                }
+            }
+        }
+        try {
+            walk(root, 0)
+            val candidate = candidates.minWithOrNull(
+                compareBy<GridCandidate> { it.top }.thenByDescending { it.area }
+            ) ?: return null
+            val rect = Rect()
+            candidate.node.getBoundsInScreen(rect)
+            return PointCenter((rect.left + rect.right) / 2f, (rect.top + rect.bottom) / 2f)
+        } finally {
+            candidates.forEach { try { it.node.recycle() } catch (_: Exception) {} }
+            root.recycle()
+        }
+    }
+
+    fun clickFirstVideoGridTile(): Boolean {
+        val center = findFirstVideoGridTileCenter() ?: return false
+        AiOverlayHud.moveBotAndShowTap(center.x, center.y, "First Video")
+        return performHumanTap(center.x, center.y, GESTURE_TAP_MS)
+    }
+
     fun dumpUiTreeSummary(): String {
         val root = rootInActiveWindow ?: return "NO_ACTIVE_WINDOW"
         return try {
