@@ -486,6 +486,7 @@ class MainActivity : AppCompatActivity() {
             AutomationReliability.setPassiveTeachMode(this, enabled)
             appendConsoleLog("[ShadowTeach] Passive teaching ${if (enabled) "ENABLED" else "DISABLED"}. No screenshots or typed contents are stored.")
             appendChatLine("🧠 Passive Shadow Teach Mode ${if (enabled) "ON" else "OFF"}")
+            refreshRagVaultViewer()
         }
 
         btnToggleFloatingHud.setOnClickListener {
@@ -970,7 +971,13 @@ class MainActivity : AppCompatActivity() {
     private fun refreshRagVaultViewer() {
         val memories = AutomationReliability.getAllMemoryFacts(this)
         val ragLessons = AutomationReliability.retrieveRelevantRagLessons(this, "google_flow", "")
-        tvRagVaultViewer.text = "=== Personal Rules & Pinned URLs ===\n$memories\n\n=== Vector RAG Self-Healing Lessons ===\n$ragLessons"
+        val teachCount = AutomationReliability.getShadowTeachEventCount(this)
+        val teachSummary = AutomationReliability.getShadowTeachSummary(this, 25)
+        val teachState = if (AutomationReliability.isPassiveTeachModeEnabled(this)) "ON" else "OFF"
+        tvRagVaultViewer.text =
+            "=== Personal Rules & Pinned URLs ===\n$memories" +
+            "\n\n=== Vector RAG Self-Healing Lessons ===\n$ragLessons" +
+            "\n\n=== Passive Shadow Teach ($teachState; $teachCount/500 events) ===\n$teachSummary"
     }
 
     private fun appendChatLine(line: String) {
