@@ -18,6 +18,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 object WebPipelineManager {
 
@@ -30,6 +31,7 @@ object WebPipelineManager {
     @Volatile private var isFlowCaptureActive: Boolean = false
     @Volatile private var captureEpoch: Long = 0L
     @Volatile private var lastInterceptedMp4Bytes: ByteArray? = null
+    private val captureDownloadInProgress = AtomicBoolean(false)
 
     private var onLogAppended: ((String) -> Unit)? = null
     private var onStatusUpdated: ((String, String) -> Unit)? = null
@@ -92,6 +94,8 @@ object WebPipelineManager {
             lower.contains("media/video")
         if (!isVideoUrl || !(lower.startsWith("http://") || lower.startsWith("https://"))) return null
 
+        // Only one stream may be buffered at a time on a low-memory mobile device.
+        if (!captureDownloadInProgress.compareAndSet(false, true)) return null
         val requestEpoch = captureEpoch
         scope.launch(Dispatchers.IO) {
             try {
@@ -135,6 +139,8 @@ object WebPipelineManager {
                 }
             } catch (_: Exception) {
                 // The DOM download path remains available when a signed URL cannot be fetched here.
+            } finally {
+                captureDownloadInProgress.set(false)
             }
         }
         return null
