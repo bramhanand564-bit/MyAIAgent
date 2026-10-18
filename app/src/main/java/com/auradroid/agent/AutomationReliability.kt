@@ -10,7 +10,7 @@ class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATAB
 
     companion object {
         private const val DATABASE_NAME = "auradroid_brain.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         private const val TABLE_SKILLS = "skill_blueprints"
         private const val TABLE_RAG = "vector_rag_memory"
@@ -45,6 +45,21 @@ class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATAB
         )"""
         )
 
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS shadow_teach_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            package_name TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            screen_signature TEXT NOT NULL,
+            bounds_text TEXT NOT NULL,
+            center_x REAL NOT NULL,
+            center_y REAL NOT NULL,
+            label_text TEXT NOT NULL,
+            is_correction INTEGER NOT NULL DEFAULT 0,
+            timestamp INTEGER NOT NULL
+        )"""
+        )
+
         db.insert(
             TABLE_SKILLS,
             null,
@@ -57,10 +72,21 @@ class AuradroidBrainDbHelper(context: Context) : SQLiteOpenHelper(context, DATAB
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_SKILLS")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_RAG")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MEMORIES")
-        onCreate(db)
+        // Additive migration only: never drop existing skill blueprints, RAG lessons, or memories.
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS shadow_teach_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            package_name TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            screen_signature TEXT NOT NULL,
+            bounds_text TEXT NOT NULL,
+            center_x REAL NOT NULL,
+            center_y REAL NOT NULL,
+            label_text TEXT NOT NULL,
+            is_correction INTEGER NOT NULL DEFAULT 0,
+            timestamp INTEGER NOT NULL
+        )"""
+        )
     }
 }
 
@@ -173,6 +199,129 @@ object AutomationReliability {
         }
         val res = sb.toString().trim()
         return if (res.isBlank()) "No personal memory facts saved." else res
+    }
+
+    private const val TEACH_PREFS = "auradroid_shadow_teach_prefs"
+    private const val KEY_TEACH_ENABLED = "passive_teach_enabled"
+    private const val MAX_TEACH_EVENTS = 500
+
+    fun setPassiveTeachMode(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(TEACH_PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_TEACH_ENABLED, enabled).apply()
+    }
+
+    fun isPassiveTeachModeEnabled(context: Context): Boolean =
+        context.getSharedPreferences(TEACH_PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_TEACH_ENABLED, false)
+
+    fun getShadowTeachEventCount(context: Context): Int {
+        init(context)
+        val db = dbHelper?.readableDatabase ?: return 0
+        return try {
+            db.rawQuery("SELECT COUNT(*) FROM shadow_teach_events", null).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            }
+        } catch (_: Exception) {
+            0
+        }
+    }
+
+    /**
+     * Stores structural interaction data only. Screenshots, keystrokes, and typed field contents
+     * are never stored. Sensitive labels and own-app events are rejected as a second privacy guard.
+     */
+    fun recordShadowTeachEvent(
+        context: Context,
+        packageName: String,
+        eventType: String,
+        screenSignature: String,
+        boundsText: String,
+        centerX: Float,
+        centerY: Float,
+        labelText: String
+    ): Boolean {
+        if (!isPassiveTeachModeEnabled(context)) return false
+        val packageSafe = packageName.trim().take(180)
+        if (packageSafe.isBlank() || packageSafe == context.packageName) return false
+        val packageLower = packageSafe.lowercase(Locale.US)
+        if (packageLower.contains("inputmethod") ||
+            packageLower.contains(".ime") ||
+            packageLower.contains("keyboard") ||
+            packageLower == "com.android.systemui") return false
+
+        val eventSafe = eventType.trim().uppercase(Locale.US)
+        if (eventSafe !in setOf("VIEW_CLICKED", "VIEW_SELECTED", "VIEW_SCROLLED", "WINDOW_STATE_CHANGED")) return false
+        val cleanLabel = labelText.trim().replace(Regex("\\s+"), " ").take(80)
+        val sensitive = Regex(
+            "(?i)(password|passcode|pin code|one.?time.?password|\\botp\\b|email|e-mail|phone number|bank|account number|credit card|debit card|cvv|security code|recovery code)"
+        )
+        if (cleanLabel.contains(sensitive)) return false
+
+        val signature = screenSignature.trim().take(64).ifBlank { "unknown" }
+        val safeBounds = boundsText.trim().take(100)
+        if (!centerX.isFinite() || !centerY.isFinite() || centerX < 0f || centerY < 0f) return false
+        init(context)
+        val db = dbHelper?.writableDatabase ?: return false
+        val now = System.currentTimeMillis()
+        return try {
+            var correction = false
+            if (eventSafe == "VIEW_CLICKED") {
+                db.rawQuery(
+                    "SELECT center_x, center_y FROM shadow_teach_events WHERE package_name = ? AND event_type = 'VIEW_CLICKED' AND timestamp >= ? ORDER BY timestamp DESC LIMIT 1",
+                    arrayOf(packageSafe, (now - 8000L).toString())
+                ).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val oldX = cursor.getFloat(0)
+                        val oldY = cursor.getFloat(1)
+                        correction = kotlin.math.abs(oldX - centerX) <= 24f &&
+                            kotlin.math.abs(oldY - centerY) <= 24f
+                    }
+                }
+            }
+            val values = ContentValues().apply {
+                put("package_name", packageSafe)
+                put("event_type", eventSafe)
+                put("screen_signature", signature)
+                put("bounds_text", safeBounds)
+                put("center_x", centerX)
+                put("center_y", centerY)
+                put("label_text", cleanLabel)
+                put("is_correction", if (correction) 1 else 0)
+                put("timestamp", now)
+            }
+            db.insert("shadow_teach_events", null, values)
+            db.execSQL(
+                "DELETE FROM shadow_teach_events WHERE id NOT IN (SELECT id FROM shadow_teach_events ORDER BY timestamp DESC LIMIT $MAX_TEACH_EVENTS)"
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun getShadowTeachSummary(context: Context, limit: Int = 30): String {
+        init(context)
+        val db = dbHelper?.readableDatabase ?: return "No passive teach events yet."
+        val safeLimit = limit.coerceIn(1, 100)
+        val out = StringBuilder()
+        return try {
+            db.rawQuery(
+                "SELECT package_name, event_type, screen_signature, center_x, center_y, label_text, is_correction FROM shadow_teach_events ORDER BY timestamp DESC LIMIT $safeLimit",
+                null
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val correction = if (cursor.getInt(6) == 1) " • correction/retry" else ""
+                    out.append("• ").append(cursor.getString(0)).append(" / ")
+                        .append(cursor.getString(1)).append(" @(")
+                        .append(cursor.getFloat(3).toInt()).append(",")
+                        .append(cursor.getFloat(4).toInt()).append(") ")
+                        .append(cursor.getString(5)).append(correction).append("\\n")
+                }
+                if (out.isEmpty()) "No passive teach events yet." else out.toString().trim()
+            }
+        } catch (_: Exception) {
+            "Passive teach history unavailable."
+        }
     }
 
     private fun tokenizeText(text: String): String {
