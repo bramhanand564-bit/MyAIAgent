@@ -537,14 +537,6 @@ object PhoneAgentManager {
                             delay(300)
                             continue
                         }
-                        if (stepKind == "COMMENT_VIDEO" &&
-                            !hasCommentedInCurrentTask && !isCommentVisible(uiTree, requestedCommentText)) {
-                            emitLog("[Comment Guard] Model requested DONE before the comment is visible in the comment list.")
-                            actionHistory.add("Step $step: premature COMMENT DONE rejected")
-                            try { screenshot?.recycle() } catch (_: Exception) {}
-                            delay(300)
-                            continue
-                        }
                         val verify = GeminiBrain.verifyPhoneTaskCompletion(
                             context = context,
                             goal = currentMicroStep.goal + "\nSuccess evidence: " + currentMicroStep.verificationHint,
@@ -607,6 +599,10 @@ object PhoneAgentManager {
                                         emitLog("[Launch] Verified '$requestedApp' in foreground after 2500 ms.")
                                         emitStatus("$requestedApp Open", "HAPPY")
                                         actionHistory.add("Step $step: LAUNCH $launchPackage verified foreground=$visiblePackage")
+                                        if (stepKind == "OPEN_APP") {
+                                            if (latchPlanStep(activePlanIndex, "Launch succeeded and foreground package was verified")) break
+                                            continue
+                                        }
                                     } else {
                                         emitLog("[Launch] Launched '$launchPackage', but foreground verification saw '$visiblePackage'. Will re-check the screen before acting.")
                                         actionHistory.add("Step $step: LAUNCH started; foreground not yet verified ($visiblePackage)")
@@ -626,10 +622,19 @@ object PhoneAgentManager {
                                 continue
                             }
                             emitStatus("Tapping UI", "WORKING")
-                            val clickedByText = if (decision.targetNodeText.isNotBlank()) {
-                                touchService.clickNodeByTextOrBounds(decision.targetNodeText, safeX, safeY)
-                            } else {
-                                touchService.performHumanTap(safeX, safeY, 90L)
+                            val clickedByText = when {
+                                stepKind == "SHARE_SEND" -> touchService.clickExactLabel("Send")
+                                stepKind == "PLAY_VIDEO" -> touchService.clickFirstVideoGridTile()
+                                stepKind == "SEARCH_QUERY" && searchQueryTyped ->
+                                    touchService.clickKeyboardSearchAction()
+                                stepKind == "LIKE_VIDEO" ->
+                                    touchService.clickExactLabel("Like", "Like reel", "Like post")
+                                        .takeIf { it } ?: touchService.clickNodeByTextOrBounds(
+                                            decision.targetNodeText.ifBlank { "Like" }, safeX, safeY
+                                        )
+                                decision.targetNodeText.isNotBlank() ->
+                                    touchService.clickNodeByTextOrBounds(decision.targetNodeText, safeX, safeY)
+                                else -> touchService.performHumanTap(safeX, safeY, 90L)
                             }
                             if (clickedByText && toggleKind != null) performedToggleTypes.add(toggleKind)
 
@@ -637,7 +642,30 @@ object PhoneAgentManager {
                                 hasLikedVideoInCurrentTask = true
                                 performedToggleTypes.add("LIKE")
                                 if (latchPlanStep(activePlanIndex, "Like action was performed once; repeat heart taps are forbidden")) break
-                                delay(300)
+                                delay(250)
+                                continue
+                            }
+
+                            if (clickedByText && stepKind == "SHARE_SEND") {
+                                if (!shareSendAttempted) {
+                                    shareSendAttempted = true
+                                    hasSharedInCurrentTask = true
+                                    if (latchPlanStep(activePlanIndex, "Exact Send accessibility target was clicked once")) break
+                                }
+                                delay(250)
+                                continue
+                            }
+
+                            if (clickedByText && stepKind == "SHARE_RECIPIENT" &&
+                                isShareRecipientTarget(decision.targetNodeText, requestedShareTarget)) {
+                                if (latchPlanStep(activePlanIndex, "Requested recipient was selected in the Share sheet")) break
+                                delay(250)
+                                continue
+                            }
+
+                            if (clickedByText && stepKind == "SEARCH_QUERY" && searchQueryTyped) {
+                                delay(900)
+                                if (latchPlanStep(activePlanIndex, "Search query submitted using the keyboard Search action")) break
                                 continue
                             }
 
@@ -650,11 +678,7 @@ object PhoneAgentManager {
                                     val afterSubmitTree = touchService.dumpUiTreeSummary()
                                     if (isCommentVisible(afterSubmitTree, requestedCommentText)) {
                                         hasCommentedInCurrentTask = true
-                                        if (!commentBackPressed) {
-                                            touchService.performGlobalBack()
-                                            commentBackPressed = true
-                                        }
-                                        if (latchPlanStep(activePlanIndex, "Submitted comment is visible; comment sheet closed once")) break
+                                        if (latchPlanStep(activePlanIndex, "Submitted comment is visible; comment sheet remains open for the next step")) break
                                     } else {
                                         emitLog("[Comment] Submit clicked once; waiting for visible confirmation and blocking duplicate submission.")
                                     }
@@ -662,20 +686,6 @@ object PhoneAgentManager {
                                     continue
                                 }
                                 emitLog("[Comment Guard] Comment submission already attempted; duplicate submit blocked.")
-                                delay(250)
-                                continue
-                            }
-
-                            if (clickedByText && stepKind == "SHARE_VIDEO" &&
-                                isShareSendTarget(decision.targetNodeText, decision.reason)) {
-                                if (!shareSendAttempted) {
-                                    shareSendAttempted = true
-                                    hasSharedInCurrentTask = true
-                                    if (latchPlanStep(activePlanIndex, "Send clicked once for the selected recipient")) break
-                                    delay(300)
-                                    continue
-                                }
-                                emitLog("[Share Guard] Duplicate Send action blocked.")
                                 delay(250)
                                 continue
                             }
@@ -695,6 +705,34 @@ object PhoneAgentManager {
                                 delay(250)
                                 continue
                             }
+                            if (stepKind == "SHARE_SEND") {
+                                if (touchService.clickExactLabel("Send")) {
+                                    hasSharedInCurrentTask = true
+                                    shareSendAttempted = true
+                                    if (latchPlanStep(activePlanIndex, "Exact Send node was clicked; mission completes immediately")) break
+                                } else {
+                                    emitLog("[Share Guard] Exact Send node is not visible. Refusing to use the model coordinate.")
+                                }
+                                delay(300)
+                                continue
+                            }
+                            if (stepKind == "PLAY_VIDEO") {
+                                if (touchService.clickFirstVideoGridTile()) {
+                                    delay(800)
+                                    if (latchPlanStep(activePlanIndex, "First eligible grid tile tapped by exact node bounds")) break
+                                } else {
+                                    emitLog("[Target] No safe video grid node was found. Refusing the raw vision coordinate.")
+                                }
+                                delay(300)
+                                continue
+                            }
+                            if (stepKind == "LIKE_VIDEO" &&
+                                touchService.clickExactLabel("Like", "Like reel", "Like post")) {
+                                hasLikedVideoInCurrentTask = true
+                                performedToggleTypes.add("LIKE")
+                                if (latchPlanStep(activePlanIndex, "Like accessibility node tapped once")) break
+                                continue
+                            }
                             emitStatus("Vision center tap", "WORKING")
                             val boxValid = decision.xmax > decision.xmin && decision.ymax > decision.ymin
                             val tapped = boxValid && touchService.performVisionBoxTap(
@@ -708,22 +746,54 @@ object PhoneAgentManager {
                                 hasLikedVideoInCurrentTask = true
                                 performedToggleTypes.add("LIKE")
                                 if (latchPlanStep(activePlanIndex, "Like vision tap was performed once; repeat heart taps are forbidden")) break
-                                delay(300)
+                                delay(250)
+                                continue
+                            }
+                            if (tapped && stepKind == "SHARE_RECIPIENT" &&
+                                isShareRecipientTarget(decision.targetNodeText, requestedShareTarget)) {
+                                if (latchPlanStep(activePlanIndex, "Requested share recipient selected")) break
                                 continue
                             }
                             actionHistory.add("Step $step: VISION_BOX_TAP box=(${decision.xmin},${decision.ymin},${decision.xmax},${decision.ymax}) center formula used=$tapped")
                         }
                         "TYPE" -> {
+                            if (stepKind == "SEARCH_QUERY" && searchQueryTyped) {
+                                emitLog("[Search Guard] Query is already typed; duplicate typing is blocked.")
+                                delay(300)
+                                continue
+                            }
+                            if (stepKind == "COMMENT_VIDEO" && commentTextTyped) {
+                                emitLog("[Comment Guard] Comment text is already typed; duplicate typing is blocked.")
+                                delay(300)
+                                continue
+                            }
                             emitStatus("Typing Text", "WORKING")
                             AiOverlayHud.hidePodForFocusedTextInput()
                             delay(250)
+                            val textForThisAction = when (stepKind) {
+                                "SEARCH_QUERY" -> requestedSearchQuery.ifBlank { decision.textToType.ifBlank { goal } }
+                                "COMMENT_VIDEO" -> requestedCommentText
+                                else -> decision.textToType.ifBlank { goal }
+                            }
                             val typedOk = touchService.typeTextIntoFocusedOrTargetNode(
                                 targetHint = decision.targetNodeText,
-                                textToType = decision.textToType.ifBlank { goal }
+                                textToType = textForThisAction
                             )
                             delay(350)
                             AiOverlayHud.restorePodAfterTextInput()
-                            actionHistory.add("Step $step: TYPE '${decision.textToType}' ok=$typedOk")
+                            actionHistory.add("Step $step: TYPE action completed=$typedOk")
+                            if (typedOk && stepKind == "SEARCH_QUERY") {
+                                searchQueryTyped = true
+                                val submitted = touchService.clickKeyboardSearchAction()
+                                if (submitted) {
+                                    delay(900)
+                                    if (latchPlanStep(activePlanIndex, "Exact search query typed and submitted")) break
+                                }
+                                continue
+                            }
+                            if (typedOk && stepKind == "COMMENT_VIDEO") {
+                                commentTextTyped = true
+                            }
                         }
                         "SWIPE" -> {
                             emitStatus("Swiping Screen", "WORKING")
