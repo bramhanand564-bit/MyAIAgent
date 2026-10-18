@@ -642,6 +642,7 @@ class MainActivity : AppCompatActivity() {
                 { _, hourOfDay, minute ->
                     DailyYouTubeUploadReceiver.schedule(this, hourOfDay, minute)
                     val timeLabel = String.format(Locale.getDefault(), "%02d:%02d", hourOfDay, minute)
+                    btnCancelDailyYouTube.isEnabled = true
                     appendConsoleLog("[YouTube Schedule] Daily reminder enabled for $timeLabel.")
                     appendChatLine("🗓 Daily YouTube upload reminder set for $timeLabel.")
                     Toast.makeText(this, "Daily upload reminder set for $timeLabel", Toast.LENGTH_LONG).show()
@@ -657,6 +658,7 @@ class MainActivity : AppCompatActivity() {
         btnCancelDailyYouTube.setOnClickListener {
             if (DailyYouTubeUploadReceiver.isScheduled(this)) {
                 DailyYouTubeUploadReceiver.cancel(this)
+                btnCancelDailyYouTube.isEnabled = false
                 appendConsoleLog("[YouTube Schedule] Daily reminder cancelled.")
                 Toast.makeText(this, "Daily YouTube reminder cancelled", Toast.LENGTH_SHORT).show()
             } else {
@@ -848,12 +850,20 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 "WEB_TASK" -> {
-                    WebPipelineManager.startAutonomousWebAgent(
-                        context = this@MainActivity,
-                        webView = mainWebView,
-                        goal = plan.targetGoal,
-                        targetUrl = plan.targetUrl
-                    )
+                    if (rbModePhoneVision.isChecked) {
+                        appendChatLine("📱 Using native Android accessibility for this task.")
+                        PhoneAgentManager.startAutonomousPhoneTask(
+                            context = this@MainActivity,
+                            goal = plan.targetGoal
+                        )
+                    } else {
+                        WebPipelineManager.startAutonomousWebAgent(
+                            context = this@MainActivity,
+                            webView = mainWebView,
+                            goal = plan.targetGoal,
+                            targetUrl = plan.targetUrl
+                        )
+                    }
                 }
 
                 "PHONE_TASK" -> {
