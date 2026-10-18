@@ -844,7 +844,10 @@ Respond ONLY with a valid JSON object:
 }
 """.trimIndent()
 
-        val images = if (screenshot != null) listOf(screenshot) else emptyList()
+        val images = buildList {
+            if (screenshot != null) add(screenshot)
+            addAll(memoryScreenshots.filterNot { it.isRecycled })
+        }
         val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(rawResp)
 
@@ -926,7 +929,8 @@ WHEN STUCK
         escalateToPro: Boolean = false,
         screenWidthPx: Int = context.resources.displayMetrics.widthPixels,
         screenHeightPx: Int = context.resources.displayMetrics.heightPixels,
-        screenCalibration: String = ""
+        screenCalibration: String = "",
+        memoryScreenshots: List<Bitmap> = emptyList()
     ): PhoneUiDecision {
         val prompt = """
 You are Nax Bot, an autonomous Android agent controlled by a Vision-Language-Action loop.
