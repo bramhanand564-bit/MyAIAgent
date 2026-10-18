@@ -59,6 +59,12 @@ data class ChatPlanResponse(
     val emotion: String
 )
 
+data class TaskMicroStep(
+    val title: String,
+    val goal: String,
+    val verificationHint: String
+)
+
 data class EpisodicStoryResult(
     val episodeNumber: Int,
     val flowVideoPrompt: String,
@@ -433,6 +439,56 @@ Respond ONLY with a valid JSON object:
             reason = "Waiting for UI tree stabilization",
             isDone = false,
             modelUsed = "fallback-guard"
+        )
+    }
+
+    /**
+     * Creates a short, observable task plan. If the model is unavailable or returns
+     * malformed JSON, keep one complete goal instead of inventing unsafe intermediate actions.
+     */
+    suspend fun buildMicroStepPlan(
+        context: Context,
+        goal: String,
+        uiTreeSummary: String = "",
+        screenshot: Bitmap? = null
+    ): List<TaskMicroStep> {
+        val normalizedGoal = goal.trim().take(1200)
+        if (normalizedGoal.isBlank()) return emptyList()
+
+        val prompt = """
+You are Nax Bot's Android task planner. Break the user's goal into 2-6 small, observable steps.
+Only include actions needed for the request. Do not include login, purchases, sending messages,
+deleting content, or publishing/posting unless explicitly requested by the user.
+Each step must have a clear on-screen completion signal. Return ONLY JSON:
+{"steps":[{"title":"short label","goal":"specific next subgoal","verificationHint":"visible evidence of completion"}]}
+User goal: ${normalizedGoal}
+Current screen accessibility summary (may be empty):
+${uiTreeSummary.take(6000)}
+""".trimIndent()
+        val images = if (screenshot != null) listOf(screenshot) else emptyList()
+        val (raw, _) = callGeminiWithFallback(context, prompt, images, preferPro = false)
+        val obj = extractCleanJsonObject(raw)
+        val array = obj?.optJSONArray("steps")
+        if (array != null) {
+            val parsed = mutableListOf<TaskMicroStep>()
+            for (i in 0 until minOf(array.length(), 6)) {
+                val item = array.optJSONObject(i) ?: continue
+                val title = item.optString("title").trim().take(100)
+                val stepGoal = item.optString("goal").trim().take(700)
+                val hint = item.optString("verificationHint").trim().take(300)
+                if (title.isNotBlank() && stepGoal.isNotBlank()) {
+                    parsed.add(TaskMicroStep(title, stepGoal, hint))
+                }
+            }
+            if (parsed.isNotEmpty()) return parsed
+        }
+
+        return listOf(
+            TaskMicroStep(
+                title = "Complete requested task",
+                goal = normalizedGoal,
+                verificationHint = "Visible evidence that the user's requested outcome is complete"
+            )
         )
     }
 
