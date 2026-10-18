@@ -269,6 +269,67 @@ class AutoTouchService : AccessibilityService() {
         return try { walk(root, 0) } finally { root.recycle() }
     }
 
+    fun clickKeyboardSearchAction(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        try {
+            val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (focused != null) {
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        focused.performAction(AccessibilityNodeInfo.ACTION_IME_ENTER)) {
+                        return true
+                    }
+                } finally {
+                    focused.recycle()
+                }
+            }
+
+            fun findImeAction(node: AccessibilityNodeInfo?, depth: Int): AccessibilityNodeInfo? {
+                if (node == null || depth > 12) return null
+                val text = node.text?.toString().orEmpty().trim().lowercase(Locale.US)
+                val desc = node.contentDescription?.toString().orEmpty().trim().lowercase(Locale.US)
+                val isSearchAction = text in setOf("search", "go", "enter", "submit") ||
+                    desc in setOf("search", "go", "enter", "submit")
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                val inKeyboardActionZone = rect.top >= screenHeight * 0.52f &&
+                    rect.left >= screenWidth * 0.42f && rect.width() < screenWidth * 0.42f &&
+                    rect.width() > 8 && rect.height() > 8
+                if (isSearchAction && inKeyboardActionZone) {
+                    return AccessibilityNodeInfo.obtain(node)
+                }
+                for (index in 0 until node.childCount) {
+                    val child = try { node.getChild(index) } catch (_: Exception) { null }
+                    if (child != null) {
+                        try {
+                            val found = findImeAction(child, depth + 1)
+                            if (found != null) return found
+                        } finally {
+                            child.recycle()
+                        }
+                    }
+                }
+                return null
+            }
+            val actionNode = findImeAction(root, 0) ?: return false
+            try {
+                val rect = Rect()
+                actionNode.getBoundsInScreen(rect)
+                val cx = (rect.left + rect.right) / 2f
+                val cy = (rect.top + rect.bottom) / 2f
+                AiOverlayHud.moveBotAndShowTap(cx, cy, "Search")
+                if (actionNode.isClickable &&
+                    actionNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+                return performHumanTap(cx, cy, GESTURE_TAP_MS)
+            } finally {
+                actionNode.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
     fun clickBottomSearchTab(): Boolean {
         val root = rootInActiveWindow ?: return false
         val (_, screenHeight) = getRealScreenDimensions()
