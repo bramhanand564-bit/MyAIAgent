@@ -610,7 +610,10 @@ Respond ONLY with JSON:
         storyTopicHint: String,
         episodeNumber: Int
     ): YouTubeSeoMetadata {
-        val frames = VideoQueueManager.extractRepresentativeFrames(context, videoFile)
+        // Video decoding stays off the UI thread; the extracted bitmaps are recycled after use.
+        val frames = withContext(Dispatchers.IO) {
+            VideoQueueManager.extractRepresentativeFrames(context, videoFile)
+        }
         val prompt = """
 You are a Viral YouTube Shorts SEO Strategist.
 Analyze these 2 actual HD frames extracted from the video (at 20% and 70% duration).
@@ -629,8 +632,9 @@ Respond ONLY with JSON:
 }
 """.trimIndent()
 
-        val (rawResp, _) = callGeminiWithFallback(context, prompt, frames, preferPro = false)
-        val obj = extractCleanJsonObject(rawResp)
+        try {
+            val (rawResp, _) = callGeminiWithFallback(context, prompt, frames, preferPro = false)
+            val obj = extractCleanJsonObject(rawResp)
         if (obj != null) {
             val title = obj.optString("title", "Aakhri Darwaze Ka Rahasya 😱 Part ${episodeNumber} #shorts #viral")
             val desc = obj.optString(
@@ -656,6 +660,11 @@ Respond ONLY with JSON:
             description = "Part ${episodeNumber + 1} ke liye Subscribe karein aur comment mein 'PART ${episodeNumber + 1}' likhein! ⚡\n\n#shorts #viral #kahani #scifi #trending",
             tags = listOf("shorts", "viral", "trending", "scifi", "hindikahani")
         )
+        } finally {
+            frames.forEach { bitmap ->
+                try { if (!bitmap.isRecycled) bitmap.recycle() } catch (_: Exception) {}
+            }
+        }
     }
 
     suspend fun chatAndBuildPlan(
