@@ -502,7 +502,7 @@ object GeminiBrain {
             code == 429 || resourceExhausted -> storeCooldown(context, modelId, QUOTA_COOLDOWN_MS, "HTTP $code or RESOURCE_EXHAUSTED")
             code == 400 && unsupportedModel -> storePermanentBlock(context, modelId, code)
             code == 500 || code == 503 -> recordServerStrike(
-                context, modelId, taskType, models, modelIndex, code, "HTTP $code"
+                context, modelId, taskType, models, modelIndex, "HTTP $code"
             )
             else -> routerLog(context, "[ModelBlocker] Skipping $modelId after HTTP $code. Response: ${responseBody.take(220)}")
         }
