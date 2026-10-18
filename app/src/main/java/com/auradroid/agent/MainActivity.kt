@@ -232,6 +232,11 @@ class MainActivity : AppCompatActivity() {
         handleIncomingScheduledIntent(intent)
     }
 
+    override fun onDestroy() {
+        GeminiBrain.setModelRouterLogListener(null)
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         handleIncomingScheduledIntent(intent)
