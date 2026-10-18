@@ -383,7 +383,8 @@ object AiOverlayHud {
                 returnWebViewToHomeContainer()
                 floatingBrowserCard?.visibility = View.GONE
                 faceView?.visibility = View.VISIBLE
-                val ghostIdle = currentEmotion == BotEmotion.IDLE && !phoneVisionTaskActive && !ghostControlsExpanded
+                val ghostIdle = (currentEmotion == BotEmotion.IDLE || currentEmotion == BotEmotion.HAPPY) &&
+                    !phoneVisionTaskActive && !ghostControlsExpanded
                 sideNotchCard?.visibility = if (ghostIdle) View.GONE else View.VISIBLE
                 root.alpha = 1f
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
@@ -1034,10 +1035,10 @@ class TapRippleOverlayView(context: Context) : View(context) {
         val fingerHeight = 24f
         // The middle fingertip's axis is aligned to the exact gesture point.
         val left = handPoint.x - palmWidth / 2f
-        val top = handPoint.y + 1f
+        val top = handPoint.y + 12f
         val right = handPoint.x + palmWidth / 2f
         val bottom = top + palmHeight
-        val fingerTop = top - fingerHeight + 10f
+        val fingerTop = handPoint.y - fingerHeight / 2f
 
         val fingers = arrayOf(
             RectF(left + 4f, fingerTop + 8f, left + 4f + fingerWidth, top + 13f),
