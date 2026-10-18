@@ -944,7 +944,15 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
                 ?.sortedByDescending { it.lastModified() }
                 ?.flatMap { folder ->
                     folder.listFiles()
-                        ?.filter { it.isFile && (it.name.startsWith("golden_fix") || it.name == "golden-fixes.txt" || it.name.startsWith("video_training") || it.name.startsWith("human_correction")) }
+                        ?.filter {
+                            it.isFile && (
+                                it.name.startsWith("golden_fix") ||
+                                    it.name == "golden-fixes.txt" ||
+                                    it.name.startsWith("video_training") ||
+                                    it.name.startsWith("human_correction") ||
+                                    it.name.startsWith("correction_")
+                                )
+                        }
                         ?.sortedByDescending { it.lastModified() }
                         ?.take(safeLimit)
                         ?.map { file -> "${folder.name}/${file.name} (${file.length()} bytes)" }
