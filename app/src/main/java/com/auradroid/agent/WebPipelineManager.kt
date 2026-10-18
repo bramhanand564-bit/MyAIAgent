@@ -152,11 +152,11 @@ object WebPipelineManager {
         goal: String,
         targetUrl: String
     ) {
-        endFlowVideoCapture()
         if (isRunning) {
             log("[Agent] Pipeline already running. Stop first.")
             return
         }
+        endFlowVideoCapture()
         isRunning = true
         updateStatus("Agent • Running", "WORKING")
         log("[Agent] Starting Autonomous Web Agent for goal: $goal")
@@ -298,6 +298,7 @@ object WebPipelineManager {
             try {
                 val arcState = VideoQueueManager.getStoryArcState(context)
                 var currentEp = arcState.currentEpisode
+                var generatedVideoCount = 0
 
                 for (epIndex in 1..episodeCount) {
                     if (!isRunning) break
@@ -355,6 +356,7 @@ object WebPipelineManager {
                         }
                     }
 
+                    var episodeSaved = false
                     if (generatedOk) {
                         // Wait for render completion and extract MP4
                         var savedFile: File? = null
@@ -383,21 +385,34 @@ object WebPipelineManager {
                         if (savedFile != null) {
                             log("[Success] Episode $currentEp video saved: ${savedFile.name}")
                             VideoQueueManager.recordCompletedEpisode(context, currentEp, storyResult.episodeSummary)
-
+                            generatedVideoCount++
+                            episodeSaved = true
                         }
                     }
                     endFlowVideoCapture()
+                    if (!episodeSaved) {
+                        log("[Pipeline] Episode $currentEp did not produce a saved video. Stopping instead of silently skipping an episode.")
+                        break
+                    }
                     currentEp++
                     delay(3000)
                 }
-                if (isRunning && autoUpload) {
-                    log("[Upload] Generated videos are queued. Opening one YouTube share/review flow; publishing is completed in YouTube by the user.")
-                    runYouTubeAutoUpload(context, webView, skipFlowRouting = true)
-                    updateStatus("Generation Done • YouTube Review", "WORKING")
-                    log("[Pipeline] Generation finished. Review and publish the selected queued video in YouTube; confirm upload in AuraDroid afterwards.")
+                if (isRunning && autoUpload && generatedVideoCount > 0) {
+                    log("[Upload] $generatedVideoCount new video(s) queued. Opening one YouTube share/review flow; publishing is completed in YouTube by the user.")
+                    val handoff = runYouTubeAutoUpload(context, webView, skipFlowRouting = true)
+                    if (handoff.started) {
+                        updateStatus("Generation Done • YouTube Review", "WORKING")
+                        log("[Pipeline] Review and publish the selected queued video in YouTube; confirm upload in AuraDroid afterwards.")
+                    } else {
+                        updateStatus("Generation Done • Upload Handoff Failed", "ERROR")
+                        log("[Pipeline] Videos were saved, but the YouTube share flow could not start: ${handoff.message}")
+                    }
+                } else if (isRunning && autoUpload) {
+                    updateStatus("No New Video To Upload", "ERROR")
+                    log("[Pipeline] No new video was saved, so automatic upload handoff was skipped. Existing queue items were left untouched.")
                 } else {
-                    updateStatus("Pipeline Complete!", "HAPPY")
-                    log("[Pipeline] Video generation loop completed. Review the queue for saved videos.")
+                    updateStatus(generatedVideoCount > 0 ? "Pipeline Complete!" : "No Video Saved", generatedVideoCount > 0 ? "HAPPY" : "ERROR")
+                    log("[Pipeline] Saved ${generatedVideoCount} new video(s). Review the queue before uploading.")
                 }
             } catch (e: Exception) {
                 log("[Error] Pipeline exception: ${e.message}")
@@ -414,7 +429,7 @@ object WebPipelineManager {
         context: Context,
         webView: WebView,
         skipFlowRouting: Boolean = false
-    ): Unit = withContext(Dispatchers.Main) {
+    ): NativeUploadStartResult = withContext(Dispatchers.Main) {
         // Do not mark queued videos uploaded simply because metadata was generated.
         // Native Android share flow hands the video and Vision SEO metadata to YouTube;
         // the user must publish there and confirm completion in AuraDroid.
@@ -432,6 +447,7 @@ object WebPipelineManager {
             if (result.started) "YouTube Review Required" else "Upload Not Started",
             if (result.started) "WORKING" else "ERROR"
         )
+        result
     }
 
     private suspend fun downloadBytesFromUrl(url: String): ByteArray? = withContext(Dispatchers.IO) {
