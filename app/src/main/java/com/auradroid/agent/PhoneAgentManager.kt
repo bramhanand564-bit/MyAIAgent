@@ -342,7 +342,7 @@ object PhoneAgentManager {
                             escalateToPro = false,
                             screenWidthPx = screenWidth,
                             screenHeightPx = screenHeight,
-                            screenCalibration = touchService.getScreenCalibrationSummary(),
+                            screenCalibration = screenCalibration,
                             memoryScreenshots = memoryScreenshots
                         )
                     } finally {
