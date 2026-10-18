@@ -217,6 +217,34 @@ object PhoneAgentManager {
                     }
 
                     when (decision.action) {
+                        "LAUNCH_APP", "OPEN_APP" -> {
+                            val requestedApp = decision.targetNodeText.ifBlank { decision.textToType }.trim()
+                            val launchPackage = touchService.resolveLaunchablePackage(requestedApp)
+                            if (launchPackage == null) {
+                                emitLog("[Launch] Couldn't resolve installed app '$requestedApp'. No app was opened.")
+                                actionHistory.add("Step $step: LAUNCH failed to resolve '$requestedApp'")
+                            } else {
+                                emitStatus("Opening $requestedApp", "WORKING")
+                                val launchStarted = touchService.launchAppDirectly(launchPackage)
+                                if (launchStarted) {
+                                    delay(2500)
+                                    val visiblePackage = touchService.currentForegroundPackageName()
+                                    val launchVerified = visiblePackage == launchPackage ||
+                                        visiblePackage.startsWith("$launchPackage.")
+                                    if (launchVerified) {
+                                        emitLog("[Launch] Verified '$requestedApp' in foreground after 2500 ms.")
+                                        emitStatus("$requestedApp Open", "HAPPY")
+                                        actionHistory.add("Step $step: LAUNCH $launchPackage verified foreground=$visiblePackage")
+                                    } else {
+                                        emitLog("[Launch] Launched '$launchPackage', but foreground verification saw '$visiblePackage'. Will re-check the screen before acting.")
+                                        actionHistory.add("Step $step: LAUNCH started; foreground not yet verified ($visiblePackage)")
+                                    }
+                                } else {
+                                    emitLog("[Launch] Android did not return a launch intent for '$launchPackage'.")
+                                    actionHistory.add("Step $step: LAUNCH failed for $launchPackage")
+                                }
+                            }
+                        }
                         "CLICK" -> {
                             emitStatus("Tapping UI", "WORKING")
                             val clickedByText = if (decision.targetNodeText.isNotBlank()) {
