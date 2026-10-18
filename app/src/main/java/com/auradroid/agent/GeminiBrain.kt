@@ -394,10 +394,10 @@ ${ragLessons}
 Live Accessibility UI Nodes (with screen coordinates):
 ${uiTreeSummary}
 
-Choose the single safest next UI step. If a popup/permission dialog blocks the screen, dismiss or allow it first.
+Choose the single safest next UI step. If the user asked to open or switch to an app, prefer LAUNCH_APP and put the app name or exact package ID in targetNodeText. If a popup/permission dialog blocks the screen, handle it first.
 Respond ONLY with a valid JSON object:
 {
-  "action": "CLICK or TYPE or SWIPE or BACK or HOME or WAIT or DONE",
+  "action": "LAUNCH_APP or CLICK or TYPE or SWIPE or BACK or HOME or WAIT or DONE",
   "x": 540.0,
   "y": 1200.0,
   "endX": 540.0,
