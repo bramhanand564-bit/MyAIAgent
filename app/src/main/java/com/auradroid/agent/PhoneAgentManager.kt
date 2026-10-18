@@ -100,10 +100,16 @@ object PhoneAgentManager {
     }
 
     private fun extractCommentText(goal: String): String {
-        val match = Regex("[\"']([^\"']{1,100})[\"']").find(goal)
-        return match?.groupValues?.getOrNull(1)?.trim().orEmpty().ifBlank {
-            if (goal.contains("comment", ignoreCase = true)) "Nice" else ""
+        val lower = goal.lowercase(Locale.US)
+        val markerIndex = lower.indexOf("comment")
+        if (markerIndex >= 0) {
+            val section = goal.substring((markerIndex + "comment".length).coerceAtMost(goal.length))
+            val match = Regex("[\"']([^\"']{1,100})[\"']").find(section)
+            if (!match?.groupValues?.getOrNull(1).isNullOrBlank()) {
+                return match?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            }
         }
+        return if (markerIndex >= 0) "Nice" else ""
     }
 
     fun setListeners(logListener: (String) -> Unit, statusListener: (String, String) -> Unit) {
