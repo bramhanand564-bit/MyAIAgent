@@ -517,10 +517,10 @@ object GeminiBrain {
         ensureApiKeyHealthScope(context, apiKey)
         val normalizedTask = normalizeTaskType(taskType)
         val ladder = taskLadder(normalizedTask, preferPro)
+        // Keep the task's prescribed first-choice order until a working model is learned.
+        // A learned preferred model may lead only when it belongs to that task's own ladder.
         val preferred = preferredWorkingModel(context, normalizedTask).takeIf { it in ladder }.orEmpty()
-        val configured = if (normalizedTask == "HIGH_BRAIN_VISION") getProModel(context) else getFastModel(context)
-        val configuredForThisTask = configured.takeIf { it in ladder }.orEmpty()
-        val ordered = (listOf(preferred, configuredForThisTask).filter { it.isNotBlank() } + ladder).distinct()
+        val ordered = (listOf(preferred).filter { it.isNotBlank() } + ladder).distinct()
         val active = ordered.filter { modelId ->
             if (!isModelEligibleForFreeTier(modelId)) {
                 routerLog(context, "[ModelBlocker] Refused model before network call because it is blocked or not on the free-tier allowlist: $modelId [BLOCKED].")
