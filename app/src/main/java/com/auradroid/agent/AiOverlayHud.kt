@@ -852,7 +852,13 @@ class TapRippleOverlayView(context: Context) : View(context) {
                     alpha = it.animatedValue as Float
                 }
                 addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationCancel(animation: android.animation.Animator) {
+                        if (fadeAnimator === animation) fadeAnimator = null
+                    }
+
                     override fun onAnimationEnd(animation: android.animation.Animator) {
+                        if (fadeAnimator !== animation) return
+                        fadeAnimator = null
                         if (actionMode == "TAP") {
                             clearRipples()
                             alpha = 1f
@@ -917,7 +923,6 @@ class TapRippleOverlayView(context: Context) : View(context) {
         actionMode = if (label.contains("HOLD", true)) "HOLD" else if (label.contains("SWIPE", true)) "SWIPE" else "TAP"
         tapLabel = if (actionMode == "TAP") "[TAP]" else label.take(28)
         animateHandTo(x, y, actionMode)
-        if (actionMode == "TAP") startTapAnimation()
         invalidate()
     }
 
