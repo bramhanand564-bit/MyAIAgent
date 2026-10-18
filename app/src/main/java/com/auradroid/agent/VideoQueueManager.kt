@@ -290,7 +290,11 @@ object VideoQueueManager {
             newH = maxDim
             newW = (maxDim * ratio).toInt().coerceAtLeast(1)
         }
-        return Bitmap.createScaledBitmap(src, newW, newH, true)
+        val scaled = Bitmap.createScaledBitmap(src, newW, newH, true)
+        if (scaled !== src && !src.isRecycled) {
+            try { src.recycle() } catch (_: Exception) {}
+        }
+        return scaled
     }
 
     fun sanitizePolicySafePrompt(rawPrompt: String, characterLock: String = ""): String {
