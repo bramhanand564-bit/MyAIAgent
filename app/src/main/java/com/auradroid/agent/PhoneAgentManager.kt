@@ -150,6 +150,9 @@ object PhoneAgentManager {
                             append("\nPREVIOUS VERIFICATION CORRECTION: ").append(lastVerificationHint)
                         }
                     }
+                    val screenDimensions = touchService.getRealScreenDimensions()
+                    val screenWidthPx = screenDimensions.first.toInt().coerceAtLeast(1)
+                    val screenHeightPx = screenDimensions.second.toInt().coerceAtLeast(1)
                     val decision = GeminiBrain.decideNextUiAction(
                         context = context,
                         goal = focusedStepGoal,
@@ -157,13 +160,16 @@ object PhoneAgentManager {
                         screenshot = screenshot,
                         historySummary = actionHistory.takeLast(8).joinToString("\n"),
                         ragLessons = ragLessons,
-                        escalateToPro = escalatePro
+                        escalateToPro = escalatePro,
+                        screenWidthPx = screenWidthPx,
+                        screenHeightPx = screenHeightPx
                     )
 
-                    val safeX = decision.x.toFloat()
-                    val safeY = decision.y.toFloat()
-                    val safeEndX = decision.endX.toFloat()
-                    val safeEndY = decision.endY.toFloat()
+                    // Clamp every model-provided coordinate to current device pixel bounds.
+                    val safeX = decision.x.coerceIn(0.5f, (screenWidthPx - 0.5f).coerceAtLeast(0.5f))
+                    val safeY = decision.y.coerceIn(0.5f, (screenHeightPx - 0.5f).coerceAtLeast(0.5f))
+                    val safeEndX = decision.endX.coerceIn(0.5f, (screenWidthPx - 0.5f).coerceAtLeast(0.5f))
+                    val safeEndY = decision.endY.coerceIn(0.5f, (screenHeightPx - 0.5f).coerceAtLeast(0.5f))
                     val deltaX = abs(safeEndX - safeX)
                     val deltaY = abs(safeEndY - safeY)
                     emitLog("[${decision.modelUsed} • PhoneSense] Step $step: ${decision.action} @(${safeX.toInt()},${safeY.toInt()}) -> ${decision.reason}")
@@ -253,6 +259,22 @@ object PhoneAgentManager {
                                 touchService.clickNodeByTextOrBounds(decision.targetNodeText, safeX, safeY)
                             } else touchService.performHumanTap(safeX, safeY, 90L)
                             actionHistory.add("Step $step: CLICK '${decision.targetNodeText}' @(${safeX.toInt()},${safeY.toInt()}) ok=$clickedByText")
+                        }
+                        "HOLD", "LONG_PRESS" -> {
+                            emitStatus("Long-press UI", "WORKING")
+                            val held = touchService.performCenterHold(safeX, safeY)
+                            actionHistory.add("Step $step: HOLD center=(${safeX.toInt()},${safeY.toInt()}) ok=$held duration=750ms")
+                        }
+                        "VISION_BOX_TAP" -> {
+                            emitStatus("Vision center tap", "WORKING")
+                            val boxValid = decision.xmax > decision.xmin && decision.ymax > decision.ymin
+                            val tapped = boxValid && touchService.performVisionBoxTap(
+                                ymin = decision.ymin,
+                                xmin = decision.xmin,
+                                ymax = decision.ymax,
+                                xmax = decision.xmax
+                            )
+                            actionHistory.add("Step $step: VISION_BOX_TAP box=(${decision.xmin},${decision.ymin},${decision.xmax},${decision.ymax}) center formula used=$tapped")
                         }
                         "TYPE" -> {
                             emitStatus("Typing Text", "WORKING")
