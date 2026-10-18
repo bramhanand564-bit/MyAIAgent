@@ -90,6 +90,9 @@ object GeminiBrain {
     // including user-configured model names and aliases.
     private val PAID_MODELS_BLOCKLIST = setOf(
         "gemini-4-argon",
+        "gemini-3.8-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-robotics-er-2-preview",
         "gemini-3.6-flash",
         "gemini-3.8-pro",
         "gemini-3.5-pro",
@@ -121,34 +124,24 @@ object GeminiBrain {
         "gemini-2.5-pro-preview-tts"
     )
 
+    // Keep the automatic ladder limited to models documented with a standard free tier.
+    // Higher-cost models require a separate explicit paid-mode choice; do not silently bill.
     private val FREE_AGENT_MODEL_LADDER = listOf(
-        "gemini-2.5-flash",
         "gemini-3.1-flash-lite",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-robotics-er-2-preview",
-        "gemini-3.1-pro-preview",
-        "gemma-4-31b-it"
+        "gemini-3.5-flash",
+        "gemini-2.5-flash"
     )
 
-    // One strict free-tier ladder for both ordinary VLA decisions and higher-effort retries.
-    // Unavailable models are skipped by persistent per-key health state before each request.
+    // Stuck-screen retries use the same bounded free-tier models until a paid mode is added.
     private val HIGH_BRAIN_VISION_MODEL_LADDER = listOf(
-        "gemini-2.5-flash",
         "gemini-3.1-flash-lite",
-        "gemini-3.5-flash-lite",
-        "gemini-3.8-flash",
-        "gemini-flash-latest",
-        "gemini-robotics-er-2-preview",
-        "gemini-3.1-pro-preview",
-        "gemma-4-31b-it"
+        "gemini-3.5-flash",
+        "gemini-2.5-flash"
     )
 
     private val MEMORY_ANALYSIS_MODEL_LADDER = listOf(
-        "gemini-3.8-flash",
-        "gemini-3.1-pro-preview",
-        "gemini-robotics-er-2-preview",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash",
         "gemini-2.5-flash"
     )
 
@@ -293,8 +286,8 @@ object GeminiBrain {
     }
 
     fun getFastModel(context: Context): String {
-        val saved = (prefs(context).getString(KEY_FAST_MODEL, "gemini-2.5-flash") ?: "").trim()
-        return if (saved.isBlank()) "gemini-2.5-flash" else saved
+        val saved = (prefs(context).getString(KEY_FAST_MODEL, "gemini-3.1-flash-lite") ?: "").trim()
+        return if (saved.isBlank()) "gemini-3.1-flash-lite" else saved
     }
 
     fun setFastModel(context: Context, modelName: String) {
@@ -305,9 +298,10 @@ object GeminiBrain {
     }
 
     fun getProModel(context: Context): String {
-        val saved = (prefs(context).getString(KEY_PRO_MODEL, "gemini-3.1-pro-preview") ?: "").trim()
+        val saved = (prefs(context).getString(KEY_PRO_MODEL, "gemini-3.1-flash-lite") ?: "").trim()
         return when {
-            saved.isBlank() || saved.equals("gemini-3.8-pro", ignoreCase = true) -> "gemini-3.1-pro-preview"
+            saved.isBlank() || saved.equals("gemini-3.8-pro", ignoreCase = true) ||
+                !isModelEligibleForFreeTier(saved) -> "gemini-3.1-flash-lite"
             else -> saved
         }
     }
