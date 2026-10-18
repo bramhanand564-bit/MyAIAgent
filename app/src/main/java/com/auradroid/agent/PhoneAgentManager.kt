@@ -39,6 +39,7 @@ object PhoneAgentManager {
 
     private var onLog: ((String) -> Unit)? = null
     private var onStatus: ((String, String) -> Unit)? = null
+    private var onTaskCompletion: ((String, String, String) -> Unit)? = null
 
     fun setListeners(
         logListener: (String) -> Unit,
@@ -46,6 +47,10 @@ object PhoneAgentManager {
     ) {
         onLog = logListener
         onStatus = statusListener
+    }
+
+    fun setTaskCompletionListener(listener: ((String, String, String) -> Unit)?) {
+        onTaskCompletion = listener
     }
 
     fun isTaskRunning(): Boolean = isPhoneAgentRunning
@@ -375,6 +380,11 @@ object PhoneAgentManager {
                         history.add("DONE: ${decision.reason}")
                         emitLog("[VLA] Goal completed by visual assessment: ${decision.reason}")
                         emitStatus("Task Complete!", "HAPPY")
+                        try {
+                            onTaskCompletion?.invoke(activeGoal, completionReason, uiTree)
+                        } catch (callbackError: Exception) {
+                            emitLog("[VLA] Completion-report callback failed: ${callbackError.message ?: "unknown error"}")
+                        }
                         scheduleGoldenFixAnalysis(context, completionReason)
                         break
                     }

@@ -39,7 +39,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -110,6 +112,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etCustomDurationSec: EditText
     private lateinit var etEpisodeCount: EditText
     private lateinit var cbAutoUploadYouTube: CheckBox
+    private lateinit var cbAutoPublishPublic: CheckBox
     private lateinit var btnStartFlowPipeline: Button
     private lateinit var btnUploadExistingVideo: Button
     private lateinit var btnConfirmVideoUploaded: Button
@@ -143,6 +146,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cbUseNativeExecution: CheckBox
     private lateinit var cbPassiveTeachMode: CheckBox
     private var syncingExecutionMode = false
+    private var syncingAutoPublishPublic = false
     private lateinit var etFastModelName: EditText
     private lateinit var etProModelName: EditText
     private lateinit var btnSaveAiSettings: Button
@@ -250,6 +254,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         GeminiBrain.setModelRouterLogListener(null)
+        PhoneAgentManager.setTaskCompletionListener(null)
         try {
             voiceTts?.stop()
             voiceTts?.shutdown()
@@ -324,6 +329,7 @@ class MainActivity : AppCompatActivity() {
         etCustomDurationSec = findViewById(R.id.etCustomDurationSec)
         etEpisodeCount = findViewById(R.id.etEpisodeCount)
         cbAutoUploadYouTube = findViewById(R.id.cbAutoUploadYouTube)
+        cbAutoPublishPublic = findViewById(R.id.cbAutoPublishPublic)
         btnStartFlowPipeline = findViewById(R.id.btnStartFlowPipeline)
         btnUploadExistingVideo = findViewById(R.id.btnUploadExistingVideo)
         btnConfirmVideoUploaded = findViewById(R.id.btnConfirmVideoUploaded)
@@ -490,6 +496,27 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
+        PhoneAgentManager.setTaskCompletionListener { goal, reason, uiTree ->
+            if (NativeYouTubeUploader.isYouTubeAutomationGoal(goal)) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val report = NativeYouTubeUploader.handleAgentCompletion(
+                        context = this@MainActivity,
+                        goal = goal,
+                        reason = reason,
+                        uiTree = uiTree
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (!report.isNullOrBlank()) {
+                            appendConsoleLog("[YouTube Report] $report")
+                            appendChatLine(report)
+                            Toast.makeText(this@MainActivity, report, Toast.LENGTH_LONG).show()
+                            tvHeaderStatus.text = "Nax Bot • YouTube result needs review"
+                        }
+                    }
+                }
+            }
+        }
+
         rgExecutionMode.setOnCheckedChangeListener { _, checkedId ->
             if (syncingExecutionMode) return@setOnCheckedChangeListener
             val useNative = checkedId == R.id.rbModePhoneVision
@@ -521,6 +548,33 @@ class MainActivity : AppCompatActivity() {
             appendConsoleLog("[ShadowTeach] Passive teaching ${if (enabled) "ENABLED" else "DISABLED"}. No screenshots or typed contents are stored.")
             appendChatLine("🧠 Passive Shadow Teach Mode ${if (enabled) "ON" else "OFF"}")
             refreshRagVaultViewer()
+        }
+
+        cbAutoPublishPublic.setOnCheckedChangeListener { _, enabled ->
+            if (syncingAutoPublishPublic) return@setOnCheckedChangeListener
+            if (!enabled) {
+                NativeYouTubeUploader.setAutoPublishPublicEnabled(this, false)
+                appendConsoleLog("[YouTube] Auto-Publish disabled; upload tasks use Review Mode.")
+                return@setOnCheckedChangeListener
+            }
+
+            // Require a separate confirmation before enabling a setting that may publish publicly.
+            syncingAutoPublishPublic = true
+            cbAutoPublishPublic.isChecked = false
+            syncingAutoPublishPublic = false
+            AlertDialog.Builder(this)
+                .setTitle("Enable Public Auto-Publish?")
+                .setMessage("When enabled, Nax Bot may publish the selected video publicly without another tap from you. Check that the selected folder and channel are correct. The phone must be on and the YouTube screen accessible. CAPTCHA, 2FA, login prompts or unclear screens must stop the task.")
+                .setNegativeButton("Keep Review Mode", null)
+                .setPositiveButton("Enable Auto-Publish") { _, _ ->
+                    NativeYouTubeUploader.setAutoPublishPublicEnabled(this, true)
+                    syncingAutoPublishPublic = true
+                    cbAutoPublishPublic.isChecked = true
+                    syncingAutoPublishPublic = false
+                    appendConsoleLog("[YouTube] Auto-Publish enabled by explicit user confirmation.")
+                    appendChatLine("⚠️ Public Auto-Publish is ON. Check the selected folder and channel before starting.")
+                }
+                .show()
         }
 
         cbVoiceFeedbackChat.setOnCheckedChangeListener { _, enabled ->
@@ -831,6 +885,9 @@ class MainActivity : AppCompatActivity() {
         syncingExecutionMode = false
 
         cbPassiveTeachMode.isChecked = AutomationReliability.isPassiveTeachModeEnabled(this)
+        syncingAutoPublishPublic = true
+        cbAutoPublishPublic.isChecked = NativeYouTubeUploader.isAutoPublishPublicEnabled(this)
+        syncingAutoPublishPublic = false
         val voiceEnabled = getSharedPreferences(VOICE_PREFS, Context.MODE_PRIVATE)
             .getBoolean(KEY_VOICE_ENABLED, false)
         syncingVoiceFeedback = true
