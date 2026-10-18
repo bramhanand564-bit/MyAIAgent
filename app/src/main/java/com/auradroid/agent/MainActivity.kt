@@ -223,6 +223,7 @@ class MainActivity : AppCompatActivity() {
         AiOverlayHud.init(this)
 
         bindAllViews()
+        GeminiBrain.setModelRouterLogListener { line -> appendConsoleLog(line) }
         setupWebView()
         setupTabNavigation()
         setupListeners()
@@ -727,6 +728,7 @@ class MainActivity : AppCompatActivity() {
             GeminiBrain.setFastModel(this, etFastModelName.text.toString())
             GeminiBrain.setProModel(this, etProModelName.text.toString())
             appendConsoleLog("[Engine] Saved Gemini API Key & Models (Fast=${GeminiBrain.getFastModel(this)}, Pro=${GeminiBrain.getProModel(this)})")
+            GeminiBrain.logModelHealthSummary(this)
             Toast.makeText(this, "AI Engine Settings Saved!", Toast.LENGTH_SHORT).show()
         }
 
