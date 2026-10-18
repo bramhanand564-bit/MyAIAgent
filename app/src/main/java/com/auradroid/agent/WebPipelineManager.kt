@@ -242,7 +242,9 @@ object WebPipelineManager {
                             if (mp4Bytes == null) {
                                 WebActionVerifier.execute4SenseSmartClick(webView, "Play", WebActionVerifier.FLOW_PLAY_CARD_X, WebActionVerifier.FLOW_PLAY_CARD_Y)
                                 delay(2500)
-                                mp4Bytes = lastInterceptedMp4Bytes ?: downloadBytesFromUrl(WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView))
+                                val refreshedUrl = WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView)
+                                mp4Bytes = if (refreshedUrl.isNotBlank()) downloadBytesFromUrl(refreshedUrl) else null
+                                if (mp4Bytes == null) mp4Bytes = lastInterceptedMp4Bytes
                             }
 
                             if (mp4Bytes != null && mp4Bytes.size > 50_000L) {
@@ -359,10 +361,13 @@ object WebPipelineManager {
                         for (waitAttempt in 1..25) {
                             if (!isRunning) break
                             val domMp4 = WebActionVerifier.extractMp4UrlFromDomOrReactFiber(webView)
-                            var mp4Bytes = lastInterceptedMp4Bytes
-                            if (mp4Bytes == null && domMp4.isNotBlank()) {
-                                mp4Bytes = downloadBytesFromUrl(domMp4)
+                            // Prefer the currently rendered output's own URL over a generic network-sniffed stream.
+                            var mp4Bytes: ByteArray? = if (domMp4.isNotBlank()) {
+                                downloadBytesFromUrl(domMp4)
+                            } else {
+                                null
                             }
+                            if (mp4Bytes == null) mp4Bytes = lastInterceptedMp4Bytes
                             if (mp4Bytes == null) {
                                 WebActionVerifier.execute4SenseSmartClick(webView, "Play", WebActionVerifier.FLOW_PLAY_CARD_X, WebActionVerifier.FLOW_PLAY_CARD_Y)
                                 delay(3000)
