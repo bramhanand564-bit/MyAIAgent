@@ -95,7 +95,7 @@ object WebPipelineManager {
         val requestEpoch = captureEpoch
         scope.launch(Dispatchers.IO) {
             try {
-                val okReq = Request.Builder().url(urlStr).build().get().build()
+                val okReq = Request.Builder().url(urlStr).get().build()
                 httpClient.newCall(okReq).execute().use { resp ->
                     if (!resp.isSuccessful || !isFlowCaptureActive || requestEpoch != captureEpoch) return@use
                     val body = resp.body ?: return@use
@@ -106,20 +106,23 @@ object WebPipelineManager {
                         log("[StreamSniffer] Skipped oversized stream (${declaredLength / (1024L * 1024L)} MB); waiting for the direct video URL.")
                         return@use
                     }
-                    val buffer = java.io.ByteArrayOutputStream(
-                        if (declaredLength in 1L..maxCaptureBytes) declaredLength.toInt() else 64 * 1024
-                    )
+                    val initialCapacity = if (declaredLength > 0L) {
+                        minOf(declaredLength, 1024L * 1024L).toInt()
+                    } else {
+                        64 * 1024
+                    }
+                    val buffer = java.io.ByteArrayOutputStream(initialCapacity)
                     val chunk = ByteArray(64 * 1024)
                     var total = 0L
                     body.byteStream().use { input ->
                         while (true) {
-                            if (!isFlowCaptureActive || requestEpoch != captureEpoch) return@use
+                            if (!isFlowCaptureActive || requestEpoch != captureEpoch) return@launch
                             val read = input.read(chunk)
                             if (read < 0) break
                             total += read
                             if (total > maxCaptureBytes) {
                                 log("[StreamSniffer] Aborted stream above 180 MB memory limit.")
-                                return@use
+                                return@launch
                             }
                             buffer.write(chunk, 0, read)
                         }
