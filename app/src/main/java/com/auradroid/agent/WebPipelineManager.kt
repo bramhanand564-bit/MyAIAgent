@@ -411,7 +411,7 @@ object WebPipelineManager {
                     updateStatus("No New Video To Upload", "ERROR")
                     log("[Pipeline] No new video was saved, so automatic upload handoff was skipped. Existing queue items were left untouched.")
                 } else {
-                    updateStatus(generatedVideoCount > 0 ? "Pipeline Complete!" : "No Video Saved", generatedVideoCount > 0 ? "HAPPY" : "ERROR")
+                    updateStatus(if (generatedVideoCount > 0) "Pipeline Complete!" else "No Video Saved", if (generatedVideoCount > 0) "HAPPY" else "ERROR")
                     log("[Pipeline] Saved ${generatedVideoCount} new video(s). Review the queue before uploading.")
                 }
             } catch (e: Exception) {
