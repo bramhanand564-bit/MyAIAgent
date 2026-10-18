@@ -517,9 +517,10 @@ object GeminiBrain {
         ensureApiKeyHealthScope(context, apiKey)
         val normalizedTask = normalizeTaskType(taskType)
         val ladder = taskLadder(normalizedTask, preferPro)
-        val preferred = preferredWorkingModel(context, normalizedTask)
+        val preferred = preferredWorkingModel(context, normalizedTask).takeIf { it in ladder }.orEmpty()
         val configured = if (normalizedTask == "HIGH_BRAIN_VISION") getProModel(context) else getFastModel(context)
-        val ordered = (listOf(preferred, configured).filter { it.isNotBlank() } + ladder).distinct()
+        val configuredForThisTask = configured.takeIf { it in ladder }.orEmpty()
+        val ordered = (listOf(preferred, configuredForThisTask).filter { it.isNotBlank() } + ladder).distinct()
         val active = ordered.filter { modelId ->
             if (!isModelEligibleForFreeTier(modelId)) {
                 routerLog(context, "[ModelBlocker] Refused model before network call because it is blocked or not on the free-tier allowlist: $modelId [BLOCKED].")
@@ -726,7 +727,7 @@ Respond ONLY with a valid JSON object:
 """.trimIndent()
 
         val images = if (screenshot != null) listOf(screenshot) else emptyList()
-        val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro)
+        val (rawResp, modelUsed) = callGeminiWithFallback(context, prompt, images, escalateToPro, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(rawResp)
 
         if (obj != null) {
@@ -868,7 +869,7 @@ Current screen accessibility summary (may be empty):
 ${uiTreeSummary.take(6000)}
 """.trimIndent()
         val images = if (screenshot != null) listOf(screenshot) else emptyList()
-        val (raw, _) = callGeminiWithFallback(context, prompt, images, preferPro = false)
+        val (raw, _) = callGeminiWithFallback(context, prompt, images, preferPro = false, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(raw)
         val array = obj?.optJSONArray("steps")
         if (array != null) {
@@ -916,7 +917,7 @@ Respond ONLY with JSON:
 """.trimIndent()
 
         val images = if (screenshot != null) listOf(screenshot) else emptyList()
-        val (rawResp, _) = callGeminiWithFallback(context, prompt, images, preferPro = false)
+        val (rawResp, _) = callGeminiWithFallback(context, prompt, images, preferPro = false, taskType = "HIGH_BRAIN_VISION")
         val obj = extractCleanJsonObject(rawResp)
         if (obj != null) {
             return PhoneTaskVerification(
@@ -1031,7 +1032,7 @@ Respond ONLY with JSON:
 """.trimIndent()
 
         try {
-            val (rawResp, _) = callGeminiWithFallback(context, prompt, frames, preferPro = false)
+            val (rawResp, _) = callGeminiWithFallback(context, prompt, frames, preferPro = false, taskType = "HIGH_BRAIN_VISION")
             val obj = extractCleanJsonObject(rawResp)
         if (obj != null) {
             val title = obj.optString("title", "Aakhri Darwaze Ka Rahasya 😱 Part ${episodeNumber} #shorts #viral")
