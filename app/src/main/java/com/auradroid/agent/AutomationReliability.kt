@@ -2,7 +2,6 @@ package com.auradroid.agent
 
 import android.content.ContentValues
 import android.content.Context
-import android.graphics.Bitmap
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.graphics.Bitmap
@@ -11,8 +10,6 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -905,6 +902,35 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Loads a small set of old correction frames only when a caller detects a stall.
+     * Callers own and must recycle returned bitmaps.
+     */
+    fun getAppMemoryScreenshots(
+        context: Context,
+        appNameOrPackage: String,
+        limit: Int = 3
+    ): List<Bitmap> {
+        val folder = appMemoryFolder(context, appNameOrPackage)
+        if (!folder.exists()) return emptyList()
+        return try {
+            folder.listFiles()
+                ?.filter {
+                    it.isFile &&
+                        (it.name.contains("_before.") || it.name.contains("_after.")) &&
+                        (it.extension.equals("jpg", true) || it.extension.equals("png", true))
+                }
+                ?.sortedByDescending { it.lastModified() }
+                ?.take(limit.coerceIn(1, 5))
+                ?.mapNotNull { file ->
+                    try { BitmapFactory.decodeFile(file.absolutePath) } catch (_: Exception) { null }
+                }
+                .orEmpty()
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
