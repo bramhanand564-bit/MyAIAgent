@@ -842,6 +842,28 @@ class TapRippleOverlayView(context: Context) : View(context) {
     private var glideAnimator: ValueAnimator? = null
     private var handScaleAnimator: ValueAnimator? = null
     private var trailAnimator: ValueAnimator? = null
+    private var fadeAnimator: ValueAnimator? = null
+    private val autoHideTapRunnable = Runnable {
+        if (actionMode == "TAP") {
+            fadeAnimator?.cancel()
+            fadeAnimator = ValueAnimator.ofFloat(alpha, 0f).apply {
+                duration = 140L
+                addUpdateListener {
+                    alpha = it.animatedValue as Float
+                }
+                addListener(object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        if (actionMode == "TAP") {
+                            clearRipples()
+                            alpha = 1f
+                            visibility = View.INVISIBLE
+                        }
+                    }
+                })
+                start()
+            }
+        }
+    }
 
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#6638BDF8")
@@ -891,9 +913,9 @@ class TapRippleOverlayView(context: Context) : View(context) {
     private val palmRect = RectF()
 
     fun triggerTapRipple(x: Float, y: Float, label: String, colorHex: String) {
-        tapLabel = label.take(28)
         handColor = try { Color.parseColor(colorHex) } catch (_: Exception) { Color.parseColor("#38BDF8") }
         actionMode = if (label.contains("HOLD", true)) "HOLD" else if (label.contains("SWIPE", true)) "SWIPE" else "TAP"
+        tapLabel = if (actionMode == "TAP") "[TAP]" else label.take(28)
         animateHandTo(x, y, actionMode)
         if (actionMode == "TAP") startTapAnimation()
         invalidate()
@@ -901,7 +923,8 @@ class TapRippleOverlayView(context: Context) : View(context) {
 
     fun animateHandTo(x: Float, y: Float, mode: String = "TAP") {
         actionMode = mode.uppercase(Locale.US)
-        tapLabel = mode.take(28)
+        tapLabel = if (actionMode == "TAP") "[TAP]" else mode.take(28)
+        if (actionMode != "TAP") removeCallbacks(autoHideTapRunnable)
         glideAnimator?.cancel()
         val fromX = if (handPoint.x < 0f) x else handPoint.x
         val fromY = if (handPoint.y < 0f) y else handPoint.y
@@ -965,6 +988,11 @@ class TapRippleOverlayView(context: Context) : View(context) {
 
     private fun startTapAnimation() {
         actionMode = "TAP"
+        tapLabel = "[TAP]"
+        removeCallbacks(autoHideTapRunnable)
+        fadeAnimator?.cancel()
+        alpha = 1f
+        visibility = View.VISIBLE
         rippleProgress = 0f
         activeAnimator?.cancel()
         activeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -975,6 +1003,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
             }
             start()
         }
+        postDelayed(autoHideTapRunnable, 550L)
         handScaleAnimator?.cancel()
         handScaleAnimator = ValueAnimator.ofFloat(1f, 0.80f, 1f).apply {
             duration = 220L
@@ -987,13 +1016,16 @@ class TapRippleOverlayView(context: Context) : View(context) {
     }
 
     fun clearRipples() {
+        removeCallbacks(autoHideTapRunnable)
         activeAnimator?.cancel()
         glideAnimator?.cancel()
         handScaleAnimator?.cancel()
         trailAnimator?.cancel()
+        fadeAnimator?.cancel()
         rippleProgress = 0f
         holdProgress = 0f
         handScale = 1f
+        tapLabel = ""
         handPoint.set(-100f, -100f)
         trailPoints.clear()
         invalidate()
@@ -1018,17 +1050,17 @@ class TapRippleOverlayView(context: Context) : View(context) {
         val palmHeight = 48f
         val fingerWidth = 14f
         val fingerHeight = 29f
-        // The center fingertip is anchored at the real screen tap coordinate.
-        val fingertipY = handPoint.y
-        val top = fingertipY + fingerHeight
+        // The palm center is pinned to the exact accessibility tap coordinate.
         val left = handPoint.x - palmWidth / 2f
+        val top = handPoint.y - palmHeight / 2f
         val right = handPoint.x + palmWidth / 2f
         val bottom = top + palmHeight
+        val fingerTop = top - fingerHeight + 10f
 
         val fingers = arrayOf(
-            RectF(left + 4f, fingertipY + 7f, left + 4f + fingerWidth, top + 13f),
-            RectF(handPoint.x - fingerWidth / 2f, fingertipY, handPoint.x + fingerWidth / 2f, top + 12f),
-            RectF(right - 4f - fingerWidth, fingertipY + 6f, right - 4f, top + 13f)
+            RectF(left + 4f, fingerTop + 8f, left + 4f + fingerWidth, top + 13f),
+            RectF(handPoint.x - fingerWidth / 2f, fingerTop, handPoint.x + fingerWidth / 2f, top + 12f),
+            RectF(right - 4f - fingerWidth, fingerTop + 7f, right - 4f, top + 13f)
         )
         fingers.forEach { rect ->
             canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, glowPaint)
@@ -1080,11 +1112,10 @@ class TapRippleOverlayView(context: Context) : View(context) {
     private fun drawLabel(canvas: Canvas) {
         val textWidth = labelTextPaint.measureText(tapLabel)
         val left = (handPoint.x - textWidth / 2f - 14f).coerceIn(8f, (width - textWidth - 36f).coerceAtLeast(8f))
-        val handRadius = 30f
-        val top = if (handPoint.y < 100f) {
-            handPoint.y + handRadius + 6f
+        val top = if (handPoint.y < 55f) {
+            handPoint.y + 8f
         } else {
-            handPoint.y - handRadius - 36f
+            handPoint.y - 42f
         }
         val safeTop = top.coerceIn(8f, (height - 48f).coerceAtLeast(8f))
         val rect = RectF(left, safeTop, left + textWidth + 28f, safeTop + 40f)
