@@ -31,7 +31,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 enum class BotEmotion(val eyeColorHex: String, val label: String) {
-    IDLE("#38BDF8", "Idle"),
+    IDLE("#0F172A", "Idle"),
     THINKING("#A855F7", "Thinking"),
     WORKING("#2DD4BF", "Working"),
     RENDERING("#F59E0B", "Rendering"),
@@ -156,6 +156,13 @@ object AiOverlayHud {
         currentEmotion = emotion
         mainHandler.post {
             faceView?.setBotEmotion(emotion)
+            if (emotion == BotEmotion.IDLE && !phoneVisionTaskActive) {
+                cursorOverlayView?.clearRipples()
+                cursorOverlayView?.visibility = View.GONE
+            }
+            if (isHudAttached && currentStage == STAGE_1_COMPACT_POD) {
+                applyStageLayout(STAGE_1_COMPACT_POD)
+            }
         }
     }
 
@@ -275,6 +282,12 @@ object AiOverlayHud {
     fun setPhoneVisionTaskActive(active: Boolean) {
         mainHandler.post {
             phoneVisionTaskActive = active
+            if (!active) {
+                currentEmotion = BotEmotion.IDLE
+                faceView?.setBotEmotion(BotEmotion.IDLE)
+                cursorOverlayView?.clearRipples()
+                cursorOverlayView?.visibility = View.GONE
+            }
             val ctx = appContext ?: return@post
             if (!canDrawOverlays(ctx)) return@post
             ensureHudCreated(ctx)
@@ -368,7 +381,8 @@ object AiOverlayHud {
                 returnWebViewToHomeContainer()
                 floatingBrowserCard?.visibility = View.GONE
                 faceView?.visibility = View.VISIBLE
-                sideNotchCard?.visibility = View.VISIBLE
+                val ghostIdle = currentEmotion == BotEmotion.IDLE && !phoneVisionTaskActive
+                sideNotchCard?.visibility = if (ghostIdle) View.GONE else View.VISIBLE
                 root.alpha = 1f
                 params.width = WindowManager.LayoutParams.WRAP_CONTENT
                 params.height = WindowManager.LayoutParams.WRAP_CONTENT
@@ -588,8 +602,6 @@ object AiOverlayHud {
             y = dpToPx(context, 140f)
         }
 
-        var initialX = 0
-        var initialY = 0
         var touchX = 0f
         var touchY = 0f
         var movedSignificantly = false
@@ -597,30 +609,23 @@ object AiOverlayHud {
         botFace.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
                     touchX = event.rawX
                     touchY = event.rawY
                     movedSignificantly = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = (event.rawX - touchX).toInt()
-                    val dy = (event.rawY - touchY).toInt()
-                    if (kotlin.math.abs(dx) > 8 || (kotlin.math.abs(dy) > 8)) {
+                    if (kotlin.math.abs(event.rawX - touchX) > 8f ||
+                        kotlin.math.abs(event.rawY - touchY) > 8f) {
                         movedSignificantly = true
                     }
-                    params.x = initialX + dx
-                    params.y = initialY + dy
-                    try {
-                        windowManager?.updateViewLayout(container, params)
-                    } catch (_: Exception) {
-                    }
+                    // The avatar is intentionally fixed in its corner; finger movement never drags it.
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!movedSignificantly) {
+                    if (!movedSignificantly && !phoneVisionTaskActive) {
                         notch.visibility = if (notch.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                        applyStageLayout(STAGE_1_COMPACT_POD)
                     }
                     true
                 }
@@ -692,9 +697,9 @@ class NaxBotFaceView(context: Context) : View(context) {
     }
 
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#38BDF8")
+        color = Color.parseColor("#CBD5E1")
         style = Paint.Style.STROKE
-        strokeWidth = 5f
+        strokeWidth = 2f
     }
 
     private val bridgePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -706,11 +711,6 @@ class NaxBotFaceView(context: Context) : View(context) {
 
     private val eyeOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0F172A")
-        style = Paint.Style.FILL
-    }
-
-    private val eyeCorePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#38BDF8")
         style = Paint.Style.FILL
     }
 
@@ -754,10 +754,9 @@ class NaxBotFaceView(context: Context) : View(context) {
         val parsedColor = try {
             Color.parseColor(newEmotion.eyeColorHex)
         } catch (_: Exception) {
-            Color.parseColor("#38BDF8")
+            Color.parseColor("#0F172A")
         }
-        borderPaint.color = parsedColor
-        eyeCorePaint.color = parsedColor
+        eyeOuterPaint.color = parsedColor
         invalidate()
     }
 
@@ -780,7 +779,7 @@ class NaxBotFaceView(context: Context) : View(context) {
 
         canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, bridgePaint)
 
-        val eyeRadiusX = baseRadius * 0.24f
+        val eyeRadiusX = baseRadius * 0.30f
         val emotionHeightMultiplier = when (emotion) {
             BotEmotion.SLEEPY -> 0.45f
             BotEmotion.HAPPY, BotEmotion.EXCITED -> 0.82f
@@ -805,25 +804,6 @@ class NaxBotFaceView(context: Context) : View(context) {
         canvas.drawOval(eyeRectLeft, eyeOuterPaint)
         canvas.drawOval(eyeRectRight, eyeOuterPaint)
 
-        val innerRx = eyeRadiusX * 0.68f
-        val innerRy = max(1.5f, eyeRadiusY * 0.68f)
-
-        eyeRectLeft.set(
-            leftEyeX - innerRx,
-            eyeY - innerRy,
-            leftEyeX + innerRx,
-            eyeY + innerRy
-        )
-        eyeRectRight.set(
-            rightEyeX - innerRx,
-            eyeY - innerRy,
-            rightEyeX + innerRx,
-            eyeY + innerRy
-        )
-
-        canvas.drawOval(eyeRectLeft, eyeCorePaint)
-        canvas.drawOval(eyeRectRight, eyeCorePaint)
-
         canvas.restore()
     }
 }
@@ -847,7 +827,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
         if (actionMode == "TAP") {
             fadeAnimator?.cancel()
             fadeAnimator = ValueAnimator.ofFloat(alpha, 0f).apply {
-                duration = 140L
+                duration = 100L
                 addUpdateListener {
                     alpha = it.animatedValue as Float
                 }
@@ -934,8 +914,8 @@ class TapRippleOverlayView(context: Context) : View(context) {
         val fromX = if (handPoint.x < 0f) x else handPoint.x
         val fromY = if (handPoint.y < 0f) y else handPoint.y
         glideAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 240L
-            interpolator = OvershootInterpolator(0.8f)
+            duration = if (actionMode == "TAP") 110L else 240L
+            interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener { animator ->
                 val t = animator.animatedValue as Float
                 handPoint.set(fromX + (x - fromX) * t, fromY + (y - fromY) * t)
@@ -1008,7 +988,7 @@ class TapRippleOverlayView(context: Context) : View(context) {
             }
             start()
         }
-        postDelayed(autoHideTapRunnable, 550L)
+        postDelayed(autoHideTapRunnable, 190L)
         handScaleAnimator?.cancel()
         handScaleAnimator = ValueAnimator.ofFloat(1f, 0.80f, 1f).apply {
             duration = 220L
@@ -1039,25 +1019,19 @@ class TapRippleOverlayView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (handPoint.x < 0f || handPoint.y < 0f) return
-        when (actionMode) {
-            "SWIPE" -> drawCometTrail(canvas)
-            "HOLD" -> drawHoldProgress(canvas)
-            else -> drawTapRipples(canvas)
-        }
         drawBaymaxHand(canvas)
-        if (tapLabel.isNotBlank()) drawLabel(canvas)
     }
 
     private fun drawBaymaxHand(canvas: Canvas) {
         val save = canvas.save()
         canvas.scale(handScale, handScale, handPoint.x, handPoint.y)
-        val palmWidth = 54f
-        val palmHeight = 48f
-        val fingerWidth = 14f
-        val fingerHeight = 29f
-        // The palm center is pinned to the exact accessibility tap coordinate.
+        val palmWidth = 42f
+        val palmHeight = 38f
+        val fingerWidth = 12f
+        val fingerHeight = 24f
+        // The middle fingertip's axis is aligned to the exact gesture point.
         val left = handPoint.x - palmWidth / 2f
-        val top = handPoint.y - palmHeight / 2f
+        val top = handPoint.y + 3.5f
         val right = handPoint.x + palmWidth / 2f
         val bottom = top + palmHeight
         val fingerTop = top - fingerHeight + 10f
@@ -1068,19 +1042,17 @@ class TapRippleOverlayView(context: Context) : View(context) {
             RectF(right - 4f - fingerWidth, fingerTop + 7f, right - 4f, top + 13f)
         )
         fingers.forEach { rect ->
-            canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, glowPaint)
             canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, fingerPaint)
             canvas.drawRoundRect(rect, fingerWidth / 2f, fingerWidth / 2f, outlinePaint)
         }
 
         palmRect.set(left, top, right, bottom)
-        canvas.drawRoundRect(palmRect, 23f, 23f, glowPaint)
-        canvas.drawRoundRect(palmRect, 23f, 23f, palmPaint)
-        canvas.drawRoundRect(palmRect, 23f, 23f, outlinePaint)
+        canvas.drawRoundRect(palmRect, 17f, 17f, palmPaint)
+        canvas.drawRoundRect(palmRect, 17f, 17f, outlinePaint)
 
-        val thumb = RectF(left - 8f, top + 13f, left + 13f, top + 33f)
-        canvas.drawRoundRect(thumb, 10f, 10f, palmPaint)
-        canvas.drawRoundRect(thumb, 10f, 10f, outlinePaint)
+        val thumb = RectF(left - 6f, top + 11f, left + 10f, top + 28f)
+        canvas.drawRoundRect(thumb, 8f, 8f, palmPaint)
+        canvas.drawRoundRect(thumb, 8f, 8f, outlinePaint)
         canvas.restoreToCount(save)
     }
 
