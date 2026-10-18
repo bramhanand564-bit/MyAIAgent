@@ -715,7 +715,7 @@
                                 android:layout_marginStart="10dp"
                                 android:layout_weight="1"
                                 android:checked="true"
-                                android:text="Auto Upload to YouTube Shorts (Vision SEO)"
+                                android:text="Open YouTube upload handoff after generation (review/publish manually)"
                                 android:textColor="#2DD4BF"
                                 android:textSize="12sp" />
                         </LinearLayout>
