@@ -325,16 +325,20 @@ object WebPipelineManager {
                             log("[Success] Episode $currentEp video saved: ${savedFile.name}")
                             VideoQueueManager.recordCompletedEpisode(context, currentEp, storyResult.episodeSummary)
 
-                            if (autoUpload) {
-                                runYouTubeAutoUpload(context, webView, skipFlowRouting = true)
-                            }
                         }
                     }
                     currentEp++
                     delay(3000)
                 }
-                updateStatus("Pipeline Complete!", "HAPPY")
-                log("[Pipeline] All scheduled episodes completed successfully.")
+                if (isRunning && autoUpload) {
+                    log("[Upload] Generated videos are queued. Opening one YouTube share/review flow; publishing is completed in YouTube by the user.")
+                    runYouTubeAutoUpload(context, webView, skipFlowRouting = true)
+                    updateStatus("Generation Done • YouTube Review", "WORKING")
+                    log("[Pipeline] Generation finished. Review and publish the selected queued video in YouTube; confirm upload in AuraDroid afterwards.")
+                } else {
+                    updateStatus("Pipeline Complete!", "HAPPY")
+                    log("[Pipeline] Video generation loop completed. Review the queue for saved videos.")
+                }
             } catch (e: Exception) {
                 log("[Error] Pipeline exception: ${e.message}")
                 updateStatus("Pipeline Error", "ERROR")
