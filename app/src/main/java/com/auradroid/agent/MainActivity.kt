@@ -247,6 +247,7 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         loadInitialState()
         initializeVoiceFeedback()
+        AuraDroidKeepAliveService.start(this)
 
         handleIncomingScheduledIntent(intent)
     }
