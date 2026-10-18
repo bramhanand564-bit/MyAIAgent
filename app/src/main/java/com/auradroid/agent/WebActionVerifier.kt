@@ -68,7 +68,7 @@ object WebActionVerifier {
 
     private fun unquoteJsString(raw: String): String {
         val trimmed = raw.trim()
-        if (trimmed == "null" or trimmed.isEmpty()) return ""
+        if (trimmed == "null" || trimmed.isEmpty()) return ""
         if (trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.length >= 2) {
             return try {
                 JSONArray("[$trimmed]").optString(0, "")
