@@ -781,7 +781,7 @@ class NaxBotFaceView(context: Context) : View(context) {
 
         canvas.drawLine(leftEyeX, eyeY, rightEyeX, eyeY, bridgePaint)
 
-        val eyeRadiusX = baseRadius * 0.30f
+        val eyeRadiusX = baseRadius * 0.36f
         val emotionHeightMultiplier = when (emotion) {
             BotEmotion.SLEEPY -> 0.45f
             BotEmotion.HAPPY, BotEmotion.EXCITED -> 0.82f
