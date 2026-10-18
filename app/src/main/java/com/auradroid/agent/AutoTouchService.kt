@@ -4,24 +4,25 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
 import android.graphics.Path
+import android.graphics.Point
 import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
+import android.view.WindowInsets
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
-import kotlin.random.Random
 
 class AutoTouchService : AccessibilityService() {
 
     companion object {
         @Volatile var instance: AutoTouchService? = null
             private set
-        private const val CENTER_JITTER_PX = 1.5f
         private const val GESTURE_TAP_MS = 90L
         private const val GESTURE_HOLD_MS = 750L
         private const val GESTURE_SWIPE_MS = 320L
@@ -36,21 +37,25 @@ class AutoTouchService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
-        if (!AutomationReliability.isPassiveTeachModeEnabled(this)) return
-
         val packageName = event.packageName?.toString().orEmpty()
         if (packageName.isBlank() || packageName == this.packageName) return
-        val eventKind = when (event.eventType) {
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> "VIEW_CLICKED"
-            AccessibilityEvent.TYPE_VIEW_SELECTED -> "VIEW_SELECTED"
-            AccessibilityEvent.TYPE_VIEW_SCROLLED -> "VIEW_SCROLLED"
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "WINDOW_STATE_CHANGED"
-            else -> return
-        }
 
         val source = event.source
         var root: AccessibilityNodeInfo? = null
         try {
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                captureHumanCorrectionIfStuck(event, packageName, source)
+            }
+
+            if (!AutomationReliability.isPassiveTeachModeEnabled(this)) return
+            val eventKind = when (event.eventType) {
+                AccessibilityEvent.TYPE_VIEW_CLICKED -> "VIEW_CLICKED"
+                AccessibilityEvent.TYPE_VIEW_SELECTED -> "VIEW_SELECTED"
+                AccessibilityEvent.TYPE_VIEW_SCROLLED -> "VIEW_SCROLLED"
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "WINDOW_STATE_CHANGED"
+                else -> return
+            }
+
             root = rootInActiveWindow
             val node = source ?: root ?: return
             // Never learn typed contents from password, editable, email, phone, or payment fields.
@@ -65,8 +70,8 @@ class AutoTouchService : AccessibilityService() {
             val rect = Rect()
             node.getBoundsInScreen(rect)
             if (rect.width() <= 0 || rect.height() <= 0) return
-            val centerX = (rect.left + rect.right) / 2f
-            val centerY = (rect.top + rect.bottom) / 2f
+            val centerX = ((rect.left + rect.right) / 2.0f).toFloat()
+            val centerY = ((rect.top + rect.bottom) / 2.0f).toFloat()
             val safeLabel = rawLabel.replace(Regex("\\s+"), " ").take(80)
             val screenSignature = buildPrivacySafeScreenSignature(root ?: node)
             AutomationReliability.recordShadowTeachEvent(
@@ -80,11 +85,42 @@ class AutoTouchService : AccessibilityService() {
                 labelText = safeLabel
             )
         } catch (_: Exception) {
-            // Passive training is best-effort and must never interrupt normal accessibility.
+            // Accessibility memory is best-effort and must never interrupt normal interaction.
         } finally {
             try { source?.recycle() } catch (_: Exception) {}
             try { root?.recycle() } catch (_: Exception) {}
         }
+    }
+
+    private fun captureHumanCorrectionIfStuck(
+        event: AccessibilityEvent,
+        packageName: String,
+        source: AccessibilityNodeInfo?
+    ) {
+        if (!PhoneAgentManager.isTaskRunning() || !PhoneAgentManager.isTaskStuck()) return
+        val node = source ?: return
+        val className = node.className?.toString().orEmpty()
+        val rawLabel = (node.text?.toString().orEmpty() + " " +
+            node.contentDescription?.toString().orEmpty()).trim()
+        if (node.isPassword || node.isEditable ||
+            className.contains("EditText", ignoreCase = true) ||
+            containsSensitiveLabel(rawLabel)) return
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        if (bounds.width() <= 0 || bounds.height() <= 0) return
+        // TYPE_VIEW_CLICKED reports the activated node and its bounds, not the raw finger location.
+        val centerX = ((bounds.left + bounds.right) / 2.0f).toFloat()
+        val centerY = ((bounds.top + bounds.bottom) / 2.0f).toFloat()
+        val safeLabel = rawLabel.replace(Regex("\\s+"), " ").take(100)
+        PhoneAgentManager.recordHumanCorrection(
+            context = applicationContext,
+            packageName = packageName,
+            centerX = centerX,
+            centerY = centerY,
+            boundsText = "${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}",
+            buttonLabel = safeLabel.ifBlank { className.take(80) }
+        )
     }
 
     private fun buildPrivacySafeScreenSignature(root: AccessibilityNodeInfo): String {
@@ -135,8 +171,59 @@ class AutoTouchService : AccessibilityService() {
     }
 
     fun getRealScreenDimensions(): Pair<Float, Float> {
-        val metrics = resources.displayMetrics
-        return Pair(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+        return try {
+            val point = Point()
+            @Suppress("DEPRECATION")
+            (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealSize(point)
+            if (point.x > 0 && point.y > 0) {
+                Pair(point.x.toFloat(), point.y.toFloat())
+            } else {
+                val metrics = resources.displayMetrics
+                Pair(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+            }
+        } catch (_: Exception) {
+            val metrics = resources.displayMetrics
+            Pair(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+        }
+    }
+
+    fun getScreenCalibrationSummary(): String {
+        val (realWidth, realHeight) = getRealScreenDimensions()
+        var statusTop = 0
+        var navigationBottom = 0
+        var cutoutSummary = "none"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                val manager = getSystemService(WINDOW_SERVICE) as WindowManager
+                val metrics = manager.currentWindowMetrics
+                val insets = metrics.windowInsets.getInsetsIgnoringVisibility(
+                    WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()
+                )
+                statusTop = insets.top
+                navigationBottom = insets.bottom
+                val cutoutRects = metrics.windowInsets.displayCutout?.boundingRects.orEmpty()
+                if (cutoutRects.isNotEmpty()) {
+                    cutoutSummary = cutoutRects.joinToString(";") {
+                        "${it.left},${it.top},${it.right},${it.bottom}"
+                    }
+                }
+            } catch (_: Exception) {
+                // Keep best-effort metrics if vendor WindowInsets are inaccessible.
+            }
+        } else {
+            statusTop = readSystemDimension("status_bar_height")
+            navigationBottom = readSystemDimension("navigation_bar_height")
+        }
+        return "model=${Build.MODEL}; realWidth=${realWidth.toInt()}; realHeight=${realHeight.toInt()}; statusBarTopPx=$statusTop; navigationBarBottomPx=$navigationBottom; displayCutoutRects=$cutoutSummary. Coordinates are full-screen physical pixels."
+    }
+
+    private fun readSystemDimension(name: String): Int {
+        return try {
+            val resourceId = resources.getIdentifier(name, "dimen", "android")
+            if (resourceId == 0) 0 else resources.getDimensionPixelSize(resourceId)
+        } catch (_: Exception) {
+            0
+        }
     }
 
     /**
@@ -701,16 +788,14 @@ class AutoTouchService : AccessibilityService() {
         return null
     }
 
-    private fun jitterCenter(value: Float): Float = value + Random.nextFloat() * (CENTER_JITTER_PX * 2.0f) - CENTER_JITTER_PX
-
     fun performHumanTap(x: Float, y: Float, holdMs: Long = GESTURE_TAP_MS): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
         val (screenWidth, screenHeight) = getRealScreenDimensions()
         if (screenWidth <= 0f || screenHeight <= 0f) return false
         val centerX = x.coerceIn(0.5f, screenWidth - 0.5f)
         val centerY = y.coerceIn(0.5f, screenHeight - 0.5f)
-        val safeX = jitterCenter(centerX).coerceIn(0.5f, screenWidth - 0.5f)
-        val safeY = jitterCenter(centerY).coerceIn(0.5f, screenHeight - 0.5f)
+        val safeX = centerX
+        val safeY = centerY
         AiOverlayHud.animateHandTo(safeX, safeY, "TAP")
         val path = Path().apply {
             moveTo(safeX, safeY)
@@ -894,7 +979,7 @@ class AutoTouchService : AccessibilityService() {
                         val hardwareBuffer = screenshotResult.hardwareBuffer
                         try {
                             Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshotResult.colorSpace)
-                                ?.copy(Bitmap.Config.ARGB_8888, false)
+                                ?.copy(Bitmap.Config.ARGB_8888, true)
                         } finally {
                             hardwareBuffer.close()
                         }
