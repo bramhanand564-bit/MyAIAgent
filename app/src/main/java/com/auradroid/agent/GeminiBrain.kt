@@ -1,10 +1,14 @@
 package com.auradroid.agent
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.graphics.Bitmap
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -13,6 +17,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.net.SocketTimeoutException
 import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -84,6 +90,94 @@ object GeminiBrain {
     private const val KEY_FAST_MODEL = "gemini_fast_model"
     private const val KEY_PRO_MODEL = "gemini_pro_model"
 
+    private const val MODEL_HEALTH_PREFS = "auradroid_model_health_prefs"
+    private const val KEY_DYNAMIC_PERMANENT_BLOCKS = "permanently_blocked_models"
+    private const val KEY_PREFERRED_WORKING_MODEL = "preferredWorkingModel"
+    private const val KEY_HEALTH_API_KEY_FINGERPRINT = "api_key_fingerprint"
+    private const val MODEL_LOG_TAG = "AuraDroidModelRouter"
+    private const val QUOTA_COOLDOWN_MS = 30 * 60 * 1000L
+    private const val SERVER_COOLDOWN_MS = 60 * 60 * 1000L
+    private const val MODEL_HEALTH_ACTIVE = "ACTIVE"
+    private const val MODEL_HEALTH_COOLDOWN = "COOLDOWN"
+    private const val MODEL_HEALTH_BLOCKED = "BLOCKED"
+
+    private var modelRouterLogListener: ((String) -> Unit)? = null
+    private val modelRouterMainHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    // User-requested hard firewall. This check runs before every network request,
+    // including user-configured model names and aliases.
+    private val PAID_MODELS_BLOCKLIST = setOf(
+        "gemini-4-argon",
+        "gemini-3.6-flash",
+        "gemini-3-flash-preview",
+        "deep-research-preview-04-2026",
+        "deep-research-max-preview-04-2026",
+        "antigravity-preview-09-2026",
+        "gemini-nano-banana-2.1",
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
+        "gemini-2.5-flash-image",
+        "gemini-omni-1.1-flash",
+        "gemini-omni-flash-preview",
+        "veo-3.1-generate-preview",
+        "veo-3.1-fast-generate-preview",
+        "veo-3.1-lite-generate-preview",
+        "lyria-3.5",
+        "lyria-3-pro-preview",
+        "lyria-3-clip-preview"
+    )
+
+    // Google's current pricing page lists this image model and Pro TTS preview
+    // without a Standard free tier. Keep them unavailable in strict free-only mode.
+    private val FREE_TIER_UNAVAILABLE_MODELS = setOf(
+        "gemini-3.1-flash-lite-image",
+        "gemini-2.5-pro-preview-tts"
+    )
+
+    private val FREE_AGENT_MODEL_LADDER = listOf(
+        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.8-flash",
+        "gemini-flash-latest",
+        "gemini-robotics-er-2-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-pro-latest",
+        "gemma-4-31b-it",
+        "gemma-4-26b-a4b-it"
+    )
+
+    private val HIGH_BRAIN_VISION_MODEL_LADDER = listOf(
+        "gemini-3.8-flash",
+        "gemini-robotics-er-2-preview",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash-lite",
+        "gemini-2.5-flash"
+    )
+
+    private val IMAGE_GEN_MODEL_LADDER = listOf(
+        "gemini-3.1-flash-lite-image"
+    )
+
+    private val TTS_MODEL_LADDER = listOf(
+        "gemini-3.8-flash-lite-tts",
+        "gemini-3.8-flash-tts",
+        "gemini-2.5-flash-preview-tts",
+        "gemini-2.5-pro-preview-tts"
+    )
+
+    private val AUDIO_TRANSCRIBE_MODEL_LADDER = listOf(
+        "gemini-3.5-transcribe",
+        "gemini-3.5-transcribe-live"
+    )
+
+    private val FREE_MODEL_ALLOWLIST: Set<String> =
+        (FREE_AGENT_MODEL_LADDER +
+            HIGH_BRAIN_VISION_MODEL_LADDER +
+            IMAGE_GEN_MODEL_LADDER +
+            TTS_MODEL_LADDER +
+            AUDIO_TRANSCRIBE_MODEL_LADDER).toSet()
+
     const val DEFAULT_GOOGLE_FLOW_MASTER_BLUEPRINT = """{
   "skill_name": "google_flow_master",
   "target_url": "https://labs.google/fx/tools/flow",
@@ -137,26 +231,83 @@ object GeminiBrain {
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    fun setModelRouterLogListener(listener: ((String) -> Unit)?) {
+        modelRouterLogListener = listener
+    }
+
+    private fun healthPrefs(context: Context) =
+        context.getSharedPreferences(MODEL_HEALTH_PREFS, Context.MODE_PRIVATE)
+
+    private fun modelPreferenceKey(prefix: String, modelId: String): String =
+        prefix + modelId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+
+    private fun preferredKey(taskType: String): String {
+        val normalized = normalizeTaskType(taskType)
+        return if (normalized == "AGENT") {
+            KEY_PREFERRED_WORKING_MODEL
+        } else {
+            "${KEY_PREFERRED_WORKING_MODEL}_${normalized.lowercase(Locale.US)}"
+        }
+    }
+
+    private fun routerLog(context: Context, message: String) {
+        Log.i(MODEL_LOG_TAG, message)
+        val listener = modelRouterLogListener
+        if (listener != null) {
+            modelRouterMainHandler.post {
+                try { listener.invoke(message) } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun modelKeyFingerprint(apiKey: String): String =
+        apiKey.hashCode().toString(16)
+
+    private fun ensureApiKeyHealthScope(context: Context, apiKey: String) {
+        if (apiKey.isBlank()) return
+        val prefs = healthPrefs(context)
+        val fingerprint = modelKeyFingerprint(apiKey)
+        val saved = prefs.getString(KEY_HEALTH_API_KEY_FINGERPRINT, null)
+        if (saved == null) {
+            prefs.edit().putString(KEY_HEALTH_API_KEY_FINGERPRINT, fingerprint).apply()
+        } else if (saved != fingerprint) {
+            resetBlockedModels(context)
+            prefs.edit().putString(KEY_HEALTH_API_KEY_FINGERPRINT, fingerprint).apply()
+            routerLog(context, "[ModelBlocker] API key changed. Dynamic model health blocks were reset.")
+        }
+    }
+
     fun getApiKey(context: Context): String {
         return (prefs(context).getString(KEY_API_KEY, "") ?: "").trim()
     }
 
     fun setApiKey(context: Context, apiKey: String) {
-        prefs(context).edit().putString(KEY_API_KEY, apiKey.trim()).apply()
+        val cleanKey = apiKey.trim()
+        val oldKey = getApiKey(context)
+        prefs(context).edit().putString(KEY_API_KEY, cleanKey).apply()
+        if (oldKey != cleanKey) {
+            resetBlockedModels(context)
+            healthPrefs(context).edit()
+                .putString(KEY_HEALTH_API_KEY_FINGERPRINT, modelKeyFingerprint(cleanKey))
+                .apply()
+            routerLog(context, "[ModelBlocker] API key changed. Model cooldowns, strikes, preferences, and dynamic blocks were reset.")
+        }
     }
 
     fun getFastModel(context: Context): String {
-        val saved = (prefs(context).getString(KEY_FAST_MODEL, "gemini-3.8-flash") ?: "").trim()
-        return if (saved.isBlank()) "gemini-3.8-flash" else saved
+        val saved = (prefs(context).getString(KEY_FAST_MODEL, "gemini-2.5-flash") ?: "").trim()
+        return if (saved.isBlank()) "gemini-2.5-flash" else saved
     }
 
     fun setFastModel(context: Context, modelName: String) {
         prefs(context).edit().putString(KEY_FAST_MODEL, modelName.trim()).apply()
+        if (!isModelEligibleForFreeTier(modelName.trim())) {
+            routerLog(context, "[ModelBlocker] Saved fast model is not eligible for free-tier calls and will be skipped: ${modelName.trim()}")
+        }
     }
 
     fun getProModel(context: Context): String {
         val saved = (prefs(context).getString(KEY_PRO_MODEL, "gemini-3.1-pro-preview") ?: "").trim()
-        // Migrate the previous non-existent "3.8-pro" default without overriding user model choices.
         return when {
             saved.isBlank() || saved.equals("gemini-3.8-pro", ignoreCase = true) -> "gemini-3.1-pro-preview"
             else -> saved
@@ -165,47 +316,249 @@ object GeminiBrain {
 
     fun setProModel(context: Context, modelName: String) {
         prefs(context).edit().putString(KEY_PRO_MODEL, modelName.trim()).apply()
+        if (!isModelEligibleForFreeTier(modelName.trim())) {
+            routerLog(context, "[ModelBlocker] Saved Pro model is not eligible for free-tier calls and will be skipped: ${modelName.trim()}")
+        }
     }
 
-    fun buildModelFallbackChain(context: Context, preferPro: Boolean): List<String> {
-        val primary = if (preferPro) getProModel(context) else getFastModel(context)
-        val rotation = if (preferPro) {
-            listOf(
-                primary,
-                "gemini-4-argon",
-                "gemini-3.1-pro-preview",
-                "gemini-2.5-pro",
-                "gemini-3.8-flash",
-                "gemini-3.7-flash",
-                "gemini-3.6-flash",
-                "gemini-3.5-flash-lite"
-            )
-        } else {
-            listOf(
-                primary,
-                "gemini-3.8-flash",
-                "gemini-3.7-flash",
-                "gemini-3.6-flash",
-                "gemini-3.5-flash-lite",
-                "gemini-3.1-flash-lite",
-                "gemini-2.5-flash"
-            )
+    private fun normalizeTaskType(taskType: String): String {
+        return when (taskType.trim().uppercase(Locale.US).replace(" ", "_")) {
+            "HIGH_BRAIN_VISION", "VISION", "STUCK_UI", "COMPLEX_PLANNING" -> "HIGH_BRAIN_VISION"
+            "IMAGE_GEN", "IMAGE_GENERATION" -> "IMAGE_GEN"
+            "TTS_SPEECH", "TTS", "SPEECH" -> "TTS_SPEECH"
+            "AUDIO_TRANSCRIBE", "TRANSCRIBE", "AUDIO_TRANSCRIPTION" -> "AUDIO_TRANSCRIBE"
+            else -> "AGENT"
         }
-        return rotation.distinct()
+    }
+
+    private fun taskLadder(taskType: String, preferPro: Boolean): List<String> {
+        return when (normalizeTaskType(taskType)) {
+            "HIGH_BRAIN_VISION" -> HIGH_BRAIN_VISION_MODEL_LADDER
+            "IMAGE_GEN" -> IMAGE_GEN_MODEL_LADDER
+            "TTS_SPEECH" -> TTS_MODEL_LADDER
+            "AUDIO_TRANSCRIBE" -> AUDIO_TRANSCRIBE_MODEL_LADDER
+            else -> FREE_AGENT_MODEL_LADDER
+        }
+    }
+
+    private fun dynamicallyBlockedModels(context: Context): Set<String> =
+        healthPrefs(context).getStringSet(KEY_DYNAMIC_PERMANENT_BLOCKS, emptySet())?.toSet().orEmpty()
+
+    private fun cooldownUntil(context: Context, modelId: String): Long =
+        healthPrefs(context).getLong(modelPreferenceKey("cooldown_", modelId), 0L)
+
+    private fun isModelEligibleForFreeTier(modelId: String): Boolean {
+        val normalized = modelId.trim()
+        return normalized.isNotBlank() &&
+            normalized in FREE_MODEL_ALLOWLIST &&
+            normalized !in PAID_MODELS_BLOCKLIST &&
+            normalized !in FREE_TIER_UNAVAILABLE_MODELS
+    }
+
+    private fun modelStatus(context: Context, modelId: String): String {
+        val now = System.currentTimeMillis()
+        if (!isModelEligibleForFreeTier(modelId) || modelId in dynamicallyBlockedModels(context)) {
+            return MODEL_HEALTH_BLOCKED
+        }
+        if (cooldownUntil(context, modelId) > now) return MODEL_HEALTH_COOLDOWN
+        return MODEL_HEALTH_ACTIVE
+    }
+
+    fun getModelHealthSummary(context: Context): String {
+        val allModels = (FREE_AGENT_MODEL_LADDER +
+            HIGH_BRAIN_VISION_MODEL_LADDER +
+            IMAGE_GEN_MODEL_LADDER +
+            TTS_MODEL_LADDER +
+            AUDIO_TRANSCRIBE_MODEL_LADDER +
+            PAID_MODELS_BLOCKLIST).distinct()
+        val now = System.currentTimeMillis()
+        return buildString {
+            append("[ModelBlocker] Model health at ").append(now).append('\n')
+            for (modelId in allModels) {
+                val status = modelStatus(context, modelId)
+                val until = cooldownUntil(context, modelId)
+                append(modelId).append(" [").append(status).append(']')
+                if (status == MODEL_HEALTH_COOLDOWN) {
+                    append(" until ").append(until)
+                }
+                append('\n')
+            }
+        }.trim()
+    }
+
+    fun logModelHealthSummary(context: Context) {
+        getModelHealthSummary(context).lineSequence().forEach { routerLog(context, it) }
+    }
+
+    fun resetBlockedModels(context: Context) {
+        val hp = healthPrefs(context)
+        val editor = hp.edit()
+        hp.all.keys.filter {
+            it == KEY_DYNAMIC_PERMANENT_BLOCKS ||
+                it == KEY_PREFERRED_WORKING_MODEL ||
+                it.startsWith("${KEY_PREFERRED_WORKING_MODEL}_") ||
+                it.startsWith("cooldown_") ||
+                it.startsWith("strike_")
+        }.forEach { editor.remove(it) }
+        editor.apply()
+        routerLog(context, "[ModelBlocker] Dynamic blocked models, cooldowns, strikes, and preferred model were reset. Paid-model firewall remains enabled.")
+    }
+
+    private fun storePermanentBlock(context: Context, modelId: String, code: Int) {
+        val hp = healthPrefs(context)
+        val blocked = hp.getStringSet(KEY_DYNAMIC_PERMANENT_BLOCKS, emptySet())?.toMutableSet() ?: mutableSetOf()
+        if (blocked.add(modelId)) {
+            hp.edit()
+                .putStringSet(KEY_DYNAMIC_PERMANENT_BLOCKS, blocked)
+                .remove(modelPreferenceKey("cooldown_", modelId))
+                .apply()
+        }
+        routerLog(context, "[ModelBlocker] Permanently blocked non-working or paid model: $modelId (HTTP $code).")
+    }
+
+    private fun storeCooldown(context: Context, modelId: String, durationMs: Long, reason: String) {
+        val until = System.currentTimeMillis() + durationMs
+        healthPrefs(context).edit()
+            .putLong(modelPreferenceKey("cooldown_", modelId), until)
+            .apply()
+        routerLog(context, "[ModelBlocker] $modelId set to COOLDOWN until $until. Reason: $reason")
+    }
+
+    private fun preferredWorkingModel(context: Context, taskType: String): String {
+        val hp = healthPrefs(context)
+        return hp.getString(preferredKey(taskType), "").orEmpty().trim()
+    }
+
+    private fun rememberWorkingModel(context: Context, taskType: String, modelId: String) {
+        if (!isModelEligibleForFreeTier(modelId)) return
+        healthPrefs(context).edit()
+            .putString(preferredKey(taskType), modelId)
+            .putInt(modelPreferenceKey("strike_", modelId), 0)
+            .remove(modelPreferenceKey("cooldown_", modelId))
+            .apply()
+        routerLog(context, "[ModelBlocker] Preferred working model for $taskType is now $modelId [ACTIVE].")
+    }
+
+    private fun promoteNextWorkingModel(
+        context: Context,
+        taskType: String,
+        models: List<String>,
+        failedIndex: Int
+    ) {
+        val next = models.drop(failedIndex + 1).firstOrNull {
+            modelStatus(context, it) == MODEL_HEALTH_ACTIVE
+        } ?: return
+        healthPrefs(context).edit().putString(preferredKey(taskType), next).apply()
+        routerLog(context, "[ModelBlocker] Promoted next working model to preferredWorkingModel: $next [ACTIVE].")
+    }
+
+    private fun recordServerStrike(
+        context: Context,
+        modelId: String,
+        taskType: String,
+        models: List<String>,
+        modelIndex: Int,
+        detail: String
+    ) {
+        val hp = healthPrefs(context)
+        val key = modelPreferenceKey("strike_", modelId)
+        val strikes = hp.getInt(key, 0) + 1
+        hp.edit().putInt(key, strikes).apply()
+        routerLog(context, "[ModelBlocker] $modelId server strike $strikes. $detail")
+        if (strikes >= 2) {
+            storeCooldown(context, modelId, SERVER_COOLDOWN_MS, "Two server errors or timeouts")
+            promoteNextWorkingModel(context, taskType, models, modelIndex)
+        }
+    }
+
+    private fun processHttpFailure(
+        context: Context,
+        modelId: String,
+        taskType: String,
+        models: List<String>,
+        modelIndex: Int,
+        code: Int,
+        responseBody: String
+    ) {
+        val lower = responseBody.lowercase(Locale.US)
+        val resourceExhausted = lower.contains("resource_exhausted")
+        val paidRequired = lower.contains("billing") ||
+            lower.contains("paid") ||
+            lower.contains("payment required") ||
+            lower.contains("upgrade your plan") ||
+            lower.contains("requires a paid tier") ||
+            lower.contains("billing account")
+        val unsupportedModel = lower.contains("model") && (
+            lower.contains("not supported") ||
+                lower.contains("unsupported") ||
+                lower.contains("not found") ||
+                lower.contains("does not exist") ||
+                lower.contains("not available for this api")
+            )
+
+        when {
+            code == 404 -> storePermanentBlock(context, modelId, code)
+            code == 403 && paidRequired -> storePermanentBlock(context, modelId, code)
+            code == 429 || resourceExhausted -> storeCooldown(context, modelId, QUOTA_COOLDOWN_MS, "HTTP $code or RESOURCE_EXHAUSTED")
+            code == 400 && unsupportedModel -> storePermanentBlock(context, modelId, code)
+            code == 500 || code == 503 -> recordServerStrike(
+                context, modelId, taskType, models, modelIndex, code, "HTTP $code"
+            )
+            else -> routerLog(context, "[ModelBlocker] Skipping $modelId after HTTP $code. Response: ${responseBody.take(220)}")
+        }
+    }
+
+    fun buildModelFallbackChain(
+        context: Context,
+        preferPro: Boolean,
+        taskType: String = if (preferPro) "HIGH_BRAIN_VISION" else "AGENT"
+    ): List<String> {
+        val apiKey = getApiKey(context)
+        ensureApiKeyHealthScope(context, apiKey)
+        val normalizedTask = normalizeTaskType(taskType)
+        val ladder = taskLadder(normalizedTask, preferPro)
+        val preferred = preferredWorkingModel(context, normalizedTask)
+        val configured = if (normalizedTask == "HIGH_BRAIN_VISION") getProModel(context) else getFastModel(context)
+        val ordered = (listOf(preferred, configured).filter { it.isNotBlank() } + ladder).distinct()
+        val active = ordered.filter { modelId ->
+            if (!isModelEligibleForFreeTier(modelId)) {
+                routerLog(context, "[ModelBlocker] Refused model before network call because it is blocked or not on the free-tier allowlist: $modelId [BLOCKED].")
+                false
+            } else {
+                val status = modelStatus(context, modelId)
+                if (status != MODEL_HEALTH_ACTIVE) {
+                    routerLog(context, "[ModelBlocker] Skipping $modelId [$status].")
+                    false
+                } else true
+            }
+        }
+        if (active.isEmpty()) {
+            routerLog(context, "[ModelBlocker] No eligible free-tier model is currently available for $normalizedTask. No model request will be sent.")
+        } else {
+            routerLog(context, "[ModelBlocker] Routing $normalizedTask through: ${active.joinToString(", ") { "$it [ACTIVE]" }}")
+        }
+        return active
     }
 
     suspend fun callGeminiWithFallback(
         context: Context,
         prompt: String,
         bitmaps: List<Bitmap> = emptyList(),
-        preferPro: Boolean = false
+        preferPro: Boolean = false,
+        taskType: String = if (preferPro) "HIGH_BRAIN_VISION" else "AGENT"
     ): Pair<String, String> = withContext(Dispatchers.IO) {
         val apiKey = getApiKey(context)
         if (apiKey.isBlank()) {
             return@withContext Pair("", "NO_API_KEY")
         }
 
-        val models = buildModelFallbackChain(context, preferPro)
+        ensureApiKeyHealthScope(context, apiKey)
+        val normalizedTask = normalizeTaskType(taskType)
+        val models = buildModelFallbackChain(context, preferPro, normalizedTask)
+        if (models.isEmpty()) {
+            return@withContext Pair("", "NO_FREE_MODEL_AVAILABLE")
+        }
+
         val partsArray = JSONArray()
         partsArray.put(JSONObject().put("text", prompt))
 
@@ -231,27 +584,57 @@ object GeminiBrain {
         val bodyString = payloadObj.toString()
         val mediaType = "application/json; charset=utf-8".toMediaType()
 
-        for (modelName in models) {
+        for ((index, modelName) in models.withIndex()) {
+            // Fail closed even if a future caller mutates a model chain or settings value.
+            if (!isModelEligibleForFreeTier(modelName) ||
+                modelStatus(context, modelName) != MODEL_HEALTH_ACTIVE) {
+                routerLog(context, "[ModelBlocker] Final firewall skipped $modelName [BLOCKED].")
+                continue
+            }
             try {
-                val url =
-                    "https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}"
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
+                    .toHttpUrl()
+                    .newBuilder()
+                    .addQueryParameter("key", apiKey)
+                    .build()
                 val request = Request.Builder()
                     .url(url)
                     .post(bodyString.toRequestBody(mediaType))
                     .build()
 
-                httpClient.newCall(request).execute().use { response ->
+                val result = httpClient.newCall(request).execute().use { response ->
+                    val rawBody = response.body?.string().orEmpty()
                     if (response.isSuccessful) {
-                        val rawBody = response.body?.string() ?: ""
                         val parsedText = extractTextFromGeminiJson(rawBody)
                         if (parsedText.isNotBlank()) {
-                            return@withContext Pair(parsedText, modelName)
+                            rememberWorkingModel(context, normalizedTask, modelName)
+                            Pair(parsedText, modelName)
+                        } else {
+                            routerLog(context, "[ModelBlocker] $modelName returned no text content. Trying the next eligible model.")
+                            null
                         }
+                    } else {
+                        processHttpFailure(
+                            context, modelName, normalizedTask, models, index,
+                            response.code, rawBody
+                        )
+                        null
                     }
                 }
-            } catch (_: Exception) {
+                if (result != null) return@withContext result
+            } catch (e: SocketTimeoutException) {
+                recordServerStrike(
+                    context, modelName, normalizedTask, models, index,
+                    "SocketTimeoutException: ${e.message ?: "timeout"}"
+                )
+            } catch (e: IOException) {
+                routerLog(context, "[ModelBlocker] Network I/O failure for $modelName. Trying next eligible model.")
+            } catch (e: Exception) {
+                routerLog(context, "[ModelBlocker] Unexpected request failure for $modelName. Trying next eligible model.")
             }
         }
+
+        routerLog(context, "[ModelBlocker] All eligible $normalizedTask model attempts exhausted.")
         Pair("", "FALLBACK_EXHAUSTED")
     }
 
