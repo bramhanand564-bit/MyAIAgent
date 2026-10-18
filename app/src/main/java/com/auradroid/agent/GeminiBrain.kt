@@ -151,8 +151,12 @@ object GeminiBrain {
     }
 
     fun getProModel(context: Context): String {
-        val saved = (prefs(context).getString(KEY_PRO_MODEL, "gemini-3.8-pro") ?: "").trim()
-        return if (saved.isBlank()) "gemini-3.8-pro" else saved
+        val saved = (prefs(context).getString(KEY_PRO_MODEL, "gemini-3.1-pro-preview") ?: "").trim()
+        // Migrate the previous non-existent "3.8-pro" default without overriding user model choices.
+        return when {
+            saved.isBlank() || saved.equals("gemini-3.8-pro", ignoreCase = true) -> "gemini-3.1-pro-preview"
+            else -> saved
+        }
     }
 
     fun setProModel(context: Context, modelName: String) {
@@ -164,23 +168,23 @@ object GeminiBrain {
         val rotation = if (preferPro) {
             listOf(
                 primary,
-                "gemini-3.8-pro",
-                "gemini-3.7-pro",
-                "gemini-3.5-pro",
-                "gemini-3.1-pro",
+                "gemini-4-argon",
+                "gemini-3.1-pro-preview",
                 "gemini-2.5-pro",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash"
+                "gemini-3.8-flash",
+                "gemini-3.7-flash",
+                "gemini-3.6-flash",
+                "gemini-3.5-flash-lite"
             )
         } else {
             listOf(
                 primary,
                 "gemini-3.8-flash",
                 "gemini-3.7-flash",
-                "gemini-3.5-flash",
-                "gemini-3.1-flash",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash"
+                "gemini-3.6-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-2.5-flash"
             )
         }
         return rotation.distinct()
