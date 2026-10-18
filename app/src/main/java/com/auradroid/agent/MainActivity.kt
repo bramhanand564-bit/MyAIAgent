@@ -138,7 +138,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var etMemoryFact: EditText
     private lateinit var btnSaveMemoryFact: Button
     private lateinit var tvRagVaultViewer: TextView
-    private lateinit var etMemoryVideoNotes: EditText
+    private lateinit var etMemoryChatMessage: EditText
     private lateinit var btnPickMemoryVideo: Button
     private lateinit var tvMemoryVideoStatus: TextView
 
@@ -351,7 +351,7 @@ class MainActivity : AppCompatActivity() {
         etMemoryFact = findViewById(R.id.etMemoryFact)
         btnSaveMemoryFact = findViewById(R.id.btnSaveMemoryFact)
         tvRagVaultViewer = findViewById(R.id.tvRagVaultViewer)
-        etMemoryVideoNotes = findViewById(R.id.etMemoryVideoNotes)
+        etMemoryChatMessage = findViewById(R.id.etMemoryChatMessage)
         btnPickMemoryVideo = findViewById(R.id.btnPickMemoryVideo)
         tvMemoryVideoStatus = findViewById(R.id.tvMemoryVideoStatus)
 
@@ -1033,9 +1033,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processMemoryTrainingVideo(uri: Uri) {
-        val description = etMemoryVideoNotes.text.toString().trim()
+        val description = etMemoryChatMessage.text.toString().trim()
         if (description.isBlank()) {
-            etMemoryVideoNotes.error = "Describe this recording first"
+            etMemoryChatMessage.error = "Describe this recording first"
             return
         }
         val appName = inferMemoryAppName(description)
