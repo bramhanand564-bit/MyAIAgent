@@ -296,7 +296,7 @@ object PhoneAgentManager {
                     val dimensions = touchService.getRealScreenDimensions()
                     val screenWidth = dimensions.first.toInt().coerceAtLeast(1)
                     val screenHeight = dimensions.second.toInt().coerceAtLeast(1)
-                    val screenCalibration = screenCalibration
+                    val screenCalibration = touchService.getScreenCalibrationSummary()
                     val screenshot = touchService.captureScreenBitmapSuspend()
                     activePackageName = touchService.getActivePackageName().ifBlank { activePackageName }
                     val uiTree = touchService.dumpUiTreeSummary()
