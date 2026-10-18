@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -40,9 +39,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -1020,102 +1017,36 @@ class MainActivity : AppCompatActivity() {
         else android.os.Handler(android.os.Looper.getMainLooper()).post(action)
     }
 
-    private fun inferMemoryAppName(description: String): String {
-        val lower = description.lowercase(Locale.US)
-        return when {
-            lower.contains("instagram") || lower.contains("reel") -> "Instagram"
-            lower.contains("youtube") || lower.contains("yt studio") -> "YouTube"
-            lower.contains("whatsapp") || lower.contains("wa ") -> "WhatsApp"
-            lower.contains("telegram") -> "Telegram"
-            lower.contains("chrome") || lower.contains("browser") -> "Chrome"
-            else -> "General"
-        }
-    }
-
     private fun processMemoryTrainingVideo(uri: Uri) {
         val description = etMemoryChatMessage.text.toString().trim()
         if (description.isBlank()) {
             etMemoryChatMessage.error = "Describe this recording first"
             return
         }
-        val appName = inferMemoryAppName(description)
+
         btnPickMemoryVideo.isEnabled = false
-        tvMemoryVideoStatus.text = "Reading video metadata and extracting keyframes..."
+        tvMemoryVideoStatus.text = "Analyzing video keyframes and preparing app-specific memory..."
         lifecycleScope.launch {
-            var frames = emptyList<android.graphics.Bitmap>()
-            var savedPaths = emptyList<String>()
             try {
-                frames = withContext(Dispatchers.IO) {
-                    val retriever = MediaMetadataRetriever()
-                    try {
-                        retriever.setDataSource(this@MainActivity, uri)
-                        val durationMs = retriever.extractMetadata(
-                            MediaMetadataRetriever.METADATA_KEY_DURATION
-                        )?.toLongOrNull()?.coerceAtLeast(1L) ?: 1L
-                        val percentages = listOf(8L, 28L, 50L, 72L, 92L)
-                        percentages.mapIndexedNotNull { index, percentage ->
-                            val frameTimeUs = durationMs * 1000L * percentage / 100L
-                            try {
-                                retriever.getFrameAtTime(
-                                    frameTimeUs,
-                                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                                )?.let { bitmap ->
-                                    val path = AutomationReliability.saveLearningKeyframe(
-                                        this@MainActivity,
-                                        appName,
-                                        bitmap,
-                                        index
-                                    )
-                                    if (path != null) {
-                                        synchronized(this@MainActivity) {
-                                            savedPaths = savedPaths + path
-                                        }
-                                    }
-                                    bitmap
-                                }
-                            } catch (_: Exception) {
-                                null
-                            }
-                        }
-                    } finally {
-                        try { retriever.release() } catch (_: Exception) {}
-                    }
-                }
-                if (frames.isEmpty()) {
-                    tvMemoryVideoStatus.text = "No readable keyframes found in this video."
-                    return@launch
-                }
-                tvMemoryVideoStatus.text = "Analyzing ${frames.size} keyframes with the high-reasoning model..."
-                val analysis = GeminiBrain.analyzeTrainingVideoFrames(
+                // Reuse the existing memory vault's bounded keyframe extractor, model routing,
+                // app-folder mapping, and Golden Fix persistence instead of duplicating them here.
+                val result = AutomationReliability.trainMemoryFromVideo(
                     context = this@MainActivity,
-                    appName = appName,
-                    userDescription = description,
-                    frames = frames
+                    videoUri = uri,
+                    description = description
                 )
-                val saved = AutomationReliability.saveVideoTrainingRecord(
-                    context = this@MainActivity,
-                    appNameOrPackage = appName,
-                    userDescription = description,
-                    analysis = analysis,
-                    keyframePaths = savedPaths
-                )
-                tvMemoryVideoStatus.text = if (saved) {
-                    "Learned and saved to Memory/$appName/\n\n$analysis"
-                } else {
-                    "Analysis finished, but memory could not be saved.\n\n$analysis"
-                }
-                appendConsoleLog(if (saved) "[Memory] Video learning stored for $appName."
-                    else "[Memory] Video analyzed but saving failed for $appName.")
-                appendChatLine("🧠 Memory Studio: $analysis")
+                tvMemoryVideoStatus.text = result.take(12000)
+                appendConsoleLog("[Memory] Video training: ${result.lineSequence().firstOrNull().orEmpty()}")
+                appendChatLine("🧠 Memory Studio: $result")
                 refreshRagVaultViewer()
-                speakVoiceFeedback("Boss, video learning analysis complete ho gaya.")
-            } catch (error: Exception) {
-                tvMemoryVideoStatus.text = "Video learning failed: ${error.message ?: error.javaClass.simpleName}"
-                appendConsoleLog("[Memory] Video learning failed: ${error.message ?: error.javaClass.simpleName}")
-            } finally {
-                frames.forEach {
-                    try { if (!it.isRecycled) it.recycle() } catch (_: Exception) {}
+                if (result.startsWith("Learned", ignoreCase = true)) {
+                    speakVoiceFeedback("Boss, video learning analysis complete ho gaya.")
                 }
+            } catch (error: Exception) {
+                val message = "Video learning failed: ${error.message ?: error.javaClass.simpleName}"
+                tvMemoryVideoStatus.text = message
+                appendConsoleLog("[Memory] $message")
+            } finally {
                 btnPickMemoryVideo.isEnabled = true
             }
         }
