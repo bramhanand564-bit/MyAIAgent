@@ -19,9 +19,12 @@ import kotlin.random.Random
 class AutoTouchService : AccessibilityService() {
 
     companion object {
-        @Volatile
-        var instance: AutoTouchService? = null
+        @Volatile var instance: AutoTouchService? = null
             private set
+        private const val CENTER_JITTER_PX = 1.5f
+        private const val GESTURE_TAP_MS = 90L
+        private const val GESTURE_HOLD_MS = 750L
+        private const val GESTURE_SWIPE_MS = 320L
     }
 
     private val screenshotExecutor = Executors.newSingleThreadExecutor()
@@ -32,13 +35,17 @@ class AutoTouchService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
-
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
         if (instance === this) instance = null
         screenshotExecutor.shutdown()
         super.onDestroy()
+    }
+
+    fun getRealScreenDimensions(): Pair<Float, Float> {
+        val metrics = resources.displayMetrics
+        return Pair(metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
     }
 
     fun dumpUiTreeSummary(): String {
@@ -57,8 +64,8 @@ class AutoTouchService : AccessibilityService() {
         val rect = Rect()
         node.getBoundsInScreen(rect)
         val hasSize = rect.width() > 12 && rect.height() > 12
-        val text = (node.text?.toString() ?: "").trim().replace("\n", " ")
-        val desc = (node.contentDescription?.toString() ?: "").trim().replace("\n", " ")
+        val text = node.text?.toString().orEmpty().trim().replace("\n", " ")
+        val desc = node.contentDescription?.toString().orEmpty().trim().replace("\n", " ")
         val label = when {
             text.isNotBlank() -> text.take(50)
             desc.isNotBlank() -> desc.take(50)
@@ -71,7 +78,9 @@ class AutoTouchService : AccessibilityService() {
                 node.isClickable -> "BTN"
                 else -> "TXT"
             }
-            outLines.add("$tag[\"$label\"]@(\${rect.centerX()},\${rect.centerY()})")
+            val cx = (rect.left.toFloat() + rect.right.toFloat()) / 2.0f
+            val cy = (rect.top.toFloat() + rect.bottom.toFloat()) / 2.0f
+            outLines.add("$tag[\"$label\"]@($cx,$cy)")
         }
         for (i in 0 until node.childCount) {
             if (outLines.size >= 55) break
@@ -93,24 +102,51 @@ class AutoTouchService : AccessibilityService() {
                             val rect = Rect()
                             matched.getBoundsInScreen(rect)
                             if (rect.width() > 8 && rect.height() > 8) {
-                                val cx = rect.centerX().toFloat()
-                                val cy = rect.centerY().toFloat()
+                                val cx = (rect.left.toFloat() + rect.right.toFloat()) / 2.0f
+                                val cy = (rect.top.toFloat() + rect.bottom.toFloat()) / 2.0f
                                 AiOverlayHud.moveBotAndShowTap(cx, cy, targetText.take(18))
                                 if (matched.isClickable && matched.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
-                                return performHumanTap(cx, cy, 90L)
+                                return performHumanTap(cx, cy, GESTURE_TAP_MS)
                             }
-                        } finally { matched.recycle() }
+                        } finally {
+                            matched.recycle()
+                        }
                     }
                 }
-            } finally { root.recycle() }
+            } finally {
+                root.recycle()
+            }
         }
-        return performHumanTap(fallbackX, fallbackY, 95L)
+        return performHumanTap(fallbackX, fallbackY, GESTURE_TAP_MS)
     }
+
+    fun findNodeCenterByText(targetText: String): PointCenter? {
+        if (targetText.isBlank()) return null
+        val root = rootInActiveWindow ?: return null
+        return try {
+            val node = findNodeByTextRecursive(root, targetText.lowercase(Locale.US)) ?: return null
+            try {
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.width() <= 0 || rect.height() <= 0) null
+                else PointCenter(
+                    (rect.left.toFloat() + rect.right.toFloat()) / 2.0f,
+                    (rect.top.toFloat() + rect.bottom.toFloat()) / 2.0f
+                )
+            } finally {
+                node.recycle()
+            }
+        } finally {
+            root.recycle()
+        }
+    }
+
+    data class PointCenter(val x: Float, val y: Float)
 
     private fun findNodeByTextRecursive(node: AccessibilityNodeInfo?, targetLower: String): AccessibilityNodeInfo? {
         if (node == null || targetLower.isBlank()) return null
-        val t = (node.text?.toString() ?: "").lowercase(Locale.US)
-        val d = (node.contentDescription?.toString() ?: "").lowercase(Locale.US)
+        val t = node.text?.toString().orEmpty().lowercase(Locale.US)
+        val d = node.contentDescription?.toString().orEmpty().lowercase(Locale.US)
         if ((t.isNotBlank() && t.contains(targetLower)) || (d.isNotBlank() && d.contains(targetLower))) {
             return AccessibilityNodeInfo.obtain(node)
         }
@@ -120,36 +156,98 @@ class AutoTouchService : AccessibilityService() {
                 try {
                     val found = findNodeByTextRecursive(child, targetLower)
                     if (found != null) return found
-                } finally { child.recycle() }
+                } finally {
+                    child.recycle()
+                }
             }
         }
         return null
     }
 
-    fun performHumanTap(x: Float, y: Float, holdMs: Long = 90L): Boolean {
+    private fun jitterCenter(value: Float): Float = value + Random.nextFloat() * (CENTER_JITTER_PX * 2.0f) - CENTER_JITTER_PX
+
+    fun performHumanTap(x: Float, y: Float, holdMs: Long = GESTURE_TAP_MS): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
-        val jitterX = Random.nextFloat() * 4.8f - 2.4f
-        val jitterY = Random.nextFloat() * 4.8f - 2.4f
-        val safeX = (x + jitterX).coerceAtLeast(5f)
-        val safeY = (y + jitterY).coerceAtLeast(5f)
-        AiOverlayHud.moveBotAndShowTap(safeX, safeY, "Tap")
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        if (screenWidth <= 0f || screenHeight <= 0f) return false
+        val centerX = x.coerceIn(0.5f, screenWidth - 0.5f)
+        val centerY = y.coerceIn(0.5f, screenHeight - 0.5f)
+        val safeX = jitterCenter(centerX).coerceIn(0.5f, screenWidth - 0.5f)
+        val safeY = jitterCenter(centerY).coerceIn(0.5f, screenHeight - 0.5f)
+        AiOverlayHud.animateHandTo(safeX, safeY, "TAP")
         val path = Path().apply {
             moveTo(safeX, safeY)
-            lineTo(safeX + 1.1f, safeY - 0.8f)
+            lineTo(safeX, safeY)
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0L, holdMs.coerceIn(45L, 400L))
-        return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+        val duration = holdMs.coerceIn(45L, 1200L)
+        return dispatchGesture(GestureDescription.Builder().addStroke(
+            GestureDescription.StrokeDescription(path, 0L, duration)
+        ).build(), null, null)
     }
 
-    fun performHumanSwipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 320L): Boolean {
+    fun performCenterHold(x: Float, y: Float): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
-        AiOverlayHud.moveBotAndShowTap(startX, startY, "Swipe")
-        val path = Path().apply {
-            moveTo(startX.coerceAtLeast(5f), startY.coerceAtLeast(5f))
-            lineTo(endX.coerceAtLeast(5f), endY.coerceAtLeast(5f))
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        if (screenWidth <= 0f || screenHeight <= 0f) return false
+        val centerX = x.coerceIn(0.5f, screenWidth - 0.5f)
+        val centerY = y.coerceIn(0.5f, screenHeight - 0.5f)
+        AiOverlayHud.animateHandTo(centerX, centerY, "HOLD")
+        val path = Path().apply { moveTo(centerX, centerY); lineTo(centerX, centerY) }
+        return dispatchGesture(GestureDescription.Builder().addStroke(
+            GestureDescription.StrokeDescription(path, 0L, GESTURE_HOLD_MS)
+        ).build(), null, null)
+    }
+
+    fun performVisionBoxTap(ymin: Float, xmin: Float, ymax: Float, xmax: Float): Boolean {
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        if (screenWidth <= 0f || screenHeight <= 0f) return false
+        val top = ymin.coerceIn(0f, 1000f) / 1000.0f * screenHeight
+        val left = xmin.coerceIn(0f, 1000f) / 1000.0f * screenWidth
+        val bottom = ymax.coerceIn(0f, 1000f) / 1000.0f * screenHeight
+        val right = xmax.coerceIn(0f, 1000f) / 1000.0f * screenWidth
+        if (right <= left || bottom <= top) return false
+        val exactCenterX = (left + right) / 2.0f
+        val exactCenterY = (top + bottom) / 2.0f
+        return performHumanTap(exactCenterX, exactCenterY, GESTURE_TAP_MS)
+    }
+
+    fun performHumanSwipe(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = GESTURE_SWIPE_MS): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        if (screenWidth <= 0f || screenHeight <= 0f) return false
+        val sx = startX.coerceIn(1f, screenWidth - 1f)
+        val sy = startY.coerceIn(1f, screenHeight - 1f)
+        val ex = endX.coerceIn(1f, screenWidth - 1f)
+        val ey = endY.coerceIn(1f, screenHeight - 1f)
+        AiOverlayHud.animateSwipe(sx, sy, ex, ey)
+        val path = Path().apply { moveTo(sx, sy); lineTo(ex, ey) }
+        return dispatchGesture(GestureDescription.Builder().addStroke(
+            GestureDescription.StrokeDescription(path, 0L, durationMs.coerceIn(120L, 1200L))
+        ).build(), null, null)
+    }
+
+    fun swipeScrollDown(): Boolean {
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        val safeStartX = screenWidth * 0.72f
+        return performHumanSwipe(safeStartX, screenHeight * 0.75f, safeStartX, screenHeight * 0.24f, GESTURE_SWIPE_MS)
+    }
+
+    fun swipeScrollUp(): Boolean {
+        val (screenWidth, screenHeight) = getRealScreenDimensions()
+        val safeStartX = screenWidth * 0.72f
+        return performHumanSwipe(safeStartX, screenHeight * 0.25f, safeStartX, screenHeight * 0.75f, GESTURE_SWIPE_MS)
+    }
+
+    fun launchAppDirectly(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        return try {
+            val intent = packageManager.getLaunchIntentForPackage(packageName) ?: return false
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs.coerceIn(120L, 1200L))
-        return dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     fun typeTextIntoFocusedOrTargetNode(targetHint: String, textToType: String): Boolean {
@@ -169,7 +267,9 @@ class AutoTouchService : AccessibilityService() {
             } finally {
                 if (targetNode !== root) targetNode.recycle()
             }
-        } finally { root.recycle() }
+        } finally {
+            root.recycle()
+        }
     }
 
     private fun findFirstEditableNode(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
@@ -181,7 +281,9 @@ class AutoTouchService : AccessibilityService() {
                 try {
                     val found = findFirstEditableNode(child)
                     if (found != null) return found
-                } finally { child.recycle() }
+                } finally {
+                    child.recycle()
+                }
             }
         }
         return null
@@ -203,10 +305,13 @@ class AutoTouchService : AccessibilityService() {
                         try {
                             Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshotResult.colorSpace)
                                 ?.copy(Bitmap.Config.ARGB_8888, false)
-                        } finally { hardwareBuffer.close() }
+                        } finally {
+                            hardwareBuffer.close()
+                        }
                     } catch (_: Exception) { null }
                     if (cont.isActive) cont.resume(bmp) else bmp?.recycle()
                 }
+
                 override fun onFailure(errorCode: Int) {
                     if (cont.isActive) cont.resume(null)
                 }
