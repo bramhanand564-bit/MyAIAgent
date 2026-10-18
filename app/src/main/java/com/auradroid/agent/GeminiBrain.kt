@@ -91,6 +91,10 @@ object GeminiBrain {
     private val PAID_MODELS_BLOCKLIST = setOf(
         "gemini-4-argon",
         "gemini-3.6-flash",
+        "gemini-3.8-pro",
+        "gemini-3.5-pro",
+        "gemini-3-pro-preview",
+        "gemini-omni-1.1-flash-preview",
         "gemini-3-flash-preview",
         "deep-research-preview-04-2026",
         "deep-research-max-preview-04-2026",
@@ -101,6 +105,7 @@ object GeminiBrain {
         "gemini-2.5-flash-image",
         "gemini-omni-1.1-flash",
         "gemini-omni-flash-preview",
+        "gemini-4-argon-preview",
         "veo-3.1-generate-preview",
         "veo-3.1-fast-generate-preview",
         "veo-3.1-lite-generate-preview",
@@ -140,6 +145,13 @@ object GeminiBrain {
         "gemma-4-31b-it"
     )
 
+    private val MEMORY_ANALYSIS_MODEL_LADDER = listOf(
+        "gemini-3.8-flash",
+        "gemini-3.1-pro-preview",
+        "gemini-robotics-er-2-preview",
+        "gemini-2.5-flash"
+    )
+
     private val IMAGE_GEN_MODEL_LADDER = listOf(
         "gemini-3.1-flash-lite-image"
     )
@@ -159,6 +171,7 @@ object GeminiBrain {
     private val FREE_MODEL_ALLOWLIST: Set<String> =
         (FREE_AGENT_MODEL_LADDER +
             HIGH_BRAIN_VISION_MODEL_LADDER +
+            MEMORY_ANALYSIS_MODEL_LADDER +
             IMAGE_GEN_MODEL_LADDER +
             TTS_MODEL_LADDER +
             AUDIO_TRANSCRIBE_MODEL_LADDER).toSet()
@@ -309,6 +322,7 @@ object GeminiBrain {
     private fun normalizeTaskType(taskType: String): String {
         return when (taskType.trim().uppercase(Locale.US).replace(" ", "_")) {
             "HIGH_BRAIN_VISION", "VISION", "STUCK_UI", "COMPLEX_PLANNING" -> "HIGH_BRAIN_VISION"
+            "MEMORY_ANALYSIS", "GOLDEN_FIX_ANALYSIS" -> "MEMORY_ANALYSIS"
             "IMAGE_GEN", "IMAGE_GENERATION" -> "IMAGE_GEN"
             "TTS_SPEECH", "TTS", "SPEECH" -> "TTS_SPEECH"
             "AUDIO_TRANSCRIBE", "TRANSCRIBE", "AUDIO_TRANSCRIPTION" -> "AUDIO_TRANSCRIBE"
@@ -319,6 +333,7 @@ object GeminiBrain {
     private fun taskLadder(taskType: String): List<String> {
         return when (normalizeTaskType(taskType)) {
             "HIGH_BRAIN_VISION" -> HIGH_BRAIN_VISION_MODEL_LADDER
+            "MEMORY_ANALYSIS" -> MEMORY_ANALYSIS_MODEL_LADDER
             "IMAGE_GEN" -> IMAGE_GEN_MODEL_LADDER
             "TTS_SPEECH" -> TTS_MODEL_LADDER
             "AUDIO_TRANSCRIBE" -> AUDIO_TRANSCRIBE_MODEL_LADDER
@@ -776,7 +791,7 @@ object GeminiBrain {
     private fun bitmapToBase64Jpeg(bitmap: Bitmap): String {
         return try {
             val baos = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 76, baos)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, baos)
             Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
         } catch (_: Exception) {
             ""
@@ -894,6 +909,8 @@ ${uiTreeSummary}
 
 SCREEN SIZE IN PHYSICAL PIXELS:
 Width = ${screenWidthPx}, height = ${screenHeightPx}. Return absolute pixel coordinates in this space.
+DEVICE AND WINDOW CALIBRATION:
+${screenCalibration}
 
 DEVICE AND SAFE-AREA CALIBRATION:
 ${screenCalibration.ifBlank { "Device calibration metadata is unavailable. Use the supplied screenshot and live UI tree only." }}
