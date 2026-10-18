@@ -43,14 +43,8 @@ data class PhoneUiDecision(
     val endX: Float,
     val endY: Float,
     val textToType: String,
-    val targetNodeText: String,
     val reason: String,
-    val isDone: Boolean,
-    val modelUsed: String,
-    val ymin: Float = 0f,
-    val xmin: Float = 0f,
-    val ymax: Float = 0f,
-    val xmax: Float = 0f
+    val modelUsed: String
 )
 
 data class ChatPlanResponse(
@@ -922,32 +916,24 @@ Return ONLY valid JSON, with no markdown and no extra text:
         if (obj != null) {
             return PhoneUiDecision(
                 action = obj.optString("action", "WAIT").uppercase(Locale.US),
-                x = obj.optDouble("x", 540.0).toFloat(),
-                y = obj.optDouble("y", 1100.0).toFloat(),
-                endX = obj.optDouble("endX", 540.0).toFloat(),
-                endY = obj.optDouble("endY", 450.0).toFloat(),
+                x = obj.optDouble("x", 0.0).toFloat(),
+                y = obj.optDouble("y", 0.0).toFloat(),
+                endX = obj.optDouble("endX", obj.optDouble("x", 0.0)).toFloat(),
+                endY = obj.optDouble("endY", obj.optDouble("y", 0.0)).toFloat(),
                 textToType = obj.optString("textToType", ""),
-                targetNodeText = obj.optString("targetNodeText", ""),
-                reason = obj.optString("reason", "Cognitive UI decision"),
-                isDone = obj.optBoolean("isDone", false),
-                modelUsed = modelUsed,
-                ymin = obj.optDouble("ymin", 0.0).toFloat().coerceIn(0f, 1000f),
-                xmin = obj.optDouble("xmin", 0.0).toFloat().coerceIn(0f, 1000f),
-                ymax = obj.optDouble("ymax", 0.0).toFloat().coerceIn(0f, 1000f),
-                xmax = obj.optDouble("xmax", 0.0).toFloat().coerceIn(0f, 1000f)
+                reason = obj.optString("reason", "VLA action decision"),
+                modelUsed = modelUsed
             )
         }
 
         return PhoneUiDecision(
             action = "WAIT",
-            x = 540f,
-            y = 960f,
-            endX = 540f,
-            endY = 400f,
+            x = 0f,
+            y = 0f,
+            endX = 0f,
+            endY = 0f,
             textToType = "",
-            targetNodeText = "",
-            reason = "Waiting for UI tree stabilization",
-            isDone = false,
+            reason = "No valid VLA JSON was returned; observe the current screen again",
             modelUsed = "fallback-guard"
         )
     }
