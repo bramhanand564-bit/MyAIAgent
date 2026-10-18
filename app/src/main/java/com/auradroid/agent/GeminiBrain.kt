@@ -549,7 +549,8 @@ object GeminiBrain {
         preferPro: Boolean = false,
         taskType: String = if (preferPro) "HIGH_BRAIN_VISION" else "AGENT",
         audioBytes: ByteArray? = null,
-        audioMimeType: String = "audio/wav"
+        audioMimeType: String = "audio/wav",
+        speechVoiceName: String = "Kore"
     ): Pair<String, String> = withContext(Dispatchers.IO) {
         val apiKey = getApiKey(context)
         if (apiKey.isBlank()) {
@@ -602,7 +603,7 @@ object GeminiBrain {
                         "voiceConfig",
                         JSONObject().put(
                             "prebuiltVoiceConfig",
-                            JSONObject().put("voiceName", "Kore")
+                            JSONObject().put("voiceName", speechVoiceName.ifBlank { "Kore" })
                         )
                     )
                 )
@@ -706,7 +707,8 @@ object GeminiBrain {
             context = context,
             prompt = prompt,
             preferPro = false,
-            taskType = "TTS_SPEECH"
+            taskType = "TTS_SPEECH",
+            speechVoiceName = voiceName
         )
         val audio = try {
             if (encodedAudio.isBlank()) null else Base64.decode(encodedAudio, Base64.DEFAULT)
