@@ -906,7 +906,8 @@ ${ragLessons}
 Live Accessibility UI Nodes (with screen coordinates):
 ${uiTreeSummary}
 
-Choose the single safest next UI step. If the user asked to open or switch to an app, prefer LAUNCH_APP and put the app name or exact package ID in targetNodeText. If a popup/permission dialog blocks the screen, handle it first.
+Choose the single safest next UI step for the CURRENT MICRO-STEP only. If the user asked to open or switch to an app, prefer LAUNCH_APP and put the app name or exact package ID in targetNodeText. If a popup or permission dialog blocks the screen, handle it first.
+For social-video missions, never repeat a completed step. Like, Follow, and Subscribe are toggle controls: if their node says selected, Liked, Unlike, Following, or Subscribed, do not tap them again. Submit a comment only once and advance only after the comment is visible in the comment list. For sharing, tap Send only after the intended recipient is selected, and never tap Send twice. Treat visible Sent or Shared confirmation as completion.
 Coordinate contract: actual device screenshot/screen is ${screenWidthPx} x ${screenHeightPx} pixels. For CLICK/HOLD/SWIPE use absolute pixel coordinates in this exact coordinate space; never assume 540x960 and never return a 0..1000 grid for x/y. Accessibility UI-node coordinates are already in screen pixels. Prefer the center of the visible target: cx=(left+right)/2, cy=(top+bottom)/2. For VISION_BOX_TAP only, return xmin/ymin/xmax/ymax normalized to a 0..1000 grid; the native service converts those to pixel coordinates and taps the box center.
 Respond ONLY with a valid JSON object:
 {
@@ -967,6 +968,85 @@ Respond ONLY with a valid JSON object:
      * Creates a short, observable task plan. If the model is unavailable or returns
      * malformed JSON, keep one complete goal instead of inventing unsafe intermediate actions.
      */
+    private fun extractMissionValue(goal: String, marker: String, stopWords: List<String>): String {
+        val lower = goal.lowercase(Locale.US)
+        val markerIndex = lower.indexOf(marker.lowercase(Locale.US))
+        if (markerIndex < 0) return ""
+        var value = goal.substring(markerIndex + marker.length).trim()
+        val firstCharacter = value.firstOrNull()
+        if (firstCharacter == '"' || firstCharacter == '\'') {
+            val quoteEnd = value.indexOf(firstCharacter, 1)
+            if (quoteEnd > 1) return value.substring(1, quoteEnd).trim()
+        }
+        value = value.trimStart(':', ' ', '\t')
+        var cutAt = value.length
+        for (stop in stopWords) {
+            val found = value.indexOf(stop, ignoreCase = true)
+            if (found >= 0 && found < cutAt) cutAt = found
+        }
+        return value.substring(0, cutAt).trim().trimEnd(',', '.', ';', ':', ' ')
+    }
+
+    private fun isSocialMultiActionMission(goal: String): Boolean {
+        val lower = goal.lowercase(Locale.US)
+        val hasVideo = lower.contains("video") || lower.contains("reel")
+        val hasLike = lower.contains("like") || lower.contains("heart")
+        val hasComment = lower.contains("comment")
+        val hasShare = lower.contains("share") || lower.contains("send")
+        val hasSearch = lower.contains("search") || lower.contains("find")
+        val isSocialApp = lower.contains("instagram") || lower.contains("facebook") ||
+            lower.contains("tiktok") || lower.contains("social media")
+        return hasVideo && hasLike && hasComment && hasShare && hasSearch &&
+            (isSocialApp || lower.contains("bhojpuri"))
+    }
+
+    private fun buildSocialMissionPlan(goal: String): List<TaskMicroStep> {
+        val searchQuery = extractMissionValue(
+            goal,
+            "search",
+            listOf(",", " then ", " and then ", " play ", " watch ", " like ", " comment ", " share ")
+        ).ifBlank { "the requested video" }.take(120)
+        val quotedComment = Regex("[\"']([^\"']{1,100})[\"']").find(goal)?.groupValues?.getOrNull(1)
+        val lower = goal.lowercase(Locale.US)
+        val commentText = quotedComment?.takeIf { it.isNotBlank() }
+            ?: if (lower.contains("comment")) "Nice" else ""
+        val shareTarget = extractMissionValue(
+            goal,
+            "share with",
+            listOf(",", ".", ";", " then ", " and then ", " using ")
+        ).ifBlank {
+            extractMissionValue(goal, "send to", listOf(",", ".", ";", " then ", " and then "))
+        }.ifBlank { "the requested contact" }.take(80)
+
+        return listOf(
+            TaskMicroStep(
+                title = "SEARCH",
+                goal = "In the requested social app, open the app if needed and search for \"$searchQuery\". Submit the query and wait for matching video or reel results. Do not like, comment, or share during this step.",
+                verificationHint = "The requested query is visible in search and matching video or reel results are shown."
+            ),
+            TaskMicroStep(
+                title = "PLAY_VIDEO",
+                goal = "Open the first matching video or reel for \"$searchQuery\" and verify that its playback screen is open. Do not repeat Search if results have already opened.",
+                verificationHint = "The first matching video or reel is open and visibly playing or its playback screen is active."
+            ),
+            TaskMicroStep(
+                title = "LIKE_VIDEO",
+                goal = "Like the currently open video exactly once. If UI state, selected state, or its label already says Liked or Unlike, do not tap the heart again; that step is already complete.",
+                verificationHint = "The Like control is selected, is labeled Liked or Unlike, or the like action was successfully performed once."
+            ),
+            TaskMicroStep(
+                title = "COMMENT_VIDEO",
+                goal = "Submit the exact comment \"$commentText\" to the currently open video once. Verify that the submitted comment appears in the visible comment list. Do not submit it twice.",
+                verificationHint = "The submitted comment text is visible as a comment, not only in the input field."
+            ),
+            TaskMicroStep(
+                title = "SHARE_VIDEO",
+                goal = "Share the currently open video with the contact \"$shareTarget\". Select the matching account and tap Send once. A Sent confirmation or successful Send click completes this step; never send it twice.",
+                verificationHint = "The intended contact is selected and Send was successfully clicked, or a Sent confirmation is visible."
+            )
+        )
+    }
+
     suspend fun buildMicroStepPlan(
         context: Context,
         goal: String,
@@ -975,6 +1055,9 @@ Respond ONLY with a valid JSON object:
     ): List<TaskMicroStep> {
         val normalizedGoal = goal.trim().take(1200)
         if (normalizedGoal.isBlank()) return emptyList()
+        if (isSocialMultiActionMission(normalizedGoal)) {
+            return buildSocialMissionPlan(normalizedGoal)
+        }
 
         val prompt = """
 You are Nax Bot's Android task planner. Break the user's goal into 2-6 small, observable steps.
