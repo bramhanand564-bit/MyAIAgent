@@ -47,14 +47,14 @@ object NativeYouTubeUploader {
             GeminiBrain.generateYouTubeMetadataWithVision(
                 context = appContext,
                 videoFile = localFile,
-                storyTopicHint = item.displayName.substringBeforeLast('.', item.displayName),
+                storyTopicHint = "Infer the topic from the actual video frames only; never reuse the source filename.",
                 episodeNumber = 1
             )
         } catch (e: Exception) {
             YouTubeSeoMetadata(
-                title = item.displayName.substringBeforeLast('.', item.displayName).take(80) + " #shorts",
-                description = "Watch this Short and share your thoughts! #shorts #viral",
-                tags = listOf("shorts", "viral")
+                title = "Aakhri Frame Ka Rahasya 😱 #shorts #viral",
+                description = "End tak dekho—what detail did you notice? Comment below! #shorts #viral",
+                tags = listOf("shorts", "viral", "mystery")
             )
         }
 
