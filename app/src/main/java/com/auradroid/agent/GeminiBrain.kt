@@ -331,7 +331,7 @@ object GeminiBrain {
         }
     }
 
-    private fun taskLadder(taskType: String, preferPro: Boolean): List<String> {
+    private fun taskLadder(taskType: String): List<String> {
         return when (normalizeTaskType(taskType)) {
             "HIGH_BRAIN_VISION" -> HIGH_BRAIN_VISION_MODEL_LADDER
             "IMAGE_GEN" -> IMAGE_GEN_MODEL_LADDER
@@ -516,7 +516,7 @@ object GeminiBrain {
         val apiKey = getApiKey(context)
         ensureApiKeyHealthScope(context, apiKey)
         val normalizedTask = normalizeTaskType(taskType)
-        val ladder = taskLadder(normalizedTask, preferPro)
+        val ladder = taskLadder(normalizedTask)
         // Keep the task's prescribed first-choice order until a working model is learned.
         // A learned preferred model may lead only when it belongs to that task's own ladder.
         val preferred = preferredWorkingModel(context, normalizedTask).takeIf { it in ladder }.orEmpty()
