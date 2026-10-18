@@ -896,22 +896,22 @@ ${uiTreeSummary}
 SCREEN SIZE IN PHYSICAL PIXELS:
 Width = ${screenWidthPx}, height = ${screenHeightPx}. Return absolute pixel coordinates in this space.
 
-Decide the SINGLE best next action that moves toward the complete user goal. Think across the full goal, not a hardcoded sub-step.
-For a Like or other toggle control, inspect its visual state yourself. If a heart is already red or filled, or the screenshot clearly shows it is already liked, do not click it again. Continue with the next unfinished part of the goal.
-Prefer a visible UI node's exact label in targetNodeText when available. Put the target's center in x and y. For a coordinate-only action, use the exact physical pixel coordinate.
-If a keyboard is open, reason about whether text still needs typing or whether the action should be submitted. If a share sheet is open, identify the requested recipient before deciding to send.
-Return DONE only when the entire user goal is visibly complete. If the screen is loading or the next action is not yet safe, return a short safe action such as BACK only when justified by the screenshot; otherwise return DONE only if the goal is complete.
+Choose ONE next action from CLICK, TYPE, SWIPE, BACK, HOME, or DONE. Think across the complete goal, not a hardcoded sub-step, and use only what the screenshot currently shows.
+For CLICK, set x and y to the exact center of the target in physical pixels. If useful, take the center from the live Accessibility UI Tree bounds.
+For TYPE, set textToType to only the text that should be entered into the currently focused field. If the correct field is not focused, CLICK it first and observe again.
+For SWIPE, include endX and endY in physical pixels. For BACK and HOME, coordinates may be zero.
+For Like and other toggle controls, inspect their visual state. If the heart is already red or filled, do not click it again; continue with the next unfinished part of the goal. Before sharing, identify the intended recipient in the screenshot. After each action, expect the executor to capture a fresh screenshot and decide again.
+Return DONE only when the entire user goal is visibly complete.
 
 Return ONLY valid JSON, with no markdown and no extra text:
 {
-  "action": "CLICK, TYPE, SWIPE, BACK, HOME, or DONE",
+  "action": "CLICK",
   "x": 120.0,
   "y": 500.0,
   "endX": 120.0,
   "endY": 500.0,
   "textToType": "hello",
-  "targetNodeText": "exact visible label if available",
-  "reason": "Explain what you see in the screenshot and why this is the next action."
+  "reason": "Explain what you see in the screenshot and why you chose this action."
 }
 """.trimIndent()
 
