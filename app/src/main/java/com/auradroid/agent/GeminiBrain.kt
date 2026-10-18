@@ -882,6 +882,40 @@ Respond ONLY with a valid JSON object:
         )
     }
 
+    suspend fun analyzeTrainingVideoFrames(
+        context: Context,
+        appName: String,
+        userDescription: String,
+        frames: List<Bitmap>
+    ): String {
+        if (frames.isEmpty()) return "No readable video frames were extracted."
+        val prompt = """
+You are Nax Bot's high-reasoning visual learning analyst.
+App or workflow: ${appName}
+User's explanation: ${userDescription}
+
+The attached images are ordered keyframes from one screen-recording video. Reconstruct only what the visible images support. Explain the workflow step by step, identify app navigation, buttons, dialogs, fields, and what visual evidence shows each transition. Preserve order. Do not guess hidden taps or claim success without visible evidence. Exclude passwords, private messages, payment details, and other secrets from the saved rule. Finish with a short reusable Golden Fix rule and recovery notes for when the next screen differs.
+
+Return concise plain text with headings:
+WORKFLOW
+VISIBLE EVIDENCE
+GOLDEN FIX
+WHEN STUCK
+""".trimIndent()
+        val (answer, modelUsed) = callGeminiWithFallback(
+            context = context,
+            prompt = prompt,
+            bitmaps = frames,
+            preferPro = true,
+            taskType = "MEMORY_ANALYSIS"
+        )
+        return if (answer.isBlank()) {
+            "Visual analysis could not be completed. Model route: ${modelUsed}. Retry after checking the API key and free-tier model availability."
+        } else {
+            "Analysis model: ${modelUsed}\n" + answer.trim().take(12000)
+        }
+    }
+
     suspend fun decideNextUiAction(
         context: Context,
         goal: String,
