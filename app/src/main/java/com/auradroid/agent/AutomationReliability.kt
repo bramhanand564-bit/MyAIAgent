@@ -655,7 +655,7 @@ Return plain text only.
                 prompt = prompt,
                 bitmaps = images,
                 preferPro = true,
-                taskType = "HIGH_BRAIN_VISION"
+                taskType = "MEMORY_ANALYSIS"
             )
             val fix = analysis.trim().takeIf { it.isNotBlank() }.orEmpty()
             if (fix.isNotBlank()) {
@@ -723,7 +723,7 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
                 prompt = prompt,
                 bitmaps = frames,
                 preferPro = true,
-                taskType = "HIGH_BRAIN_VISION"
+                taskType = "MEMORY_ANALYSIS"
             )
             val result = analysis.trim()
             if (result.isBlank()) return@withContext "The video frames were extracted, but the free-tier model ladder returned no analysis."
@@ -779,6 +779,7 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
     fun saveHumanCorrection(
         context: Context,
         packageName: String,
+        taskGoal: String,
         beforeScreenshot: Bitmap?,
         targetCenterX: Float,
         targetCenterY: Float,
@@ -800,6 +801,7 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
             val manifest = JSONObject()
                 .put("actor", "HUMAN_CORRECTION")
                 .put("packageName", packageName.take(200))
+                .put("taskGoal", taskGoal.take(1000))
                 .put("timestamp", stamp)
                 .put("targetCenterX", targetCenterX)
                 .put("targetCenterY", targetCenterY)
@@ -809,6 +811,21 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
                 .put("afterScreenshot", afterFile.name)
                 .put("coordinateSource", "Accessibility node center; raw finger coordinates are not exposed by TYPE_VIEW_CLICKED")
             File(folder, "correction_${stamp}.json").writeText(manifest.toString(2), Charsets.UTF_8)
+            try {
+                saveHumanCorrectionEpisode(
+                    context = context.applicationContext,
+                    packageName = packageName,
+                    taskGoal = taskGoal.ifBlank { "Human correction during autonomous task" },
+                    beforeFrame = beforeScreenshot,
+                    afterFrame = afterScreenshot,
+                    tapX = targetCenterX,
+                    tapY = targetCenterY,
+                    boundsText = targetBounds,
+                    buttonLabel = targetLabel
+                )
+            } catch (_: Exception) {
+                // JSON and JPEG episode remains available if the SQLite vault is temporarily unavailable.
+            }
             true
         } catch (_: Exception) {
             beforeFile.delete()
@@ -866,6 +883,13 @@ Return plain text with a short workflow title, numbered visible steps, cues for 
                 .put("analysis", cleanAnalysis)
             File(folder, "golden_fix_${stamp}.json").writeText(record.toString(2), Charsets.UTF_8)
             recordSuccessfulLesson(context, goal, appNameOrPackage, cleanAnalysis)
+            saveGoldenFixRecord(
+                context = context.applicationContext,
+                packageName = appNameOrPackage,
+                appFolder = folder.name,
+                taskGoal = goal,
+                goldenFix = cleanAnalysis
+            )
             true
         } catch (_: Exception) {
             false
