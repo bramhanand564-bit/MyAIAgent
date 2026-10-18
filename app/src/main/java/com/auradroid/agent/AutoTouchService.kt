@@ -512,6 +512,7 @@ class AutoTouchService : AccessibilityService() {
                 (node.isClickable && hasImageDescendant(node, 0))
             if (isGridVisual && rect.top > screenHeight * 0.35f &&
                 rect.width() >= screenWidth * 0.40f && rect.height() >= 60 &&
+                rect.height() <= screenHeight * 0.42f &&
                 !excludedContent(node, 0)) {
                 candidates.add(GridCandidate(
                     rect.top,
@@ -530,7 +531,7 @@ class AutoTouchService : AccessibilityService() {
         try {
             walk(root, 0)
             val candidate = candidates.minWithOrNull(
-                compareBy<GridCandidate> { it.top }.thenByDescending { it.area }
+                compareBy<GridCandidate> { it.top }.thenBy { it.area }
             ) ?: return null
             val rect = Rect()
             candidate.node.getBoundsInScreen(rect)
