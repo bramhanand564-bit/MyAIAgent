@@ -11,8 +11,6 @@ import android.os.Bundle
 import android.view.Display
 import android.view.WindowInsets
 import android.view.WindowManager
-import android.view.WindowInsets
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -160,6 +158,7 @@ class AutoTouchService : AccessibilityService() {
         source: AccessibilityNodeInfo?
     ) {
         if (!PhoneAgentManager.isTaskRunning() || !PhoneAgentManager.isTaskStuck()) return
+        if (wasRecentAutomatedGesture()) return
         val node = source ?: return
         val className = node.className?.toString().orEmpty()
         val rawLabel = (node.text?.toString().orEmpty() + " " +
