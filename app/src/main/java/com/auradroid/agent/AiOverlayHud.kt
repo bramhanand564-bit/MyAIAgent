@@ -232,6 +232,37 @@ object AiOverlayHud {
         }
     }
 
+    /**
+     * Safe bridge from the accessibility service to the passive cursor overlay.
+     * The full-screen view stays NOT_FOCUSABLE and NOT_TOUCHABLE, so it never intercepts user input.
+     */
+    fun animateHandTo(x: Float, y: Float, mode: String = "TAP") {
+        mainHandler.post {
+            val ctx = appContext ?: return@post
+            if (!canDrawOverlays(ctx)) return@post
+            ensureCursorOverlayCreated(ctx)
+            cursorOverlayView?.visibility = View.VISIBLE
+            cursorOverlayView?.animateHandTo(x, y, mode)
+        }
+    }
+
+    fun animateSwipe(startX: Float, startY: Float, endX: Float, endY: Float) {
+        mainHandler.post {
+            val ctx = appContext ?: return@post
+            if (!canDrawOverlays(ctx)) return@post
+            ensureCursorOverlayCreated(ctx)
+            cursorOverlayView?.visibility = View.VISIBLE
+            cursorOverlayView?.animateSwipe(startX, startY, endX, endY)
+        }
+    }
+
+    fun updateTaskProgress(activeStep: String, completed: Int, total: Int) {
+        val safeTotal = total.coerceAtLeast(0)
+        val safeCompleted = completed.coerceIn(0, safeTotal)
+        updateStatus("$safeCompleted/$safeTotal • ${activeStep.take(24)}",
+            if (safeCompleted >= safeTotal && safeTotal > 0) "HAPPY" else "WORKING")
+    }
+
     fun enableInvisible1x1StealthMode() {
         mainHandler.post {
             val ctx = appContext ?: return@post
