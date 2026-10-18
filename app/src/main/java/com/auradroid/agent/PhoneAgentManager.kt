@@ -112,8 +112,16 @@ object PhoneAgentManager {
         }.minByOrNull { it.second } ?: return null
 
         val label = nearest.first
-        // Only protect clearly labeled final actions; intermediate Next/Continue steps remain available.
-        if (!Regex("""\b(publish|post now)\b""", RegexOption.IGNORE_CASE).containsMatchIn(label)) return null
+        // Upload can be the final button in some YouTube app versions; recognize it only on the metadata form.
+        val isPublishButton = Regex("""\b(publish|post now)\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(label)
+        val isFinalUploadButton = Regex("""\bupload\b""", RegexOption.IGNORE_CASE)
+            .containsMatchIn(label) &&
+            uiTree.contains("title", ignoreCase = true) &&
+            uiTree.contains("description", ignoreCase = true) &&
+            (uiTree.contains("visibility", ignoreCase = true) ||
+                uiTree.contains("public", ignoreCase = true))
+        if (!isPublishButton && !isFinalUploadButton) return null
         if (!NativeYouTubeUploader.isAutoPublishPublicEnabled(context)) {
             return "Review Mode blocked the final Publish/Post action. The video has not been published by Nax Bot."
         }
