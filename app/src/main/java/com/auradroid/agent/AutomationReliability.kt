@@ -301,7 +301,7 @@ object AutomationReliability {
         val sensitive = Regex(
             "(?i)(password|passcode|pin code|one.?time.?password|\\botp\\b|email|e-mail|phone number|bank|account number|credit card|debit card|cvv|security code|recovery code)"
         )
-        if (cleanLabel.contains(sensitive)) return false
+        if (sensitive.containsMatchIn(cleanLabel)) return false
 
         val signature = screenSignature.trim().take(64).ifBlank { "unknown" }
         val safeBounds = boundsText.trim().take(100)
