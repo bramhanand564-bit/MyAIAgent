@@ -86,10 +86,10 @@ export async function executePhoneAction(action: PendingPhoneAction): Promise<st
   }
 
   await Linking.sendIntent('android.intent.action.SET_ALARM', [
-    { key: 'android.intent.extra.alarm.HOUR', value: String(action.hour) },
-    { key: 'android.intent.extra.alarm.MINUTES', value: String(action.minute) },
+    { key: 'android.intent.extra.alarm.HOUR', value: action.hour },
+    { key: 'android.intent.extra.alarm.MINUTES', value: action.minute },
     { key: 'android.intent.extra.alarm.MESSAGE', value: 'Local AI Agent reminder' },
-    { key: 'android.intent.extra.alarm.SKIP_UI', value: 'false' },
+    { key: 'android.intent.extra.alarm.SKIP_UI', value: false },
   ]);
   return action.summary + ' clock app ko bheja gaya. Alarm create hua ya nahi, clock app mein verify kijiye.';
 }

@@ -1,4 +1,4 @@
-import SQLite, { SQLiteDatabase } from 'react-native-sqlite-storage';
+import SQLite, { type SQLiteDatabase } from 'react-native-sqlite-storage';
 
 SQLite.enablePromise(true);
 
@@ -78,9 +78,9 @@ export async function insertDocument(
 export async function insertChunks(chunks: DocumentChunk[]): Promise<void> {
   if (chunks.length === 0) return;
   const database = await getDatabase();
-  await database.transaction(async (transaction) => {
+  await database.transaction((transaction) => {
     for (const chunk of chunks) {
-      await transaction.executeSql(
+      transaction.executeSql(
         'INSERT INTO doc_chunks (doc_id, doc_title, page_number, chunk_index, content) VALUES (?, ?, ?, ?, ?)',
         [chunk.docId, chunk.title, chunk.pageNumber, chunk.chunkIndex, chunk.content],
       );

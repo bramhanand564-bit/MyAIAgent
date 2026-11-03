@@ -7,10 +7,10 @@ A local-first Android AI assistant built with React Native 0.76.5, llama.rn, SQL
 - On-device GGUF model download and inference (Qwen2.5 0.5B for low-memory devices; Qwen2.5 1.5B for higher-memory devices).
 - SQLite FTS5 retrieval for imported text and digital PDF documents.
 - Native Android PDF text extraction using Apache PDFBox-Android. It reads small batches of pages; image-only/scanned PDFs need OCR and are not text-extracted.
-- DuckDuckGo Instant Answer and Wikipedia lookups with a local cache.
+- DuckDuckGo Instant Answer, public HTML search and Wikipedia lookups with a local cache.
 - Explicit confirmation before opening call, WhatsApp or alarm intents.
 - Dynamic skill registry that only enables built-in allow-listed handlers. Imported JSON is metadata-only; downloaded JavaScript is never evaluated.
-- User-visible WebView inspection for pages the user opens.
+- User-visible WebView inspection for pages the user opens; readable page text can be indexed into the Knowledge Vault.
 - Best-effort daily briefing scheduler using an Android foreground service.
 
 ## Build APK on GitHub
@@ -35,7 +35,7 @@ In a second terminal, run `cd android && ./gradlew assembleDebug`.
 
 ## Model storage
 
-Models are downloaded only after the user presses the download button. They are stored in the app's private documents directory and are not included in Git. Qwen model cards identify Apache-2.0 licensing; keep the model license and attribution with any redistribution.
+Models are downloaded only after the user presses the download button. They are stored in the app's private documents directory and are not included in Git. Android downloads restart from the beginning after an interrupted transfer with the selected filesystem library; native resume support in that library is iOS-only. Qwen model cards identify Apache-2.0 licensing; keep the model license and attribution with any redistribution.
 
 ## Important platform limits
 
