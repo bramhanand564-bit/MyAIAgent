@@ -8,6 +8,17 @@ root = Path(sys.argv[1] if len(sys.argv) > 1 else "android").resolve()
 if not (root / "app" / "src" / "main" / "AndroidManifest.xml").exists():
     raise SystemExit("React Native Android scaffold is missing its app manifest.")
 
+required_files = [
+    root / "gradlew",
+    root / "gradle" / "wrapper" / "gradle-wrapper.jar",
+    root / "settings.gradle",
+    root / "app" / "build.gradle",
+    root / "app" / "src" / "main" / "AndroidManifest.xml",
+]
+missing = [str(path) for path in required_files if not path.is_file()]
+if missing:
+    raise SystemExit("Generated Android scaffold is incomplete: " + ", ".join(missing))
+
 main_app_candidates = list((root / "app" / "src" / "main" / "java").rglob("MainApplication.kt"))
 if len(main_app_candidates) != 1:
     raise SystemExit("Expected exactly one generated MainApplication.kt file.")
@@ -21,9 +32,14 @@ if "add(PdfTextPackage())" not in source:
 main_app.write_text(source, encoding="utf-8")
 
 package_dir = main_app.parent
-for filename in ("PdfTextModule.kt", "PdfTextPackage.kt"):
+for filename in (
+    "PdfTextModule.kt",
+    "PdfTextPackage.kt",
+    "ResumableDownloadModule.kt",
+    "SystemSettingsModule.kt",
+):
     source_file = Path("native/android") / filename
-    if not source_file.exists():
+    if not source_file.is_file():
         raise SystemExit("Missing native source: " + str(source_file))
     shutil.copy2(source_file, package_dir / filename)
 
@@ -45,6 +61,9 @@ permissions = [
     "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
     "android.permission.WAKE_LOCK",
     "android.permission.POST_NOTIFICATIONS",
+    "android.permission.SCHEDULE_EXACT_ALARM",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
 ]
 for permission in permissions:
     entry = '<uses-permission android:name="' + permission + '" />'
@@ -75,4 +94,4 @@ for rule in (
         rules += "\n" + rule
 proguard.write_text(rules.strip() + "\n", encoding="utf-8")
 
-print("Android scaffold patched: PDFBox native bridge, foreground service permissions and legacy architecture mode.")
+print("Android scaffold verified and patched with PDF, resumable download, system settings and scheduler permissions.")
