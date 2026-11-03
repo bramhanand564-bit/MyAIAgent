@@ -7,7 +7,11 @@ import com.facebook.react.uimanager.ViewManager
 
 class PdfTextPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-        return listOf(\n            PdfTextModule(reactContext),\n            ResumableDownloadModule(reactContext),\n            SystemSettingsModule(reactContext)\n        )
+        return listOf(
+            PdfTextModule(reactContext),
+            ResumableDownloadModule(reactContext),
+            SystemSettingsModule(reactContext)
+        )
     }
 
     override fun createViewManagers(
