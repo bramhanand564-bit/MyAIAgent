@@ -2,8 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,34 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  preflight:
-    name: Check Android project
-    runs-on: ubuntu-latest
-    outputs:
-      android_ready: ${{ steps.detect.outputs.android_ready }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Detect React Native Android scaffold
-        id: detect
-        shell: bash
-        run: |
-          if [[ -f android/gradlew ]]; then
-            echo "android_ready=true" >> "$GITHUB_OUTPUT"
-            echo "Android Gradle wrapper found. APK build can run."
-          else
-            echo "android_ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=APK build deferred::The android/gradlew file is not present yet. Add the React Native Android native project before the APK build can run."
-          fi
-
   build:
-    name: Build debug APK
-    needs: preflight
-    if: needs.preflight.outputs.android_ready == 'true'
+    name: Build Android debug APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -60,7 +35,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK components
+      - name: Accept SDK licenses and install SDK packages
         shell: bash
         run: |
           yes | sdkmanager --licenses >/dev/null
@@ -69,15 +44,25 @@ jobs:
       - name: Install JavaScript dependencies
         run: npm install --no-audit --no-fund
 
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Generate React Native Android scaffold
+        shell: bash
+        run: |
+          npx --yes @react-native-community/cli@15.0.1 init LocalAIAgent --version 0.76.5 --directory "$RUNNER_TEMP/LocalAIAgentNative" --package-name com.localaiagent --skip-install --skip-git-init --pm npm
+          rm -rf android
+          cp -R "$RUNNER_TEMP/LocalAIAgentNative/android" ./android
+          python3 scripts/prepare_android.py android
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
         working-directory: android
-        shell: bash
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace assembleDebug
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
