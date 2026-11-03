@@ -1,11 +1,31 @@
 import BackgroundService from 'react-native-background-actions';
-import { PermissionsAndroid, Platform } from 'react-native';
+import { NativeModules, PermissionsAndroid, Platform } from 'react-native';
 import {
   getCronJobs,
   saveCronJob,
   updateCronLastRun,
 } from '../reader/sqliteFtsDatabase';
 import { runDailyBriefing } from '../skills/packs/dailyBriefingCron';
+
+
+interface AgentSystemSettings {
+  requestBatteryOptimizationExemption(): Promise<boolean>;
+  requestExactAlarmAccess(): Promise<boolean>;
+}
+
+const systemSettings = NativeModules.AgentSystemSettings as AgentSystemSettings | undefined;
+
+export async function requestBatteryOptimizationExemption(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  if (!systemSettings) throw new Error('Android system settings helper is missing from this APK.');
+  return systemSettings.requestBatteryOptimizationExemption();
+}
+
+export async function requestExactAlarmAccess(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  if (!systemSettings) throw new Error('Android system settings helper is missing from this APK.');
+  return systemSettings.requestExactAlarmAccess();
+}
 
 const SERVICE_DELAY_MS = 30_000;
 
