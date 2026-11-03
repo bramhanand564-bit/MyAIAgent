@@ -5,7 +5,7 @@ import {
   saveCronJob,
   updateCronLastRun,
 } from '../reader/sqliteFtsDatabase';
-import { runDailyBriefing } from '../skills/packs/dailyBriefingCron';
+import { isAutonomousExecutionEnabled, runDailyBriefing } from '../skills/packs/dailyBriefingCron';
 
 
 interface AgentSystemSettings {
@@ -67,7 +67,7 @@ async function runDueJobs(): Promise<void> {
     } catch {
       // Use the default topic for malformed stored parameters.
     }
-    await runDailyBriefing(topic);
+    await runDailyBriefing(topic, await isAutonomousExecutionEnabled());
   }
 }
 
