@@ -8,7 +8,7 @@ import {
   type PendingPhoneAction,
 } from '../skills/packs/phoneController';
 import { researchPublicLeads } from '../skills/packs/leadScraperPipeline';
-import { runDailyBriefing } from '../skills/packs/dailyBriefingCron';
+import { runDailyBriefing } from '../skills/packs/dailyBriefingCron';\nimport { executeAutonomousBriefingPublish } from '../skills/skillExecutor';
 import { executeApprovedSkill } from '../skills/skillExecutor';
 
 export interface AgentResponse {
@@ -97,7 +97,7 @@ export async function processUserMessage(message: string, autonomousExecutionMod
   }
 
   if (route.kind === 'briefing') {
-    const result = await runDailyBriefing('India technology and business');
+    const result = autonomousExecutionMode\n      ? await executeAutonomousBriefingPublish('India technology and business')\n      : await runDailyBriefing('India technology and business');
     return { text: result.text, sources: result.sources };
   }
 
