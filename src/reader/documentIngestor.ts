@@ -1,6 +1,7 @@
 import { NativeModules } from 'react-native';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
+import TextRecognition from '@react-native-ml-kit/text-recognition';
 import {
   deleteDocument,
   insertChunks,
@@ -13,6 +14,10 @@ interface NativePdfExtractor {
   extractPages(uri: string, startPage: number, pageCount: number): Promise<Array<{
     page: number;
     text: string;
+  }>>;
+  renderPages(uri: string, startPage: number, pageCount: number): Promise<Array<{
+    page: number;
+    uri: string;
   }>>;
 }
 
@@ -55,9 +60,14 @@ function splitTextIntoChunks(text: string, docId: string, title: string, pageNum
   return chunks;
 }
 
+async function recognizeImage(uri: string): Promise<string> {
+  const result = await TextRecognition.recognize(uri);
+  return typeof result.text === 'string' ? result.text : '';
+}
+
 async function ingestPdf(uri: string, title: string, docId: string): Promise<{ pages: number; chunks: number }> {
   if (!pdfExtractor) {
-    throw new Error('PDF extraction native module is not installed in this build. Install the GitHub Actions APK or rebuild with the Android native patch.');
+    throw new Error('PDF extraction native module is not installed in this build. Install the latest GitHub Actions APK.');
   }
   const pageCount = await pdfExtractor.getPageCount(uri);
   if (pageCount < 1) throw new Error('This PDF has no readable pages.');
@@ -65,8 +75,29 @@ async function ingestPdf(uri: string, title: string, docId: string): Promise<{ p
 
   for (let firstPage = 1; firstPage <= pageCount; firstPage += 10) {
     const pages = await pdfExtractor.extractPages(uri, firstPage, Math.min(10, pageCount - firstPage + 1));
+    const scannedPages = pages.filter((page) => !page.text.trim());
+    const ocrTextByPage = new Map<number, string>();
+
+    if (scannedPages.length > 0) {
+      const rendered = await pdfExtractor.renderPages(
+        uri,
+        firstPage,
+        Math.min(10, pageCount - firstPage + 1),
+      );
+      for (const image of rendered) {
+        if (!scannedPages.some((page) => page.page === image.page)) continue;
+        try {
+          ocrTextByPage.set(image.page, await recognizeImage(image.uri));
+        } finally {
+          await RNFS.unlink(filePathFromUri(image.uri)).catch(() => undefined);
+        }
+      }
+    }
+
     for (const page of pages) {
-      const pageChunks = splitTextIntoChunks(page.text, docId, title, page.page, chunkIndex);
+      const pageText = page.text.trim() ? page.text : (ocrTextByPage.get(page.page) || '');
+      if (!pageText.trim()) continue;
+      const pageChunks = splitTextIntoChunks(pageText, docId, title, page.page, chunkIndex);
       if (pageChunks.length > 0) {
         await insertChunks(pageChunks);
         chunkIndex += pageChunks.length;
@@ -74,6 +105,14 @@ async function ingestPdf(uri: string, title: string, docId: string): Promise<{ p
     }
   }
   return { pages: pageCount, chunks: chunkIndex };
+}
+
+async function ingestImage(uri: string, title: string, docId: string): Promise<{ pages: number; chunks: number }> {
+  const text = await recognizeImage(uri);
+  if (!text.trim()) throw new Error('Offline OCR could not detect readable text in this image.');
+  const chunks = splitTextIntoChunks(text, docId, title, 1, 0);
+  await insertChunks(chunks);
+  return { pages: 1, chunks: chunks.length };
 }
 
 async function ingestTextFile(uri: string, title: string, docId: string): Promise<{ pages: number; chunks: number }> {
@@ -117,7 +156,12 @@ async function ingestTextFile(uri: string, title: string, docId: string): Promis
 
 export async function pickAndIndexDocument(): Promise<DocumentSummary> {
   const picked = await DocumentPicker.pickSingle({
-    type: [DocumentPicker.types.allFiles],
+    type: [
+      DocumentPicker.types.allFiles,
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ],
     copyTo: 'documentDirectory',
   });
   const title = picked.name || 'Imported document';
@@ -127,15 +171,19 @@ export async function pickAndIndexDocument(): Promise<DocumentSummary> {
 
   if (!uri) throw new Error('The selected file has no readable URI.');
   const isPdf = extension === 'pdf' || picked.type === 'application/pdf';
+  const isImage = ['jpg', 'jpeg', 'png', 'webp'].includes(extension) ||
+    (picked.type || '').startsWith('image/');
   const isText = ['txt', 'md', 'csv', 'html', 'htm', 'json', 'xml'].includes(extension);
-  if (!isPdf && !isText) {
-    throw new Error('Supported formats: digital PDF, TXT, Markdown, CSV, HTML, JSON and XML.');
+  if (!isPdf && !isText && !isImage) {
+    throw new Error('Supported formats: digital/scanned PDF, TXT, Markdown, CSV, HTML, JSON, XML and JPG/PNG/WebP images.');
   }
 
   try {
     const summary = isPdf
       ? await ingestPdf(uri, title, docId)
-      : await ingestTextFile(uri, title, docId);
+      : isImage
+        ? await ingestImage(uri, title, docId)
+        : await ingestTextFile(uri, title, docId);
     await insertDocument(docId, title, uri, summary.pages);
     return { docId, title, pages: summary.pages, chunks: summary.chunks };
   } catch (error) {
