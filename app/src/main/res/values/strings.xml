@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">AuraDroid OS • Nax Bot</string>
-    <string name="accessibility_service_label">AuraDroid Nax Bot Autonomous Engine</string>
-    <string name="accessibility_service_description">Allows Nax Bot to read screen UI trees, capture vision snapshots, and perform human-like 4-Sense touch gestures autonomously.</string>
-</resources>
