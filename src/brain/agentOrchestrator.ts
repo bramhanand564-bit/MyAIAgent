@@ -9,6 +9,7 @@ import {
 } from '../skills/packs/phoneController';
 import { researchPublicLeads } from '../skills/packs/leadScraperPipeline';
 import { runDailyBriefing } from '../skills/packs/dailyBriefingCron';
+import { executeApprovedSkill } from '../skills/skillExecutor';
 
 export interface AgentResponse {
   text: string;
@@ -64,7 +65,7 @@ function stringParameter(
     : fallback;
 }
 
-export async function processUserMessage(message: string): Promise<AgentResponse> {
+export async function processUserMessage(message: string, autonomousExecutionMode = false): Promise<AgentResponse> {
   const cleaned = message.trim();
   if (!cleaned) return { text: 'Apna sawal ya task type kijiye.' };
 
@@ -78,6 +79,10 @@ export async function processUserMessage(message: string): Promise<AgentResponse
       };
     }
     if ('error' in parsed) return { text: parsed.error };
+    if (autonomousExecutionMode) {
+      const result = await executeApprovedSkill('phone_controller', parsed);
+      return { text: 'Autonomous mode: ' + result.message };
+    }
     return {
       text: 'Confirm karein: ' + parsed.summary + '. Confirm button dabane par Android app/dialer khulega; message khud se send nahi hoga.',
       pendingAction: parsed,
@@ -116,6 +121,10 @@ export async function processUserMessage(message: string): Promise<AgentResponse
       const parsed = parsePhoneIntent(cleaned);
       if (!parsed) return { text: 'Phone command mein number, message ya exact alarm time missing hai.' };
       if ('error' in parsed) return { text: parsed.error };
+      if (autonomousExecutionMode) {
+        const result = await executeApprovedSkill('phone_controller', parsed);
+        return { text: 'Autonomous mode: ' + result.message };
+      }
       return {
         text: 'Confirm karein: ' + parsed.summary + '. Confirm button dabane par Android app/dialer khulega; message khud se send nahi hoga.',
         pendingAction: parsed,
