@@ -2,6 +2,7 @@ import {
   executePhoneAction,
   type PendingPhoneAction,
 } from './packs/phoneController';
+import { runDailyBriefing, type BriefingResult } from './packs/dailyBriefingCron';
 
 export interface SkillExecutionResult {
   success: boolean;
@@ -23,4 +24,8 @@ export async function executeApprovedSkill(
       message: error instanceof Error ? error.message : 'The phone action failed.',
     };
   }
+}
+
+export async function executeAutonomousBriefingPublish(topic: string): Promise<BriefingResult> {
+  return runDailyBriefing(topic, true);
 }
