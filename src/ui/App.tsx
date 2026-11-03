@@ -14,12 +14,15 @@ import CronDashboardScreen from './screens/CronDashboardScreen';
 import { getDatabase } from '../reader/sqliteFtsDatabase';
 import { loadSkillPreferences } from '../skills/skillRegistry';
 import { attachModelLifecycleCleanup } from '../brain/llamaService';
+import HeadlessBrowserController from '../rpa/HeadlessBrowserController';
+import { useAgentStore } from '../state/useAgentStore';
 
 type Tab = 'chat' | 'skills' | 'vault' | 'cron';
 
 export default function AgentApp() {
   const [tab, setTab] = useState<Tab>('chat');
   const [ready, setReady] = useState(false);
+  const autonomousExecutionMode = useAgentStore((state) => state.autonomousExecutionMode);
 
   useEffect(() => {
     let cleanupModel: () => void = () => {};
@@ -64,6 +67,7 @@ export default function AgentApp() {
           </Pressable>
         ))}
       </View>
+      <HeadlessBrowserController visible={false} automationEnabled={autonomousExecutionMode} />
     </SafeAreaView>
   );
 }
