@@ -1,0 +1,88 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Check Android project
+    runs-on: ubuntu-latest
+    outputs:
+      android_ready: ${{ steps.detect.outputs.android_ready }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect React Native Android scaffold
+        id: detect
+        shell: bash
+        run: |
+          if [[ -f android/gradlew ]]; then
+            echo "android_ready=true" >> "$GITHUB_OUTPUT"
+            echo "Android Gradle wrapper found. APK build can run."
+          else
+            echo "android_ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=APK build deferred::The android/gradlew file is not present yet. Add the React Native Android native project before the APK build can run."
+          fi
+
+  build:
+    name: Build debug APK
+    needs: preflight
+    if: needs.preflight.outputs.android_ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install JavaScript dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        working-directory: android
+        shell: bash
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-ai-agent-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
