@@ -80,6 +80,48 @@ class PdfTextModule(private val appContext: ReactApplicationContext) :
         }
     }
 
+
+    @ReactMethod
+    fun renderPages(uriValue: String, startPage: Int, pageCount: Int, promise: Promise) {
+        worker.execute {
+            var document: PDDocument? = null
+            try {
+                require(startPage >= 1) { "startPage must be at least 1" }
+                require(pageCount in 1..10) { "pageCount must be between 1 and 10" }
+                document = openDocument(uriValue)
+                val renderer = org.apache.pdfbox.rendering.PDFRenderer(document)
+                val endPage = minOf(document.numberOfPages, startPage + pageCount - 1)
+                val output = Arguments.createArray()
+                for (page in startPage..endPage) {
+                    val bitmap = renderer.renderImageWithDPI(
+                        page - 1,
+                        120f,
+                        org.apache.pdfbox.rendering.ImageType.RGB
+                    )
+                    val imageFile = File(
+                        appContext.cacheDir,
+                        "agent_ocr_" + System.currentTimeMillis() + "_" + page + ".jpg"
+                    )
+                    imageFile.outputStream().use { stream ->
+                        if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, stream)) {
+                            throw IllegalStateException("Could not encode rendered PDF page.")
+                        }
+                    }
+                    bitmap.recycle()
+                    val item = Arguments.createMap()
+                    item.putInt("page", page)
+                    item.putString("uri", Uri.fromFile(imageFile).toString())
+                    output.pushMap(item)
+                }
+                promise.resolve(output)
+            } catch (error: Exception) {
+                promise.reject("PDF_RENDER_FAILED", error.message, error)
+            } finally {
+                try { document?.close() } catch (_: Exception) { }
+            }
+        }
+    }
+
     override fun invalidate() {
         worker.shutdown()
         super.invalidate()
