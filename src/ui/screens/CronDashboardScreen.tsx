@@ -44,6 +44,24 @@ export default function CronDashboardScreen() {
     }
   }
 
+  async function openBatterySettings(): Promise<void> {
+    try {
+      const alreadyAllowed = await requestBatteryOptimizationExemption();
+      setMessage(alreadyAllowed ? 'Battery optimization exemption is already allowed.' : 'Battery settings opened. Approve the exemption if Android offers it, then return here.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not open battery settings.');
+    }
+  }
+
+  async function openExactAlarmSettings(): Promise<void> {
+    try {
+      const alreadyAllowed = await requestExactAlarmAccess();
+      setMessage(alreadyAllowed ? 'Exact alarm access is already allowed.' : 'Exact alarm settings opened. Grant access if you want exact-alarm features.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not open exact alarm settings.');
+    }
+  }
+
   async function toggleService(): Promise<void> {
     try {
       if (running) await stopScheduler();
@@ -67,6 +85,15 @@ export default function CronDashboardScreen() {
         <TextInput value={topic} onChangeText={setTopic} style={styles.input} placeholder="Technology and business" placeholderTextColor="#64748B" />
         <Pressable style={styles.primaryButton} onPress={() => void addJob()}>
           <Text style={styles.buttonText}>Save daily briefing</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.settingsRow}>
+        <Pressable style={styles.settingsButton} onPress={() => void openBatterySettings()}>
+          <Text style={styles.buttonText}>Battery exemption</Text>
+        </Pressable>
+        <Pressable style={styles.settingsButton} onPress={() => void openExactAlarmSettings()}>
+          <Text style={styles.buttonText}>Exact alarm access</Text>
         </Pressable>
       </View>
 
@@ -96,7 +123,7 @@ const styles = StyleSheet.create({
   label: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
   input: { minHeight: 42, color: '#FFFFFF', backgroundColor: '#0B1220', borderRadius: 8, paddingHorizontal: 10 },
   primaryButton: { backgroundColor: '#2563EB', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 4 },
-  serviceButton: { backgroundColor: '#15803D', padding: 13, borderRadius: 9, alignItems: 'center' },
+  settingsRow: { flexDirection: 'row', gap: 8 },\n  settingsButton: { flex: 1, backgroundColor: '#334155', padding: 11, borderRadius: 9, alignItems: 'center' },\n  serviceButton: { backgroundColor: '#15803D', padding: 13, borderRadius: 9, alignItems: 'center' },
   stopButton: { backgroundColor: '#B91C1C' },
   buttonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   message: { color: '#FDE68A', fontSize: 12 },
