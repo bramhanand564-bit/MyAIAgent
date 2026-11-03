@@ -17,6 +17,8 @@ import {
   isSchedulerRunning,
   startScheduler,
   stopScheduler,
+  requestBatteryOptimizationExemption,
+  requestExactAlarmAccess,
 } from '../../cron/schedulerService';
 
 export default function CronDashboardScreen() {
@@ -24,7 +26,8 @@ export default function CronDashboardScreen() {
   const [topic, setTopic] = useState('India technology and business');
   const [jobs, setJobs] = useState<CronJobRecord[]>([]);
   const [running, setRunning] = useState(isSchedulerRunning());
-  const [message, setMessage] = useState('');\n  const [webhookUrl, setWebhookUrl] = useState('');
+  const [message, setMessage] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
 
   async function refresh(): Promise<void> {
     setJobs(await getCronJobs());
@@ -33,6 +36,7 @@ export default function CronDashboardScreen() {
 
   useEffect(() => {
     void refresh();
+    void getPublishingWebhook().then(setWebhookUrl).catch(() => undefined);
   }, []);
 
   async function saveWebhook(): Promise<void> {
@@ -146,8 +150,11 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#172338', borderRadius: 12, padding: 14, gap: 8 },
   label: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
   input: { minHeight: 42, color: '#FFFFFF', backgroundColor: '#0B1220', borderRadius: 8, paddingHorizontal: 10 },
-  secondaryButton: { backgroundColor: '#475569', borderRadius: 8, padding: 11, alignItems: 'center' },\n  primaryButton: { backgroundColor: '#2563EB', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 4 },
-  settingsRow: { flexDirection: 'row', gap: 8 },\n  settingsButton: { flex: 1, backgroundColor: '#334155', padding: 11, borderRadius: 9, alignItems: 'center' },\n  serviceButton: { backgroundColor: '#15803D', padding: 13, borderRadius: 9, alignItems: 'center' },
+  secondaryButton: { backgroundColor: '#475569', borderRadius: 8, padding: 11, alignItems: 'center' },
+  primaryButton: { backgroundColor: '#2563EB', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 4 },
+  settingsRow: { flexDirection: 'row', gap: 8 },
+  settingsButton: { flex: 1, backgroundColor: '#334155', padding: 11, borderRadius: 9, alignItems: 'center' },
+  serviceButton: { backgroundColor: '#15803D', padding: 13, borderRadius: 9, alignItems: 'center' },
   stopButton: { backgroundColor: '#B91C1C' },
   buttonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   message: { color: '#FDE68A', fontSize: 12 },
