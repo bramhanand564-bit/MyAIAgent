@@ -1,3 +1,4 @@
+import { NativeModules } from 'react-native';
 import RNFS from 'react-native-fs';
 import type { ModelId } from './hardwareProfile';
 
@@ -11,6 +12,17 @@ export interface ModelDefinition {
   minFreeBytes: number;
   license: string;
 }
+
+interface NativeResumableDownloader {
+  download(
+    url: string,
+    destinationPath: string,
+    expectedBytes: number,
+    onProgress: (percent: number) => void,
+  ): Promise<string>;
+}
+
+const nativeDownloader = NativeModules.ResumableDownload as NativeResumableDownloader | undefined;
 
 export const MODEL_REGISTRY: Record<ModelId, ModelDefinition> = {
   'qwen2.5-0.5b-q4km': {
@@ -50,6 +62,7 @@ export async function downloadModel(
   const definition = MODEL_REGISTRY[modelId];
   const directory = getModelDirectory();
   const destination = getModelPath(modelId);
+  const partialPath = destination + '.part';
   await RNFS.mkdir(directory);
 
   const fsInfo = await RNFS.getFSInfo();
@@ -61,48 +74,50 @@ export async function downloadModel(
   }
 
   if (await RNFS.exists(destination)) {
-    const current = await RNFS.stat(destination);
-    if (Number(current.size) >= definition.expectedBytes * 0.9) {
+    const currentFile = await RNFS.stat(destination);
+    if (Number(currentFile.size) >= definition.expectedBytes * 0.9) {
       onProgress?.(100);
       return destination;
     }
     await RNFS.unlink(destination);
   }
 
-  const task = RNFS.downloadFile({
-    fromUrl: definition.url,
-    toFile: destination,
-    begin: (event) => {
-      if (event.contentLength > 0) onProgress?.(0);
-    },
-    progress: (event) => {
-      if (event.contentLength > 0) {
-        onProgress?.(Math.min(99, Math.floor((event.bytesWritten / event.contentLength) * 100)));
-      }
-    },
-    progressDivider: 2,
-    connectionTimeout: 30_000,
-    readTimeout: 120_000,
-    background: true,
-  });
+  let existingBytes = 0;
+  if (await RNFS.exists(partialPath)) {
+    const partial = await RNFS.stat(partialPath);
+    existingBytes = Number(partial.size);
+  }
+  if (existingBytes > 0) {
+    onProgress?.(
+      Math.min(99, Math.floor((existingBytes / definition.expectedBytes) * 100)),
+    );
+  } else {
+    onProgress?.(0);
+  }
 
+  if (!nativeDownloader) {
+    throw new Error(
+      'Resumable Android downloader is missing from this APK. Install the latest GitHub Actions build.',
+    );
+  }
+
+  // The native module independently stats the same .part file and sends
+  // Range: bytes=<existingBytes>-; it preserves the partial file on network errors.
   try {
-    const result = await task.promise;
-    if (result.statusCode < 200 || result.statusCode >= 300) {
-      throw new Error('Model download failed with HTTP ' + result.statusCode);
-    }
-    const saved = await RNFS.stat(destination);
+    const completedPath = await nativeDownloader.download(
+      definition.url,
+      destination,
+      definition.expectedBytes,
+      (percent) => onProgress?.(Math.max(0, Math.min(100, Math.floor(percent)))),
+    );
+    const saved = await RNFS.stat(completedPath);
     if (Number(saved.size) < definition.expectedBytes * 0.9) {
-      throw new Error('Downloaded model file is incomplete. Please retry the download.');
+      throw new Error('Downloaded model file is incomplete. Retry to resume the remaining bytes.');
     }
     onProgress?.(100);
-    return destination;
+    return completedPath;
   } catch (error) {
-    try {
-      if (await RNFS.exists(destination)) await RNFS.unlink(destination);
-    } catch {
-      // Preserve the original download error.
-    }
+    // Do not delete .part: a subsequent attempt resumes from its current size.
     throw error;
   }
 }
