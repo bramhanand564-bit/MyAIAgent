@@ -23,7 +23,7 @@ export default function CronDashboardScreen() {
   const [topic, setTopic] = useState('India technology and business');
   const [jobs, setJobs] = useState<CronJobRecord[]>([]);
   const [running, setRunning] = useState(isSchedulerRunning());
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState('');\n  const [webhookUrl, setWebhookUrl] = useState('');
 
   async function refresh(): Promise<void> {
     setJobs(await getCronJobs());
@@ -33,6 +33,15 @@ export default function CronDashboardScreen() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  async function saveWebhook(): Promise<void> {
+    try {
+      await setPublishingWebhook(webhookUrl);
+      setMessage(webhookUrl.trim() ? 'HTTPS publishing webhook saved.' : 'Publishing webhook cleared.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Webhook could not be saved.');
+    }
+  }
 
   async function addJob(): Promise<void> {
     try {
@@ -83,6 +92,20 @@ export default function CronDashboardScreen() {
         <TextInput value={time} onChangeText={setTime} style={styles.input} placeholder="08:00" placeholderTextColor="#64748B" />
         <Text style={styles.label}>Topic</Text>
         <TextInput value={topic} onChangeText={setTopic} style={styles.input} placeholder="Technology and business" placeholderTextColor="#64748B" />
+        <Text style={styles.label}>Optional HTTPS publishing webhook</Text>
+        <TextInput
+          value={webhookUrl}
+          onChangeText={setWebhookUrl}
+          autoCapitalize="none"
+          keyboardType="url"
+          style={styles.input}
+          placeholder="https://your-server.example/publish"
+          placeholderTextColor="#64748B"
+        />
+        <Text style={styles.caption}>When User-authorized autonomous mode is ON, a generated briefing is POSTed as JSON to this endpoint. Configure authentication and platform OAuth on your own trusted webhook server; this app does not store OAuth secrets.</Text>
+        <Pressable style={styles.secondaryButton} onPress={() => void saveWebhook()}>
+          <Text style={styles.buttonText}>Save webhook</Text>
+        </Pressable>
         <Pressable style={styles.primaryButton} onPress={() => void addJob()}>
           <Text style={styles.buttonText}>Save daily briefing</Text>
         </Pressable>
@@ -122,7 +145,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#172338', borderRadius: 12, padding: 14, gap: 8 },
   label: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
   input: { minHeight: 42, color: '#FFFFFF', backgroundColor: '#0B1220', borderRadius: 8, paddingHorizontal: 10 },
-  primaryButton: { backgroundColor: '#2563EB', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 4 },
+  secondaryButton: { backgroundColor: '#475569', borderRadius: 8, padding: 11, alignItems: 'center' },\n  primaryButton: { backgroundColor: '#2563EB', borderRadius: 8, padding: 12, alignItems: 'center', marginTop: 4 },
   settingsRow: { flexDirection: 'row', gap: 8 },\n  settingsButton: { flex: 1, backgroundColor: '#334155', padding: 11, borderRadius: 9, alignItems: 'center' },\n  serviceButton: { backgroundColor: '#15803D', padding: 13, borderRadius: 9, alignItems: 'center' },
   stopButton: { backgroundColor: '#B91C1C' },
   buttonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
