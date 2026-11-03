@@ -19,7 +19,7 @@ missing = [str(path) for path in required_files if not path.is_file()]
 if missing:
     raise SystemExit("Generated Android scaffold is incomplete: " + ", ".join(missing))
 
-main_app_candidates = list((root / "app" / "src" / "main" / "java").rglob("MainApplication.kt"))
+main_app_candidates = list((root / "app" / "src" / "main" / "java").rglob("MainApplication.kt"))\nmain_activity_candidates = list((root / "app" / "src" / "main" / "java").rglob("MainActivity.kt"))\nif len(main_activity_candidates) != 1:\n    raise SystemExit("Expected exactly one generated MainActivity.kt file.")
 if len(main_app_candidates) != 1:
     raise SystemExit("Expected exactly one generated MainApplication.kt file.")
 main_app = main_app_candidates[0]
