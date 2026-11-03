@@ -61,7 +61,7 @@ class ResumableDownloadModule(
                 }
 
                 var status = connection.responseCode
-                if (status == HttpURLConnection.HTTP_REQUESTED_RANGE_NOT_SATISFIABLE &&
+                if (status == 416 &&
                     expected > 0L && existingBytes >= expected * 0.9
                 ) {
                     if (destination.exists()) destination.delete()
