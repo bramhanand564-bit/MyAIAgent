@@ -4,6 +4,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -12,7 +13,7 @@ import { useAgentStore } from '../../state/useAgentStore';
 
 export default function ChatScreen() {
   const [input, setInput] = useState('');
-  const messages = useAgentStore((state) => state.messages);
+  const messages = useAgentStore((state) => state.messages);\n  const autonomousExecutionMode = useAgentStore((state) => state.autonomousExecutionMode);\n  const setAutonomousExecutionMode = useAgentStore((state) => state.setAutonomousExecutionMode);
   const isBusy = useAgentStore((state) => state.isBusy);
   const isModelLoaded = useAgentStore((state) => state.isModelLoaded);
   const modelProgress = useAgentStore((state) => state.modelProgress);
@@ -45,6 +46,21 @@ export default function ChatScreen() {
             <Text style={styles.smallButtonText}>Download local brain</Text>
           </Pressable>
         )}
+      </View>
+
+      <View style={styles.autonomousCard}>
+        <View style={styles.autonomousTextBox}>
+          <Text style={styles.autonomousTitle}>User-authorized autonomous mode</Text>
+          <Text style={styles.autonomousCaption}>When enabled, phone intents open directly without the extra in-app confirmation. Android may still show its own dialer, alarm or app confirmation. WhatsApp messages are never silently sent.</Text>
+        </View>
+        <Switch
+          value={autonomousExecutionMode}
+          onValueChange={(value) => {
+            void setAutonomousExecutionMode(value).catch(() => undefined);
+          }}
+          trackColor={{ false: '#475569', true: '#2563EB' }}
+          thumbColor={autonomousExecutionMode ? '#FFFFFF' : '#CBD5E1'}
+        />
       </View>
 
       {modelProgress > 0 && modelProgress < 100 && (
@@ -114,7 +130,7 @@ const styles = StyleSheet.create({
   caption: { color: '#94A3B8', fontSize: 11, marginTop: 2 },
   smallButton: { backgroundColor: '#1D4ED8', paddingHorizontal: 10, paddingVertical: 9, borderRadius: 8 },
   smallButtonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  progressOuter: { height: 18, borderRadius: 8, backgroundColor: '#1E293B', overflow: 'hidden', justifyContent: 'center' },
+  autonomousCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, backgroundColor: '#172338', borderWidth: 1, borderColor: '#334155' },\n  autonomousTextBox: { flex: 1, gap: 3 },\n  autonomousTitle: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },\n  autonomousCaption: { color: '#94A3B8', fontSize: 10, lineHeight: 14 },\n  progressOuter: { height: 18, borderRadius: 8, backgroundColor: '#1E293B', overflow: 'hidden', justifyContent: 'center' },
   progressInner: { height: 18, backgroundColor: '#2563EB' },
   progressText: { position: 'absolute', alignSelf: 'center', color: '#FFFFFF', fontSize: 10 },
   messages: { flex: 1 },
